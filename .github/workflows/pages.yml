@@ -35,6 +35,11 @@ jobs:
           git clone https://github.com/lanceewing/agile-gdx.git agile-gdx
           git -C agile-gdx checkout 81c42ba63b3b7f5fb260d282592681c097d46da9
 
+      - name: Assemble full-resolution room backgrounds
+        run: |
+          python3 scripts/assemble_room_backgrounds.py
+          ls -lh backgrounds/room_001_hires.*
+
       - name: Add replacement room backgrounds
         run: |
           mkdir -p agile-gdx/assets/backgrounds
