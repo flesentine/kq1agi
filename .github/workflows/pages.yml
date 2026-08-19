@@ -86,14 +86,28 @@ jobs:
           script: |
             const isPullRequest = context.eventName === 'pull_request';
             const buildOK = '${{ needs.build.result }}' === 'success';
-            const deployOK = isPullRequest || '${{ needs.deploy.result }}' === 'success';
-            const ok = buildOK && deployOK;
+            const deployOK = '${{ needs.deploy.result }}' === 'success';
+
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: context.sha,
-              state: ok ? 'success' : 'failure',
-              context: 'browser-deploy',
-              description: ok ? 'Browser build/deploy succeeded' : 'Browser build/deploy failed'
+              state: buildOK ? 'success' : 'failure',
+              context: 'browser-build',
+              description: buildOK ? 'HTML5 build succeeded' : 'HTML5 build failed'
             });
-            if (!ok) core.setFailed('Browser build/deploy failed');
+
+            if (!isPullRequest) {
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: context.sha,
+                state: deployOK ? 'success' : 'failure',
+                context: 'browser-deploy',
+                description: deployOK ? 'GitHub Pages deployment succeeded' : 'GitHub Pages deployment failed'
+              });
+            }
+
+            if (!buildOK || (!isPullRequest && !deployOK)) {
+              core.setFailed('Browser build/deploy failed');
+            }
