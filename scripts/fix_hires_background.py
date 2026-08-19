@@ -81,16 +81,18 @@ public final class RoomBackgrounds {
 
     private static FileHandle find(int room) {
         String number = room < 10 ? "00" + room : (room < 100 ? "0" + room : String.valueOf(room));
+        String[] extensions = new String[] { "png", "jpg", "jpeg" };
 
         // Prefer a cache-busting high-resolution asset when one is present. Keeping this
-        // under a different URL prevents an older room_###.jpg from surviving in browser
+        // under a different URL prevents an older room_### image from surviving in browser
         // or service-worker caches after an art replacement.
-        FileHandle hires = Gdx.files.internal("backgrounds/room_" + number + "_hires.jpg");
-        if (hires.exists()) {
-            return hires;
+        for (String extension : extensions) {
+            FileHandle hires = Gdx.files.internal("backgrounds/room_" + number + "_hires." + extension);
+            if (hires.exists()) {
+                return hires;
+            }
         }
 
-        String[] extensions = new String[] { "png", "jpg", "jpeg" };
         for (String extension : extensions) {
             FileHandle file = Gdx.files.internal("backgrounds/room_" + number + "." + extension);
             if (file.exists()) {
