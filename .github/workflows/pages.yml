@@ -44,6 +44,7 @@ jobs:
         run: |
           python3 scripts/patch_agile.py agile-gdx
           python3 scripts/fix_nested_zip.py agile-gdx
+          python3 scripts/fix_hires_background.py agile-gdx
           cp web/coi-serviceworker.js agile-gdx/html/webapp/coi-serviceworker.js
 
       - name: Build AGILE HTML5 app
