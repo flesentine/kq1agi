@@ -1,5 +1,7 @@
 # King's Quest AGI — browser build
 
+[![Build browser game](https://github.com/flesentine/kq1agi/actions/workflows/pages.yml/badge.svg)](https://github.com/flesentine/kq1agi/actions/workflows/pages.yml)
+
 This repository builds a browser-first King's Quest AGI player using the open-source [AGILE](https://github.com/lanceewing/agile-gdx) interpreter.
 
 The browser build is pinned to AGILE commit `81c42ba63b3b7f5fb260d282592681c097d46da9`, opens directly to King's Quest, and includes a browser-only visual background layer that keeps the original AGI priority/control data for walking and collision.
