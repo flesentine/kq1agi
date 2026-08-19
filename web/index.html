@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>King's Quest</title>
+  <meta charset="UTF-8">
+  <meta id="gameViewport" name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#000000">
+  <link href="styles.css" rel="stylesheet" type="text/css">
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+    #boot-message {
+      position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center;
+      background: #000; color: #ddd; font: 16px system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      text-align: center; padding: 24px;
+    }
+    #boot-message button {
+      margin-top: 18px; padding: 10px 16px; border: 1px solid #777; border-radius: 8px;
+      background: #171717; color: #fff; font: inherit; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+<div align="center" id="embed-html"></div>
+<div id="boot-message"><div id="boot-text">Preparing King's Quest…</div></div>
+<script>
+(function () {
+  const boot = document.getElementById('boot-message');
+  const bootText = document.getElementById('boot-text');
+  const RETRY_KEY = 'kq1agi-coi-retries-v2';
+
+  function setMessage(text) {
+    bootText.textContent = text;
+  }
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = src;
+      script.async = false;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error('Could not load ' + src));
+      document.body.appendChild(script);
+    });
+  }
+
+  async function startAgile() {
+    sessionStorage.removeItem(RETRY_KEY);
+    setMessage("Loading King's Quest…");
+
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('#embed-html canvas, canvas')) {
+        boot.style.display = 'none';
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+
+    try {
+      await loadScript('dialog.js');
+      await loadScript('jszip.min.js');
+      await loadScript('html/html.nocache.js');
+      setTimeout(() => {
+        if (!document.querySelector('#embed-html canvas, canvas')) {
+          setMessage("King's Quest is still loading…");
+        }
+      }, 5000);
+    } catch (error) {
+      observer.disconnect();
+      showRecovery('Game files failed to load.');
+      console.error(error);
+    }
+  }
+
+  function showRecovery(reason) {
+    bootText.innerHTML = '';
+    const wrap = document.createElement('div');
+    const message = document.createElement('div');
+    message.textContent = reason + ' Resetting the browser runtime should fix it.';
+    const button = document.createElement('button');
+    button.textContent = 'Reset and reload';
+    button.onclick = async () => {
+      button.disabled = true;
+      button.textContent = 'Resetting…';
+      sessionStorage.removeItem(RETRY_KEY);
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map(registration => registration.unregister()));
+      }
+      location.reload();
+    };
+    wrap.appendChild(message);
+    wrap.appendChild(button);
+    bootText.appendChild(wrap);
+  }
+
+  async function prepareIsolation() {
+    if (window.crossOriginIsolated) {
+      await startAgile();
+      return;
+    }
+
+    if (!window.isSecureContext || !('serviceWorker' in navigator)) {
+      showRecovery('This browser cannot start the secure game runtime.');
+      return;
+    }
+
+    setMessage('Preparing browser game engine…');
+
+    try {
+      await navigator.serviceWorker.register('coi-serviceworker.js', { scope: './' });
+      await navigator.serviceWorker.ready;
+
+      const retries = Number(sessionStorage.getItem(RETRY_KEY) || '0');
+      if (retries < 2) {
+        sessionStorage.setItem(RETRY_KEY, String(retries + 1));
+        setMessage('Starting game engine…');
+        location.reload();
+        return;
+      }
+
+      showRecovery('The browser security layer did not activate.');
+    } catch (error) {
+      console.error(error);
+      showRecovery('The browser security layer could not start.');
+    }
+  }
+
+  document.addEventListener('contextmenu', event => event.preventDefault());
+  document.getElementById('embed-html').addEventListener('mousedown', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    window.focus();
+  }, false);
+  document.getElementById('embed-html').addEventListener('mouseup', event => {
+    event.preventDefault();
+    event.stopPropagation();
+  }, false);
+
+  prepareIsolation();
+})();
+</script>
+</body>
+</html>
