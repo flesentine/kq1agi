@@ -68,7 +68,7 @@ public final class RoomBackgrounds {
         screen.fill();
 
         // 1:1 copy: source pixels are never resampled before WebGL renders the scene.
-        screen.drawPixmap(source, 0, 0, 0, pictureTopPixels, picturePixelWidth, picturePixelHeight);
+        screen.drawPixmap(source, 0, pictureTopPixels);
 
         Texture texture = new Texture(screen);
         texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
