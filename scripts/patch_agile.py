@@ -32,7 +32,7 @@ def replace_exact(rel: str, old: str, new: str, expected: int = 1) -> None:
     write(rel, text.replace(old, new))
 
 
-# Keep the browser build focused on the supplied King's Quest copy and make it embedded.
+# Keep the browser build focused on King's Quest. The commercial game data is imported by the user once and then stored in the browser.
 games_path = p('assets/data/games.json')
 games = json.loads(games_path.read_text())
 kq1 = next((app for app in games.get('apps', []) if str(app.get('gameId', '')).upper() == 'KQ1'), None)
@@ -40,10 +40,19 @@ if not kq1:
     raise RuntimeError('Could not find KQ1 in assets/data/games.json')
 kq1['name'] = "King's Quest"
 kq1['displayName'] = "King's Quest"
-kq1['filePath'] = 'games/kq1.zip'
-kq1['fileType'] = 'ZIP'
+kq1['filePath'] = ''
+kq1['fileType'] = 'UNK'
 games['apps'] = [kq1]
 games_path.write_text(json.dumps(games, indent=2) + '\n')
+
+# After the first KQ1 import, launch immediately instead of making the user click the game a second time.
+rel = 'core/src/main/java/com/agifans/agile/HomeScreen.java'
+text = read(rel)
+old = '                                showGamePage(appConfigItem, false);'
+if text.count(old) != 1:
+    raise RuntimeError('HomeScreen import-complete launch site not found')
+text = text.replace(old, old + '\n                                processGameSelection(appConfigItem);')
+write(rel, text)
 
 # GitHub Pages is hosted under /kq1agi/. Ignore the URL path and launch KQ1 immediately.
 rel = 'html/src/main/java/com/agifans/agile/gwt/GwtLauncher.java'
