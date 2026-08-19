@@ -42,6 +42,30 @@ def image_info(data: bytes):
     return None
 
 
+# Prefer the explicitly staged master. This prevents older experimental room_001*
+# candidates from ever winning simply because they happen to be larger.
+master = PARTS_ROOT / "room_001_master_q95"
+if master.is_dir():
+    parts = sorted(master.glob("part_*.b64"))
+    if parts:
+        encoded = "".join(p.read_text().strip() for p in parts)
+        data = base64.b64decode(encoded, validate=True)
+        info = image_info(data)
+        if info is None:
+            raise SystemExit("room_001_master_q95 is not a complete PNG/JPEG")
+        ext, width, height = info
+        if (width, height) != EXPECTED:
+            raise SystemExit(f"room_001_master_q95 is {width}x{height}, expected {EXPECTED[0]}x{EXPECTED[1]}")
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        for old in OUT_DIR.glob("room_001_hires.*"):
+            old.unlink()
+        out = OUT_DIR / f"room_001_hires.{ext}"
+        out.write_bytes(data)
+        sha = hashlib.sha256(data).hexdigest()
+        print(f"selected MASTER room_001_master_q95 -> {out.relative_to(ROOT)} ({len(data):,} bytes, sha256={sha})")
+        raise SystemExit(0)
+
+
 candidates = []
 for folder in sorted(PARTS_ROOT.glob("room_001*")):
     if not folder.is_dir():
@@ -68,8 +92,6 @@ for folder in sorted(PARTS_ROOT.glob("room_001*")):
 if not candidates:
     raise SystemExit(f"No complete {EXPECTED[0]}x{EXPECTED[1]} room-1 image found in {PARTS_ROOT}")
 
-# Every candidate has the exact requested pixel dimensions. Prefer the largest encoded
-# source so we keep the highest-quality version that was staged in the repository.
 candidates.sort(reverse=True, key=lambda item: item[0])
 size, source_name, ext, data = candidates[0]
 OUT_DIR.mkdir(parents=True, exist_ok=True)
