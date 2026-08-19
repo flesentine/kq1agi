@@ -8,7 +8,7 @@ The browser build is pinned to AGILE commit `81c42ba63b3b7f5fb260d282592681c097d
 
 ## Play
 
-Once GitHub Pages is enabled for this repository, the game is published at:
+GitHub Pages is deployed by the repository's **GitHub Actions** workflow at:
 
 **https://flesentine.github.io/kq1agi/**
 
