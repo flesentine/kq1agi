@@ -17,15 +17,10 @@ import java.util.Set;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.files.FileHandle;
-import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 
-/** Loads optional modern replacement artwork for AGI rooms at its native source resolution. */
+/** Loads optional modern replacement artwork for AGI rooms at native source resolution. */
 public final class RoomBackgrounds {
-    private static final int AGI_SCREEN_HEIGHT = 200;
-    private static final int AGI_PICTURE_TOP = 8;
-    private static final int AGI_PICTURE_HEIGHT = 168;
-
     private static final Map<Integer, Texture> textures = new HashMap<Integer, Texture>();
     private static final Set<Integer> missing = new HashSet<Integer>();
 
@@ -50,31 +45,11 @@ public final class RoomBackgrounds {
             return null;
         }
 
-        Pixmap source = new Pixmap(file);
-
-        // Keep every source pixel. The replacement artwork represents the 168-line AGI
-        // picture area, so only add the black top/bottom screen bands at the same scale.
-        // There is no crop, intermediate 320px framebuffer, or arbitrary texture cap.
-        int picturePixelWidth = source.getWidth();
-        int picturePixelHeight = source.getHeight();
-        int screenPixelHeight = Math.max(1, Math.round(
-                picturePixelHeight * (AGI_SCREEN_HEIGHT / (float)AGI_PICTURE_HEIGHT)));
-        int pictureTopPixels = Math.round(
-                picturePixelHeight * (AGI_PICTURE_TOP / (float)AGI_PICTURE_HEIGHT));
-
-        Pixmap screen = new Pixmap(picturePixelWidth, screenPixelHeight, Pixmap.Format.RGBA8888);
-        screen.setBlending(Pixmap.Blending.None);
-        screen.setColor(0, 0, 0, 1);
-        screen.fill();
-
-        // 1:1 copy: source pixels are never resampled before WebGL renders the scene.
-        screen.drawPixmap(source, 0, pictureTopPixels);
-
-        Texture texture = new Texture(screen);
+        // Do not copy, pad, crop, or resample the replacement art here.
+        // Upload the source image directly as the WebGL texture so every source pixel
+        // survives until the final on-screen draw.
+        Texture texture = new Texture(file);
         texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-
-        source.dispose();
-        screen.dispose();
         textures.put(room, texture);
         return texture;
     }
@@ -83,9 +58,7 @@ public final class RoomBackgrounds {
         String number = room < 10 ? "00" + room : (room < 100 ? "0" + room : String.valueOf(room));
         String[] extensions = new String[] { "png", "jpg", "jpeg" };
 
-        // Prefer a cache-busting high-resolution asset when one is present. Keeping this
-        // under a different URL prevents an older room_### image from surviving in browser
-        // or service-worker caches after an art replacement.
+        // Cache-busting high-resolution art always wins when present.
         for (String extension : extensions) {
             FileHandle hires = Gdx.files.internal("backgrounds/room_" + number + "_hires." + extension);
             if (hires.exists()) {
@@ -111,13 +84,16 @@ old = '''            batch.draw(
                     0, 0, ADJUSTED_WIDTH, ADJUSTED_HEIGHT,
                     0, 0, AGI_SCREEN_WIDTH, AGI_SCREEN_HEIGHT,
                     false, false);'''
-new = '''            batch.draw(
+new = '''            // AGI's picture area is screen rows 8..175 from the top. In libGDX's
+            // bottom-left coordinate system that is y=24 with a height of 168.
+            // Draw the native-resolution texture directly into that rectangle.
+            batch.draw(
                     roomBackground,
-                    0, 0, ADJUSTED_WIDTH, ADJUSTED_HEIGHT,
+                    0, 24, ADJUSTED_WIDTH, 168,
                     0, 0, roomBackground.getWidth(), roomBackground.getHeight(),
                     false, false);'''
 if text.count(old) != 1:
     raise RuntimeError('Patched GameScreen room-background draw block not found')
 game_screen.write_text(text.replace(old, new))
 
-print('Native-resolution room background patch applied successfully')
+print('Direct native-resolution room background patch applied successfully')
