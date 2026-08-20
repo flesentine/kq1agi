@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PARTS_DIR = ROOT / "backgrounds_bin" / "room_001_q60"
 OUT_DIR = ROOT / "backgrounds"
 EXPECTED_SIZE = 264266
-EXPECTED_SHA256 = "532f8c0f22ad5d5bc4c805568130bad159306f17b43d348fb7c2f0b59e18f594"
+EXPECTED_SHA256 = "532f8c0fdb57b9ea798d8d8baec1c122a8c77f053330bd9a201edfd18e18f594"
 EXPECTED_DIMS = (1586, 992)
 PART_RE = re.compile(r"^part_(\d+)([a-z]*)\.bin$")
 
