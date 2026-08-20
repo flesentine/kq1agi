@@ -43,6 +43,16 @@
     });
   }
 
+  async function refreshServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    const registration = await navigator.serviceWorker.register(
+      'coi-serviceworker.js?v=20260819-1',
+      { scope: './', updateViaCache: 'none' }
+    );
+    await registration.update();
+    await navigator.serviceWorker.ready;
+  }
+
   async function startAgile() {
     sessionStorage.removeItem(RETRY_KEY);
     setMessage("Loading King's Quest…");
@@ -58,7 +68,7 @@
     try {
       await loadScript('dialog.js');
       await loadScript('jszip.min.js');
-      await loadScript('html/html.nocache.js');
+      await loadScript('html/html.nocache.js?v=20260819-1');
       setTimeout(() => {
         if (!document.querySelector('#embed-html canvas, canvas')) {
           setMessage("King's Quest is still loading…");
@@ -94,22 +104,22 @@
   }
 
   async function prepareIsolation() {
-    if (window.crossOriginIsolated) {
-      await startAgile();
-      return;
-    }
-
     if (!window.isSecureContext || !('serviceWorker' in navigator)) {
       showRecovery('This browser cannot start the secure game runtime.');
       return;
     }
 
-    setMessage('Preparing browser game engine…');
-
     try {
-      await navigator.serviceWorker.register('coi-serviceworker.js', { scope: './' });
-      await navigator.serviceWorker.ready;
+      // Always refresh the worker, even when this page is already isolated. Otherwise
+      // an old worker can keep serving an old GWT permutation indefinitely.
+      await refreshServiceWorker();
 
+      if (window.crossOriginIsolated) {
+        await startAgile();
+        return;
+      }
+
+      setMessage('Preparing browser game engine…');
       const retries = Number(sessionStorage.getItem(RETRY_KEY) || '0');
       if (retries < 2) {
         sessionStorage.setItem(RETRY_KEY, String(retries + 1));
