@@ -40,11 +40,33 @@ jobs:
           python3 scripts/assemble_room_backgrounds.py
           ls -lh backgrounds/room_001_hires.*
 
-      - name: Temporary packaged-asset diagnostic
+      - name: Normalize room background to browser-safe PNG
         run: |
-          rm -f backgrounds/room_001_hires.*
-          printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAFUlEQVR4nGNk+M/wnwEJMDGgAcICAILSAga4eZIHAAAAAElFTkSuQmCC' | base64 -d > backgrounds/room_001_hires.png
-          ls -lh backgrounds/room_001_hires.png
+          python3 -m pip install --quiet pillow
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+
+          files = list(Path('backgrounds').glob('room_001_hires.*'))
+          if len(files) != 1:
+              raise SystemExit(f'Expected exactly one room_001_hires image, found: {files}')
+
+          src = files[0]
+          with Image.open(src) as image:
+              image.load()
+              if image.size != (1586, 992):
+                  raise SystemExit(f'Wrong room 1 dimensions: {image.size}')
+              clean = image.convert('RGB')
+
+          out = Path('backgrounds/room_001_hires.png')
+          clean.save(out, format='PNG', optimize=True)
+          if src != out and src.exists():
+              src.unlink()
+
+          with Image.open(out) as verify:
+              verify.load()
+              print(f'clean room background: {verify.size}, {out.stat().st_size:,} bytes, {verify.format}')
+          PY
 
       - name: Add replacement room backgrounds
         run: |
