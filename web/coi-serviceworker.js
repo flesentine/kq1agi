@@ -22,8 +22,16 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  // Always bypass the browser HTTP cache for same-origin game files. GWT's
+  // html.nocache.js chooses the compiled permutation bundle, so serving an old
+  // cached copy can pin the browser to a previous build even after Pages deploys
+  // successfully.
+  const fetchRequest = (new URL(request.url).origin === self.location.origin)
+    ? new Request(request, { cache: 'no-store' })
+    : request;
+
   event.respondWith(
-    fetch(request).then(response => {
+    fetch(fetchRequest).then(response => {
       // Opaque responses cannot be reconstructed with custom headers.
       if (response.status === 0) {
         return response;
