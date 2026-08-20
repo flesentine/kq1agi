@@ -35,9 +35,9 @@ jobs:
           git clone https://github.com/lanceewing/agile-gdx.git agile-gdx
           git -C agile-gdx checkout 81c42ba63b3b7f5fb260d282592681c097d46da9
 
-      - name: Assemble full-resolution room backgrounds
+      - name: Assemble verified room 1 q60 test background
         run: |
-          python3 scripts/assemble_room_backgrounds.py
+          python3 scripts/assemble_room1_q60.py
           ls -lh backgrounds/room_001_hires.*
 
       - name: Normalize room background to browser-safe PNG
@@ -72,6 +72,8 @@ jobs:
         run: |
           mkdir -p agile-gdx/assets/backgrounds
           find backgrounds -maxdepth 1 -type f \( -iname 'room_*.png' -o -iname 'room_*.jpg' -o -iname 'room_*.jpeg' \) -exec cp {} agile-gdx/assets/backgrounds/ \;
+          echo '=== source room assets ==='
+          find agile-gdx/assets/backgrounds -maxdepth 1 -type f -print -exec ls -lh {} \;
 
       - name: Apply browser and real-background patch
         run: |
@@ -86,6 +88,19 @@ jobs:
           chmod +x agile-gdx/gradlew
           cd agile-gdx
           ./gradlew html:dist --no-daemon
+
+      - name: Verify room background reached HTML5 distribution
+        run: |
+          echo '=== room_001 files in HTML dist ==='
+          FILE_HITS="$(find agile-gdx/html/build/dist -type f -iname '*room_001*' -print || true)"
+          printf '%s\n' "$FILE_HITS"
+          echo '=== files referencing room_001_hires in HTML dist ==='
+          REF_HITS="$(grep -RIl --binary-files=without-match 'room_001_hires' agile-gdx/html/build/dist 2>/dev/null || true)"
+          printf '%s\n' "$REF_HITS"
+          if [ -z "$FILE_HITS" ] && [ -z "$REF_HITS" ]; then
+            echo 'ERROR: room_001_hires did not reach the HTML5 distribution/preloader.'
+            exit 1
+          fi
 
       - name: Prepare Pages artifact
         run: |
