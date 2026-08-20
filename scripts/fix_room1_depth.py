@@ -111,17 +111,19 @@ method_marker = '''    private void draw(float delta) {
 '''
 methods = '''    /** Draws only the modern Room 1 pixels that should sit in front of ego. */
     private void drawRoomOneForegroundDepth(SpriteBatch batch, Texture texture) {
-        // Right-side tree trunk and roots. Two overlapping crops follow the
-        // forked trunk without covering the open meadow beside it.
-        drawRoomCrop(batch, texture, 1110, 245, 175, 555);
-        drawRoomCrop(batch, texture, 1260, 165, 190, 635);
+        // Right-side tree. Use several narrow crops that hug the forked trunk
+        // instead of one broad rectangle, so the open meadow remains visible.
+        drawRoomCrop(batch, texture, 1165, 250, 75, 285);
+        drawRoomCrop(batch, texture, 1205, 455, 95, 320);
+        drawRoomCrop(batch, texture, 1285, 180, 90, 430);
+        drawRoomCrop(batch, texture, 1240, 605, 125, 195);
 
-        // Front/lower lip of the wooden bridge. Small stepped crops follow the
-        // bridge arc so Graham's feet can pass naturally behind its near edge.
-        drawRoomCrop(batch, texture, 915, 835, 165, 95);
-        drawRoomCrop(batch, texture, 1050, 855, 175, 90);
-        drawRoomCrop(batch, texture, 1195, 850, 185, 90);
-        drawRoomCrop(batch, texture, 1350, 820, 145, 100);
+        // Front/lower lip of the wooden bridge. These thin stepped crops follow
+        // the near edge without repainting the whole bridge deck over Graham.
+        drawRoomCrop(batch, texture, 915, 875, 145, 55);
+        drawRoomCrop(batch, texture, 1035, 900, 155, 55);
+        drawRoomCrop(batch, texture, 1170, 900, 155, 60);
+        drawRoomCrop(batch, texture, 1305, 865, 115, 55);
     }
 
     /**
