@@ -40,6 +40,12 @@ jobs:
           python3 scripts/assemble_room_backgrounds.py
           ls -lh backgrounds/room_001_hires.*
 
+      - name: Temporary packaged-asset diagnostic
+        run: |
+          rm -f backgrounds/room_001_hires.*
+          printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAFUlEQVR4nGNk+M/wnwEJMDGgAcICAILSAga4eZIHAAAAAElFTkSuQmCC' | base64 -d > backgrounds/room_001_hires.png
+          ls -lh backgrounds/room_001_hires.png
+
       - name: Add replacement room backgrounds
         run: |
           mkdir -p agile-gdx/assets/backgrounds
