@@ -23,7 +23,6 @@ import com.badlogic.gdx.graphics.Texture;
 public final class RoomBackgrounds {
     private static final Map<Integer, Texture> textures = new HashMap<Integer, Texture>();
     private static final Set<Integer> missing = new HashSet<Integer>();
-    private static Texture diagnosticTexture;
 
     private RoomBackgrounds() {
     }
@@ -33,17 +32,6 @@ public final class RoomBackgrounds {
     }
 
     public static Texture getTexture(int room) {
-        // TEMP DIAGNOSTIC: use a built-in AGILE image that the browser already loads
-        // successfully elsewhere in GameScreen. If this appears, the draw path and
-        // Texture loading both work; the room background asset packaging is the bug.
-        if (room == 1) {
-            if (diagnosticTexture == null) {
-                diagnosticTexture = new Texture("png/keyboard_icon.png");
-                diagnosticTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
-            }
-            return diagnosticTexture;
-        }
-
         if (textures.containsKey(room)) {
             return textures.get(room);
         }
@@ -57,6 +45,8 @@ public final class RoomBackgrounds {
             return null;
         }
 
+        // Load the packaged room image directly. Do not create an intermediate
+        // 320x200 Pixmap; WebGL keeps the source texture at its native dimensions.
         Texture texture = new Texture(file);
         texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
         textures.put(room, texture);
@@ -103,4 +93,4 @@ if text.count(old) != 1:
     raise RuntimeError('Patched GameScreen room-background draw block not found')
 game_screen.write_text(text.replace(old, new))
 
-print('Built-in texture diagnostic patch applied successfully')
+print('Packaged native-resolution room background patch applied successfully')
