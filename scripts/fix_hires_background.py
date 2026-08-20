@@ -17,7 +17,6 @@ import java.util.Set;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.files.FileHandle;
-import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 
 /** Loads optional modern replacement artwork for AGI rooms at native source resolution. */
@@ -34,19 +33,13 @@ public final class RoomBackgrounds {
     }
 
     public static Texture getTexture(int room) {
-        // TEMP DIAGNOSTIC: room 1 ignores files completely and returns a texture created
-        // in memory. If this magenta rectangle appears, SpriteBatch/draw order is good
-        // and the real problem is HTML5 asset loading. If it stays black, the bug is in
-        // the draw/compositing path instead.
+        // TEMP DIAGNOSTIC: use a built-in AGILE image that the browser already loads
+        // successfully elsewhere in GameScreen. If this appears, the draw path and
+        // Texture loading both work; the room background asset packaging is the bug.
         if (room == 1) {
             if (diagnosticTexture == null) {
-                Pixmap test = new Pixmap(8, 8, Pixmap.Format.RGBA8888);
-                test.setBlending(Pixmap.Blending.None);
-                test.setColor(1f, 0f, 1f, 1f);
-                test.fill();
-                diagnosticTexture = new Texture(test);
+                diagnosticTexture = new Texture("png/keyboard_icon.png");
                 diagnosticTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
-                test.dispose();
             }
             return diagnosticTexture;
         }
@@ -110,4 +103,4 @@ if text.count(old) != 1:
     raise RuntimeError('Patched GameScreen room-background draw block not found')
 game_screen.write_text(text.replace(old, new))
 
-print('Diagnostic room-1 background patch applied successfully')
+print('Built-in texture diagnostic patch applied successfully')
