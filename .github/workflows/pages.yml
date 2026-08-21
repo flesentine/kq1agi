@@ -125,6 +125,8 @@ jobs:
           cp agile-gdx/LICENSE _site/LICENSE-AGILE.txt
           cp "$GITHUB_WORKSPACE/web/index.html" _site/index.html
           cp "$GITHUB_WORKSPACE/web/coi-serviceworker.js" _site/coi-serviceworker.js
+          mkdir -p _site/backgrounds
+          find backgrounds -maxdepth 1 -type f \( -iname 'room_*.png' -o -iname 'room_*.jpg' -o -iname 'room_*.jpeg' \) -exec cp {} _site/backgrounds/ \;
           touch _site/.nojekyll
 
       - name: Verify editor controls in Pages artifact
@@ -133,7 +135,8 @@ jobs:
           grep -q 'id="export-bg-button"' _site/index.html
           grep -q '20260821-export-bg-1' _site/index.html
           grep -q 'room_001_hires.png' _site/index.html
-          echo 'PAINT and EXPORT BG controls verified in Pages artifact'
+          test -f _site/backgrounds/room_001_hires.png
+          echo 'PAINT, EXPORT BG, and clean Room 1 background verified in Pages artifact'
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
