@@ -89,8 +89,15 @@ jobs:
           python3 scripts/fix_room1_tree_overlay_core.py agile-gdx
           python3 scripts/add_scene_mask_editor.py agile-gdx
           python3 scripts/fix_scene_mask_editor.py agile-gdx
-          python3 scripts/add_scene_mask_zoom.py agile-gdx
+          python3 scripts/install_scene_mask_controls.py agile-gdx
           cp web/coi-serviceworker.js agile-gdx/html/webapp/coi-serviceworker.js
+
+      - name: Verify scene mask editor patch landed
+        run: |
+          grep -q 'Input.Keys.F2' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
+          grep -q 'F2 PAINT' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
+          grep -q 'getViewMagnification' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
+          echo 'scene mask editor controls verified in generated source'
 
       - name: Build AGILE HTML5 app
         run: |
@@ -119,6 +126,12 @@ jobs:
           cp "$GITHUB_WORKSPACE/web/index.html" _site/index.html
           cp "$GITHUB_WORKSPACE/web/coi-serviceworker.js" _site/coi-serviceworker.js
           touch _site/.nojekyll
+
+      - name: Verify visible paint button in Pages artifact
+        run: |
+          grep -q 'id="paint-button"' _site/index.html
+          grep -q '20260821-paint-button-1' _site/index.html
+          echo 'visible PAINT button verified in Pages artifact'
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
