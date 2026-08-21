@@ -89,10 +89,20 @@ if text.count(old_mode) != 1:
     raise RuntimeError('SceneMaskEditor HUD mode line not found')
 text = text.replace(old_mode, new_mode)
 
+# AGILE has its own com.agifans.agile.Character class in this package, so an
+# unqualified Character resolves to that class rather than java.lang.Character.
+# Qualify these helpers explicitly so the generated editor compiles.
+if text.count('Character.forDigit(value, 16)') != 1:
+    raise RuntimeError('SceneMaskEditor Character.forDigit call not found')
+if text.count('Character.digit(text.charAt(p++), 16)') != 1:
+    raise RuntimeError('SceneMaskEditor Character.digit call not found')
+text = text.replace('Character.forDigit(value, 16)', 'java.lang.Character.forDigit(value, 16)')
+text = text.replace('Character.digit(text.charAt(p++), 16)', 'java.lang.Character.digit(text.charAt(p++), 16)')
+
 text = text.replace('M toggles paint mode.', '` toggles paint mode.')
 text = text.replace('if (keycode == Input.Keys.M) {', 'if (keycode == Input.Keys.GRAVE) {')
 text = text.replace('"M test | 1 front | 2 block | 3 behind | E erase | [ ] size | C clear | X copy"',
                     '"` test | 1 front | 2 block | 3 behind | E erase | [ ] size | C clear | X copy"')
 editor.write_text(text)
 
-print('Scene mask editor refined: normal room controls preserved; backtick toggles editor; eraser targets selected layer')
+print('Scene mask editor refined: normal room controls preserved; java.lang.Character qualified; backtick toggles editor; eraser targets selected layer')
