@@ -46,7 +46,8 @@ if text.count(editor_control) != 1:
 animated.write_text(text.replace(editor_control, room1_control))
 
 # Make E erase the currently selected layer (front/block/behind) rather than
-# always erasing the foreground layer.
+# always erasing the foreground layer, and use backtick as the editor toggle so
+# ordinary typed M characters still reach the AGI parser.
 editor = root / 'core/src/main/java/com/agifans/agile/SceneMaskEditor.java'
 text = editor.read_text()
 text = text.replace('    private static final int ERASER = 3;\n', '')
@@ -87,6 +88,11 @@ new_mode = '            String baseMode = mode == OCCLUDER ? "FRONT" : mode == C
 if text.count(old_mode) != 1:
     raise RuntimeError('SceneMaskEditor HUD mode line not found')
 text = text.replace(old_mode, new_mode)
+
+text = text.replace('M toggles paint mode.', '` toggles paint mode.')
+text = text.replace('if (keycode == Input.Keys.M) {', 'if (keycode == Input.Keys.GRAVE) {')
+text = text.replace('"M test | 1 front | 2 block | 3 behind | E erase | [ ] size | C clear | X copy"',
+                    '"` test | 1 front | 2 block | 3 behind | E erase | [ ] size | C clear | X copy"')
 editor.write_text(text)
 
-print('Scene mask editor refined: normal room controls preserved; eraser targets selected layer')
+print('Scene mask editor refined: normal room controls preserved; backtick toggles editor; eraser targets selected layer')
