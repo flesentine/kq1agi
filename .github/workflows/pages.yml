@@ -127,11 +127,13 @@ jobs:
           cp "$GITHUB_WORKSPACE/web/coi-serviceworker.js" _site/coi-serviceworker.js
           touch _site/.nojekyll
 
-      - name: Verify visible paint button in Pages artifact
+      - name: Verify editor controls in Pages artifact
         run: |
           grep -q 'id="paint-button"' _site/index.html
-          grep -q '20260821-paint-button-1' _site/index.html
-          echo 'visible PAINT button verified in Pages artifact'
+          grep -q 'id="export-bg-button"' _site/index.html
+          grep -q '20260821-export-bg-1' _site/index.html
+          grep -q 'room_001_hires.png' _site/index.html
+          echo 'PAINT and EXPORT BG controls verified in Pages artifact'
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
