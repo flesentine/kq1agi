@@ -17,16 +17,37 @@
       margin-top: 18px; padding: 10px 16px; border: 1px solid #777; border-radius: 8px;
       background: #171717; color: #fff; font: inherit; cursor: pointer;
     }
+    #paint-button {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      z-index: 10001;
+      display: none;
+      padding: 9px 13px;
+      border: 2px solid #fff;
+      border-radius: 8px;
+      background: rgba(15, 15, 15, 0.90);
+      color: #fff;
+      font: 700 13px system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      letter-spacing: .04em;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,.45);
+    }
+    #paint-button:hover { background: #333; }
+    #paint-button:active { transform: translateY(1px); }
   </style>
 </head>
 <body>
 <div align="center" id="embed-html"></div>
+<button id="paint-button" type="button" title="Toggle live scene-mask paint mode">PAINT</button>
 <div id="boot-message"><div id="boot-text">Preparing King's Quest…</div></div>
 <script>
 (function () {
   const boot = document.getElementById('boot-message');
   const bootText = document.getElementById('boot-text');
-  const RETRY_KEY = 'kq1agi-coi-retries-v2';
+  const paintButton = document.getElementById('paint-button');
+  const RETRY_KEY = 'kq1agi-coi-retries-v3';
+  const BUILD_TAG = '20260821-paint-button-1';
 
   function setMessage(text) {
     bootText.textContent = text;
@@ -43,10 +64,44 @@
     });
   }
 
+  function sendF2() {
+    const canvas = document.querySelector('#embed-html canvas, canvas');
+    if (canvas) canvas.focus();
+    window.focus();
+
+    function fire(type) {
+      const event = new KeyboardEvent(type, {
+        key: 'F2',
+        code: 'F2',
+        bubbles: true,
+        cancelable: true
+      });
+      // libGDX's GWT backend reads the legacy browser key code.
+      try { Object.defineProperty(event, 'keyCode', { get: () => 113 }); } catch (e) {}
+      try { Object.defineProperty(event, 'which', { get: () => 113 }); } catch (e) {}
+      (canvas || document).dispatchEvent(event);
+      document.dispatchEvent(event);
+      window.dispatchEvent(event);
+    }
+
+    fire('keydown');
+    setTimeout(() => fire('keyup'), 25);
+  }
+
+  paintButton.addEventListener('mousedown', event => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  paintButton.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    sendF2();
+  });
+
   async function refreshServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
     const registration = await navigator.serviceWorker.register(
-      'coi-serviceworker.js?v=20260819-1',
+      'coi-serviceworker.js?v=' + BUILD_TAG,
       { scope: './', updateViaCache: 'none' }
     );
     await registration.update();
@@ -60,18 +115,21 @@
     const observer = new MutationObserver(() => {
       if (document.querySelector('#embed-html canvas, canvas')) {
         boot.style.display = 'none';
+        paintButton.style.display = 'block';
         observer.disconnect();
       }
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
     try {
-      await loadScript('dialog.js');
-      await loadScript('jszip.min.js');
-      await loadScript('html/html.nocache.js?v=20260819-1');
+      await loadScript('dialog.js?v=' + BUILD_TAG);
+      await loadScript('jszip.min.js?v=' + BUILD_TAG);
+      await loadScript('html/html.nocache.js?v=' + BUILD_TAG);
       setTimeout(() => {
         if (!document.querySelector('#embed-html canvas, canvas')) {
           setMessage("King's Quest is still loading…");
+        } else {
+          paintButton.style.display = 'block';
         }
       }, 5000);
     } catch (error) {
@@ -82,6 +140,7 @@
   }
 
   function showRecovery(reason) {
+    paintButton.style.display = 'none';
     bootText.innerHTML = '';
     const wrap = document.createElement('div');
     const message = document.createElement('div');
@@ -110,8 +169,6 @@
     }
 
     try {
-      // Always refresh the worker, even when this page is already isolated. Otherwise
-      // an old worker can keep serving an old GWT permutation indefinitely.
       await refreshServiceWorker();
 
       if (window.crossOriginIsolated) {
