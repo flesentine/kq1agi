@@ -17,10 +17,9 @@
       margin-top: 18px; padding: 10px 16px; border: 1px solid #777; border-radius: 8px;
       background: #171717; color: #fff; font: inherit; cursor: pointer;
     }
-    #paint-button {
+    #paint-button, #export-bg-button {
       position: fixed;
       top: 14px;
-      right: 14px;
       z-index: 10001;
       display: none;
       padding: 9px 13px;
@@ -33,12 +32,15 @@
       cursor: pointer;
       box-shadow: 0 2px 8px rgba(0,0,0,.45);
     }
-    #paint-button:hover { background: #333; }
-    #paint-button:active { transform: translateY(1px); }
+    #paint-button { right: 14px; }
+    #export-bg-button { right: 88px; }
+    #paint-button:hover, #export-bg-button:hover { background: #333; }
+    #paint-button:active, #export-bg-button:active { transform: translateY(1px); }
   </style>
 </head>
 <body>
 <div align="center" id="embed-html"></div>
+<button id="export-bg-button" type="button" title="Download the clean high-resolution room background">EXPORT BG</button>
 <button id="paint-button" type="button" title="Toggle live scene-mask paint mode">PAINT</button>
 <div id="boot-message"><div id="boot-text">Preparing King's Quest…</div></div>
 <script>
@@ -46,8 +48,9 @@
   const boot = document.getElementById('boot-message');
   const bootText = document.getElementById('boot-text');
   const paintButton = document.getElementById('paint-button');
-  const RETRY_KEY = 'kq1agi-coi-retries-v3';
-  const BUILD_TAG = '20260821-paint-button-1';
+  const exportBgButton = document.getElementById('export-bg-button');
+  const RETRY_KEY = 'kq1agi-coi-retries-v4';
+  const BUILD_TAG = '20260821-export-bg-1';
 
   function setMessage(text) {
     bootText.textContent = text;
@@ -76,7 +79,6 @@
         bubbles: true,
         cancelable: true
       });
-      // libGDX's GWT backend reads the legacy browser key code.
       try { Object.defineProperty(event, 'keyCode', { get: () => 113 }); } catch (e) {}
       try { Object.defineProperty(event, 'which', { get: () => 113 }); } catch (e) {}
       (canvas || document).dispatchEvent(event);
@@ -88,6 +90,48 @@
     setTimeout(() => fire('keyup'), 25);
   }
 
+  async function exportCleanBackground() {
+    const paths = [
+      'backgrounds/room_001_hires.png',
+      'backgrounds/room_001.png'
+    ];
+
+    exportBgButton.disabled = true;
+    const oldText = exportBgButton.textContent;
+    exportBgButton.textContent = 'EXPORTING…';
+
+    try {
+      let response = null;
+      let source = null;
+      for (const path of paths) {
+        const candidate = await fetch(path + '?v=' + BUILD_TAG, { cache: 'no-store' });
+        if (candidate.ok) {
+          response = candidate;
+          source = path;
+          break;
+        }
+      }
+      if (!response) throw new Error('No clean Room 1 background asset was found.');
+
+      const blob = await response.blob();
+      const extension = source.endsWith('.png') ? 'png' : 'jpg';
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'kq1_room_001_clean_background.' + extension;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+    } catch (error) {
+      console.error(error);
+      alert('Could not export the clean room background. ' + error.message);
+    } finally {
+      exportBgButton.disabled = false;
+      exportBgButton.textContent = oldText;
+    }
+  }
+
   paintButton.addEventListener('mousedown', event => {
     event.preventDefault();
     event.stopPropagation();
@@ -96,6 +140,16 @@
     event.preventDefault();
     event.stopPropagation();
     sendF2();
+  });
+
+  exportBgButton.addEventListener('mousedown', event => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  exportBgButton.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    exportCleanBackground();
   });
 
   async function refreshServiceWorker() {
@@ -116,6 +170,7 @@
       if (document.querySelector('#embed-html canvas, canvas')) {
         boot.style.display = 'none';
         paintButton.style.display = 'block';
+        exportBgButton.style.display = 'block';
         observer.disconnect();
       }
     });
@@ -130,6 +185,7 @@
           setMessage("King's Quest is still loading…");
         } else {
           paintButton.style.display = 'block';
+          exportBgButton.style.display = 'block';
         }
       }, 5000);
     } catch (error) {
@@ -141,6 +197,7 @@
 
   function showRecovery(reason) {
     paintButton.style.display = 'none';
+    exportBgButton.style.display = 'none';
     bootText.innerHTML = '';
     const wrap = document.createElement('div');
     const message = document.createElement('div');
