@@ -88,6 +88,7 @@ jobs:
           python3 scripts/fix_room1_tree_hard_collision.py agile-gdx
           python3 scripts/fix_room1_tree_overlay_core.py agile-gdx
           python3 scripts/add_scene_mask_editor.py agile-gdx
+          python3 scripts/fix_scene_mask_editor.py agile-gdx
           cp web/coi-serviceworker.js agile-gdx/html/webapp/coi-serviceworker.js
 
       - name: Build AGILE HTML5 app
