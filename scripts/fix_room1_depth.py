@@ -10,22 +10,6 @@ if len(sys.argv) != 2:
 root = Path(sys.argv[1]).resolve()
 
 
-def row_runs(bits, width, y):
-    """Return contiguous true runs on one row as (start, end) pairs."""
-    runs = []
-    x = 0
-    base = y * width
-    while x < width:
-        if bits[base + x]:
-            start = x
-            while x < width and bits[base + x]:
-                x += 1
-            runs.append((start, x - 1))
-        else:
-            x += 1
-    return runs
-
-
 # ---------------------------------------------------------------------------
 # 1. Suppress Room 1 water-only legacy animated objects.
 # ---------------------------------------------------------------------------
@@ -73,13 +57,19 @@ if text.count(marker) != 1:
 text = text.replace(marker, helper + marker)
 game_state.write_text(text)
 
+
 # ---------------------------------------------------------------------------
-# 2. Build the modern visual tree mask from the actual Room 1 painting, then
-#    hand-tune the part of the trunk Graham can walk beside.
+# 2. Build the Room 1 tree VISUAL mask.
 #
-# Visual depth and physical collision are intentionally separate. The tree may
-# cover Graham when he walks behind it, but only the tiny root footprint later
-# in this file is physically solid.
+# The important distinction is silhouette vs texture. The earlier mask selected
+# individual brown/dark bark pixels. That let gaps in the painted bark texture
+# punch holes through Graham, producing the shredded/cut-up look seen in play
+# testing. We still use the source painting to locate the tree, but then make the
+# interactive central trunk a SOLID silhouette at AGI resolution.
+#
+# Visual occlusion and collision remain independent. The full trunk can hide
+# Graham when he is behind it; only the small ground-contact footprint later in
+# this file can physically stop him.
 # ---------------------------------------------------------------------------
 background = root / 'assets/backgrounds/room_001_hires.png'
 if not background.exists():
@@ -96,7 +86,8 @@ pixels = image.load()
 mask = Image.new('L', (width, height), 0)
 mask_pixels = mask.load()
 
-# Broad ROI around the modern tree. Colour tests remove most meadow/grass.
+# Broad ROI around the right-side tree. Colour tests are only the first-pass
+# locator; the trunk is solidified after downsampling.
 x0 = int(width * 0.695)
 x1 = width
 y0 = int(height * 0.035)
@@ -128,7 +119,7 @@ for y in range(y0, y1):
 if not (25000 <= selected <= 140000):
     raise RuntimeError(f'Room 1 tree mask looks implausible: {selected} source pixels selected')
 
-# Reduce to AGI's true 160x168 visual-priority plane.
+# Reduce to AGI's 160x168 visual-priority plane.
 small = mask.resize((160, 168), Image.Resampling.BOX)
 small_pixels = small.load()
 
@@ -137,47 +128,35 @@ for y in range(168):
     for x in range(160):
         covered = small_pixels[x, y] >= 48
 
-        # Guaranteed open meadow left of the lower tree.
+        # Known open meadow immediately left of the lower tree.
         if (x < 126) and (y > 80):
             covered = False
 
         tree_bits[(y * 160) + x] = covered
 
-# Hand-tune the interactive left edge of the trunk. This is where play testing
-# showed Graham being cropped even though his sprite was still visibly left of
-# the painted bark. Preserve the detected right edge, close only tiny 1-2 pixel
-# holes inside bark, and pull the left occlusion edge inward by two AGI pixels.
-for y in range(80, 123):
-    runs = row_runs(tree_bits, 160, y)
-    if not runs:
+# The trunk occupies approximately x=128..150 through the interactive depth
+# band. Fill the detected outer edges SOLIDLY so bark highlights, shadows and
+# texture cannot create transparent holes through Graham. This is deliberately
+# limited to the central/lower trunk; upper branches retain their detected shape.
+for y in range(88, 134):
+    base = y * 160
+    xs = [x for x in range(128, 151) if tree_bits[base + x]]
+    if not xs:
         continue
 
-    # Merge only tiny gaps. Larger gaps are real fork/branch openings and stay open.
-    merged = []
-    cur_start, cur_end = runs[0]
-    for start, end in runs[1:]:
-        if start - cur_end - 1 <= 2:
-            cur_end = end
-        else:
-            merged.append((cur_start, cur_end))
-            cur_start, cur_end = start, end
-    merged.append((cur_start, cur_end))
+    left = min(xs)
+    right = max(xs)
 
-    # Clear the row and rebuild a deliberately conservative silhouette.
-    base = y * 160
-    for x in range(160):
+    # Clear stray fragments in the interactive corridor, then fill the actual
+    # detected trunk span as one opaque silhouette.
+    for x in range(124, 152):
         tree_bits[base + x] = False
+    for x in range(left, right + 1):
+        tree_bits[base + x] = True
 
-    for run_index, (start, end) in enumerate(merged):
-        tuned_start = start
-        if run_index == 0:
-            tuned_start = min(end, start + 2)
-        for x in range(tuned_start, end + 1):
-            tree_bits[base + x] = True
-
-# A final hard guard against any accidental left-side grass fragments in the
-# exact band where Graham was clipping in screenshots.
-for y in range(80, 109):
+# Hard safety: no lower-tree visual pixel may extend into the meadow farther
+# left than x=128 in the exact band where the screenshots showed false clipping.
+for y in range(80, 125):
     base = y * 160
     for x in range(0, 128):
         tree_bits[base + x] = False
@@ -203,10 +182,11 @@ modern_depth = root / 'core/src/main/java/com/agifans/agile/ModernRoomDepth.java
 modern_depth.write_text('''package com.agifans.agile;
 
 /**
- * Hand-tuned visual priority and physical root collision for the modern Room 1 tree.
+ * Modern visual depth and ground collision for the Room 1 painted tree.
  *
- * The visual silhouette is generated from the painting and tuned at AGI pixel
- * resolution. Physical collision is a separate, small root footprint.
+ * The tree silhouette can occlude actors, but only its ground-contact footprint
+ * is physically solid. This mirrors perspective adventure-game depth: Graham
+ * may walk behind the vertical trunk but cannot pass through the roots/base.
  */
 public final class ModernRoomDepth {
     private static final int WIDTH = 160;
@@ -248,12 +228,9 @@ public final class ModernRoomDepth {
     }
 
     /**
-     * Neutralise only old BLOCKING control pixels in the full old-tree corridor.
-     *
-     * This corridor must extend up the trunk because Sierra's invisible original
-     * tree geometry can otherwise stop Graham while he is supposed to be walking
-     * behind the new painted tree. Water (3) and special (2) controls are never
-     * neutralised; the caller checks the original control value first.
+     * Sierra's original tree block is in the wrong place for the new painting.
+     * Only old blocking colours (0/1) are neutralised by the caller; water and
+     * special controls remain untouched.
      */
     public static boolean insideOldTreeControlCorridor(
             String gameId, int room, int x, int y) {
@@ -262,28 +239,23 @@ public final class ModernRoomDepth {
                 && y >= 78 && y <= 140;
     }
 
-    /** Small manual root/base collision footprint. No vertical trunk collision. */
+    /**
+     * Physical tree footprint: ONLY the three ground-contact rows.
+     *
+     * Earlier builds blocked rows far up the trunk, which trapped Graham at the
+     * wrong depth. Approaching from the foreground now stops with his baseline
+     * just below this footprint, while y<=132 remains freely walkable behind it.
+     */
     private static boolean treeBasePoint(int x, int y) {
-        int left;
-        int right;
-
         switch (y) {
-            case 125: left = 134; right = 145; break;
-            case 126: left = 134; right = 146; break;
-            case 127: left = 134; right = 146; break;
-            case 128: left = 135; right = 146; break;
-            case 129: left = 136; right = 146; break;
-            case 130: left = 136; right = 145; break;
-            case 131: left = 137; right = 145; break;
-            case 132: left = 137; right = 145; break;
-            case 133: left = 139; right = 144; break;
+            case 133: return x >= 132 && x <= 149;
+            case 134: return x >= 131 && x <= 150;
+            case 135: return x >= 130 && x <= 151;
             default: return false;
         }
-
-        return x >= left && x <= right;
     }
 
-    /** True when Graham's baseline overlaps the physical root/base footprint. */
+    /** True when Graham's baseline overlaps the physical tree base. */
     public static boolean blocksEgoBaseline(
             String gameId, int room, int leftX, int rightX, int baselineY) {
         if (!roomOne(gameId, room)) {
@@ -302,9 +274,10 @@ public final class ModernRoomDepth {
 }
 ''')
 
+
 # ---------------------------------------------------------------------------
-# 3. Make dynamic actor drawing use the modern visual depth map instead of the
-#    invisible original Room 1 picture priority geometry.
+# 3. Dynamic actor drawing uses the modern visual mask instead of Sierra's now
+#    invisible Room 1 picture priority geometry.
 # ---------------------------------------------------------------------------
 animated_object = root / 'core/src/main/java/com/agifans/agile/AnimatedObject.java'
 text = animated_object.read_text()
@@ -328,8 +301,8 @@ old_priority = '''                    // Get the priority colour index for this 
 new_priority = '''                    // Start with Sierra's original picture priority.
                     int priorityIndex = state.priorityPixels[priorityPos];
 
-                    // A replacement painted room must not inherit invisible occluders from
-                    // the old EGA picture. Use its generated visual-only depth map instead.
+                    // Replacement art must not inherit invisible EGA occluders. Use the
+                    // modern painted-room visual mask for this sprite pixel instead.
                     int modernPriority = ModernRoomDepth.priorityFor(
                             state.gameId,
                             state.getVar(Defines.CURROOM),
@@ -339,8 +312,6 @@ new_priority = '''                    // Start with Sierra's original picture pr
                         priorityIndex = modernPriority;
                     }
 
-                    // If this AnimatedObject's priority is greater or equal to the active
-                    // visual priority for this pixel's position, then we'll draw it.
                     if (this.priority >= priorityIndex) {
 '''
 if tail.count(old_priority) != 1:
@@ -350,11 +321,10 @@ if tail.count(old_priority) != 1:
 tail = tail.replace(old_priority, new_priority)
 text = head + tail
 
+
 # ---------------------------------------------------------------------------
-# 4. Remove Sierra's old invisible TREE blocking controls across the old-tree
-#    corridor, but only when the original control is actually a blocker (0/1).
-#    Then apply the tiny modern root footprint. This is the important separation:
-#    the trunk controls Z/occlusion, while only the roots control movement.
+# 4. Remove Sierra's old invisible TREE blockers (only colours 0/1) from the
+#    old-tree corridor, then apply the small modern ground footprint.
 # ---------------------------------------------------------------------------
 old_control = '''                // Get the priority screen priority value for this pixel of the base line.
                 int priority = state.controlPixels[pixelPos];
@@ -365,10 +335,8 @@ new_control = '''                // Get Sierra's original control value for this
                 int priority = state.controlPixels[pixelPos];
                 int baselineX = this.x + (pixelPos - startPixelPos);
 
-                // Sierra's original Room 1 tree is in a different place from the modern
-                // painting. For ego only, neutralise OLD blocking colours (0/1) throughout
-                // that tree corridor so they cannot stop Graham high up the Y/depth axis.
-                // Preserve special=2 and water=3 exactly as-is.
+                // For ego only, neutralise the OLD tree's blocking controls in its old
+                // corridor. Preserve special=2 and water=3 exactly as-is.
                 if ((this.objectNumber == 0)
                         && (priority == 0 || priority == 1)
                         && ModernRoomDepth.insideOldTreeControlCorridor(
@@ -389,8 +357,7 @@ text = text.replace(old_control, new_control)
 
 water_marker = '''            if (entirelyOnWater) {
 '''
-modern_collision = '''            // The modern tree is physically solid only at its small root/base
-            // footprint. Graham may move freely behind the vertical trunk and branches.
+modern_collision = '''            // Only the modern tree's ground-contact footprint is physical.
             if ((this.objectNumber == 0) && canBeHere && ModernRoomDepth.blocksEgoBaseline(
                     state.gameId,
                     state.getVar(Defines.CURROOM),
@@ -409,6 +376,6 @@ text = text.replace(water_marker, modern_collision + water_marker)
 animated_object.write_text(text)
 
 print(
-    f'Room 1 manual tree tuning applied: {tree_count} visual tree pixels; '
-    'old tree blockers neutralised in corridor; collision only at root footprint Y=125..133'
+    f'Room 1 solid-trunk depth applied: {tree_count} visual tree pixels; '
+    'old blockers neutralised; physical collision only at Y=133..135'
 )
