@@ -83,6 +83,7 @@ jobs:
           python3 scripts/fix_hires_background.py agile-gdx
           python3 scripts/fix_room1_depth.py agile-gdx
           python3 scripts/tune_room1_tree.py agile-gdx
+          python3 scripts/fix_room1_overlay_runtime.py agile-gdx
           cp web/coi-serviceworker.js agile-gdx/html/webapp/coi-serviceworker.js
 
       - name: Build AGILE HTML5 app
