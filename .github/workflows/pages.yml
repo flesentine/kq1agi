@@ -90,6 +90,7 @@ jobs:
           python3 scripts/add_scene_mask_editor.py agile-gdx
           python3 scripts/fix_scene_mask_editor.py agile-gdx
           python3 scripts/install_scene_mask_controls.py agile-gdx
+          python3 scripts/seed_room1_depth_matte.py agile-gdx
           cp web/coi-serviceworker.js agile-gdx/html/webapp/coi-serviceworker.js
 
       - name: Verify scene mask editor patch landed
@@ -97,7 +98,9 @@ jobs:
           grep -q 'Input.Keys.F2' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'F2 PAINT' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'getViewMagnification' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
-          echo 'scene mask editor controls verified in generated source'
+          grep -q 'ROOM1_OCCLUDER_RUNS' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
+          grep -q 'agi-scene-mask-editor-v2' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
+          echo 'scene mask editor controls and Room 1 AI matte verified in generated source'
 
       - name: Build AGILE HTML5 app
         run: |
