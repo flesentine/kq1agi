@@ -95,11 +95,9 @@ helpers = '''    private int selectedLayer() {
             data.setSceneMaskRoom(room);
             data.setSceneMaskEnabled(true);
             prefs.putBoolean(key("active"), true);
-            notice("PAINT MODE ON");
         } else {
             saveRoom();
             resetZoom();
-            notice("TEST MODE - MASKS LIVE");
         }
         data.setSceneMaskPaintMode(paintMode);
     }
