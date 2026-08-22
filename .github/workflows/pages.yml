@@ -91,6 +91,7 @@ jobs:
           python3 scripts/fix_scene_mask_editor.py agile-gdx
           python3 scripts/install_scene_mask_controls.py agile-gdx
           python3 scripts/seed_room1_depth_matte.py agile-gdx
+          python3 scripts/adjust_room1_seed_alignment.py agile-gdx
           cp web/coi-serviceworker.js agile-gdx/html/webapp/coi-serviceworker.js
 
       - name: Verify scene mask editor patch landed
@@ -99,8 +100,8 @@ jobs:
           grep -q 'F2 PAINT' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'getViewMagnification' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'ROOM1_OCCLUDER_RUNS' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
-          grep -q 'agi-scene-mask-editor-v2' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
-          echo 'scene mask editor controls and Room 1 AI matte verified in generated source'
+          grep -q 'agi-scene-mask-editor-v3' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
+          echo 'scene mask editor controls and corrected Room 1 AI matte verified in generated source'
 
       - name: Build AGILE HTML5 app
         run: |
@@ -128,7 +129,7 @@ jobs:
           cp agile-gdx/LICENSE _site/LICENSE-AGILE.txt
           cp "$GITHUB_WORKSPACE/web/index.html" _site/index.html
           cp "$GITHUB_WORKSPACE/web/coi-serviceworker.js" _site/coi-serviceworker.js
-          sed -i 's/kq1agi-coi-retries-v4/kq1agi-coi-retries-v5/g; s/20260821-export-bg-1/20260821-seeded-matte-1/g' _site/index.html
+          sed -i 's/kq1agi-coi-retries-v4/kq1agi-coi-retries-v6/g; s/20260821-export-bg-1/20260821-seeded-matte-2/g' _site/index.html
           mkdir -p _site/backgrounds
           find backgrounds -maxdepth 1 -type f \( -iname 'room_*.png' -o -iname 'room_*.jpg' -o -iname 'room_*.jpeg' \) -exec cp {} _site/backgrounds/ \;
           touch _site/.nojekyll
@@ -137,10 +138,10 @@ jobs:
         run: |
           grep -q 'id="paint-button"' _site/index.html
           grep -q 'id="export-bg-button"' _site/index.html
-          grep -q '20260821-seeded-matte-1' _site/index.html
+          grep -q '20260821-seeded-matte-2' _site/index.html
           grep -q 'room_001_hires.png' _site/index.html
           test -f _site/backgrounds/room_001_hires.png
-          echo 'PAINT, EXPORT BG, seeded Room 1 matte cache tag, and clean background verified in Pages artifact'
+          echo 'PAINT, EXPORT BG, corrected Room 1 matte cache tag, and clean background verified in Pages artifact'
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
