@@ -41,7 +41,7 @@
 <body>
 <div align="center" id="embed-html"></div>
 <button id="export-bg-button" type="button" title="Download the clean high-resolution room background">EXPORT BG</button>
-<button id="paint-button" type="button" title="Toggle live scene-mask paint mode">PAINT</button>
+<button id="paint-button" type="button" title="Toggle live scene-mask paint mode (Tab shortcut)">PAINT</button>
 <div id="boot-message"><div id="boot-text">Preparing King's Quest…</div></div>
 <script>
 (function () {
@@ -141,6 +141,15 @@
     event.stopPropagation();
     sendF2();
   });
+
+  // MacBook-friendly shortcut. Tab is not a printable AGI parser character, so
+  // using it for the editor does not sacrifice any command-line input.
+  window.addEventListener('keydown', event => {
+    if (event.key !== 'Tab' || event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
+    event.preventDefault();
+    event.stopPropagation();
+    sendF2();
+  }, true);
 
   exportBgButton.addEventListener('mousedown', event => {
     event.preventDefault();
