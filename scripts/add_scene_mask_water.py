@@ -8,10 +8,9 @@ if len(sys.argv) != 2:
 root = Path(sys.argv[1]).resolve()
 
 # ---------------------------------------------------------------------------
-# Shared transport: add a fourth 160x168 plane for WATER, plus two metadata
-# booleans. WATER_ACTIVE means the painted mask overrides Sierra control color 3.
-# WATER_SEEDED means the worker has copied the room's original water controls into
-# the shared plane so the editor can start from the existing shoreline.
+# Shared transport: add a fourth 160x168 WATER plane plus one metadata bit that
+# says the painted water mask is authoritative. Until WATER is edited, AGI keeps
+# using the room's original control-color-3 water exactly as before.
 # ---------------------------------------------------------------------------
 variable_data = root / 'core/src/main/java/com/agifans/agile/VariableData.java'
 text = variable_data.read_text()
@@ -23,8 +22,6 @@ repl = '''    default boolean getSceneMaskPaintMode() { return false; }
     default void setSceneMaskPaintMode(boolean value) { }
     default boolean getSceneMaskWaterActive() { return false; }
     default void setSceneMaskWaterActive(boolean value) { }
-    default boolean getSceneMaskWaterSeeded() { return false; }
-    default void setSceneMaskWaterSeeded(boolean value) { }
     default boolean getSceneMaskBit(int layer, int x, int y) { return false; }
 '''
 if text.count(anchor) != 1:
@@ -42,8 +39,7 @@ const_anchor = '''    private static final int SCENE_MASK_PAINT_MODE = 522;
 '''
 const_repl = '''    private static final int SCENE_MASK_PAINT_MODE = 522;
     private static final int SCENE_MASK_WATER_ACTIVE = 523;
-    private static final int SCENE_MASK_WATER_SEEDED = 524;
-    private static final int SCENE_MASK_BITS = 525;
+    private static final int SCENE_MASK_BITS = 524;
     private static final int SCENE_MASK_WIDTH = 160;
     private static final int SCENE_MASK_HEIGHT = 168;
     private static final int SCENE_MASK_WORDS = ((SCENE_MASK_WIDTH * SCENE_MASK_HEIGHT) + 31) / 32;
@@ -56,7 +52,7 @@ text = text.replace(const_anchor, const_repl)
 if text.count('Defines.NUMVARS + Defines.NUMFLAGS + 2531') != 2:
     raise RuntimeError('GwtVariableData scene-mask capacity markers not found')
 text = text.replace('Defines.NUMVARS + Defines.NUMFLAGS + 2531',
-                    'Defines.NUMVARS + Defines.NUMFLAGS + 3373')
+                    'Defines.NUMVARS + Defines.NUMFLAGS + 3372')
 
 method_anchor = '''    @Override
     public void setSceneMaskPaintMode(boolean value) {
@@ -80,26 +76,17 @@ method_repl = '''    @Override
         variableArray.set(SCENE_MASK_WATER_ACTIVE, value ? TRUE : FALSE);
     }
 
-    @Override
-    public boolean getSceneMaskWaterSeeded() {
-        return variableArray.get(SCENE_MASK_WATER_SEEDED) == TRUE;
-    }
-
-    @Override
-    public void setSceneMaskWaterSeeded(boolean value) {
-        variableArray.set(SCENE_MASK_WATER_SEEDED, value ? TRUE : FALSE);
-    }
-
     private int sceneMaskIndex(int layer, int x, int y) {
 '''
 if text.count(method_anchor) != 1:
-    raise RuntimeError('GwtVariableData scene-mask paint-mode methods not found')
+    raise RuntimeError('GwtVariableData paint-mode methods not found')
 gwt.write_text(text.replace(method_anchor, method_repl))
 
 # ---------------------------------------------------------------------------
-# Worker semantics. Until WATER is edited, copy the original AGI control-color-3
-# area into the shared cyan layer as a preview. Once edited, the painted layer is
-# authoritative for ego's on.water test.
+# Worker semantics: when custom WATER is active, synthesize AGI control color 3
+# from the cyan mask. Old water pixels not in the mask become ordinary land.
+# This feeds the existing ONWATER/stay-on-water logic and therefore the game's
+# existing swimming animation without replacing any game logic.
 # ---------------------------------------------------------------------------
 runtime = root / 'core/src/main/java/com/agifans/agile/SceneMaskRuntime.java'
 text = runtime.read_text()
@@ -110,23 +97,7 @@ text = text.replace(const, const + '    public static final int WATER = 3;\n')
 
 helper_anchor = '''    public static boolean blocksEgoMovement(GameState state, int leftX, int rightX, int y) {
 '''
-helpers = '''    public static void ensureWaterPreview(GameState state) {
-        VariableData data = state.getVariableData();
-        if (!editorOwnsRoom(state) || data.getSceneMaskWaterActive() || data.getSceneMaskWaterSeeded()) {
-            return;
-        }
-        data.clearSceneMaskLayer(WATER);
-        for (int y = 0; y < 168; y++) {
-            for (int x = 0; x < 160; x++) {
-                if (state.controlPixels[(y * 160) + x] == 3) {
-                    data.setSceneMaskBit(WATER, x, y, true);
-                }
-            }
-        }
-        data.setSceneMaskWaterSeeded(true);
-    }
-
-    public static int effectiveControlPriority(GameState state, int objectNumber,
+helpers = '''    public static int effectiveControlPriority(GameState state, int objectNumber,
             int x, int y, int legacyPriority) {
         VariableData data = state.getVariableData();
         if (objectNumber != 0 || !editorOwnsRoom(state) || !data.getSceneMaskWaterActive()) {
@@ -138,8 +109,6 @@ helpers = '''    public static void ensureWaterPreview(GameState state) {
         if (data.getSceneMaskBit(WATER, x, y)) {
             return 3;
         }
-        // When custom water is active, old control-color-3 pixels become normal
-        // passable land unless they are also painted into the WATER layer.
         return legacyPriority == 3 ? 4 : legacyPriority;
     }
 
@@ -147,22 +116,8 @@ helpers = '''    public static void ensureWaterPreview(GameState state) {
 '''
 if text.count(helper_anchor) != 1:
     raise RuntimeError('SceneMaskRuntime movement helper anchor not found')
-text = text.replace(helper_anchor, helpers)
+runtime.write_text(text.replace(helper_anchor, helpers))
 
-update_anchor = '''    public static void updateOccluderFlag(GameState state) {
-        VariableData data = state.getVariableData();
-'''
-update_repl = '''    public static void updateOccluderFlag(GameState state) {
-        ensureWaterPreview(state);
-        VariableData data = state.getVariableData();
-'''
-if text.count(update_anchor) != 1:
-    raise RuntimeError('SceneMaskRuntime updateOccluderFlag anchor not found')
-runtime.write_text(text.replace(update_anchor, update_repl))
-
-# Feed the custom WATER layer into AGI's existing baseline water test. Everything
-# after this line remains Sierra's normal canBeHere() logic, including ONWATER,
-# stay.on.water / stay.on.land and the game's existing swimming animation logic.
 animated = root / 'core/src/main/java/com/agifans/agile/AnimatedObject.java'
 text = animated.read_text()
 priority_line = '                int priority = state.controlPixels[pixelPos];\n'
@@ -175,7 +130,7 @@ animated.write_text(text.replace(priority_line, priority_repl))
 
 # ---------------------------------------------------------------------------
 # Editor UI/persistence: 4 selects WATER, cyan overlay, W toggles visibility.
-# The first time WATER is edited it starts from the original Sierra water area.
+# First edit activates the custom water boundary for the room.
 # ---------------------------------------------------------------------------
 editor = root / 'core/src/main/java/com/agifans/agile/SceneMaskEditor.java'
 text = editor.read_text()
@@ -202,41 +157,77 @@ line_fields = '''    private int lineAnchorX = -1;
 line_fields_repl = '''    private int lineAnchorX = -1;
     private int lineAnchorY = -1;
     private boolean waterActive;
-    private boolean waterPreviewLoaded;
 '''
 if text.count(line_fields) != 1:
     raise RuntimeError('SceneMaskEditor line-anchor fields not found')
 text = text.replace(line_fields, line_fields_repl)
 
-room_reset = '''        lineAnchorX = -1;
+room_loop = '''        lineAnchorX = -1;
         lineAnchorY = -1;
         for (int layer = 0; layer < 3; layer++) {
 '''
-room_reset_repl = '''        lineAnchorX = -1;
+room_loop_repl = '''        lineAnchorX = -1;
         lineAnchorY = -1;
-        waterPreviewLoaded = false;
         for (int layer = 0; layer < 4; layer++) {
 '''
-if text.count(room_reset) != 1:
-    raise RuntimeError('SceneMaskEditor room reset/load loop not found')
-text = text.replace(room_reset, room_reset_repl)
+if text.count(room_loop) != 1:
+    raise RuntimeError('SceneMaskEditor room load loop not found')
+text = text.replace(room_loop, room_loop_repl)
 
-load_anchor = '''        decode(prefs.getString(key("occluder"), ""), masks[OCCLUDER]);
-        decode(prefs.getString(key("collision"), ""), masks[COLLISION]);
-        decode(prefs.getString(key("behind"), ""), masks[BEHIND]);
-        boolean active = prefs.getBoolean(key("active"), false);
+saved_anchor = '''        String savedOccluder = prefs.getString(key("occluder"), "");
+        String savedCollision = prefs.getString(key("collision"), "");
+        String savedBehind = prefs.getString(key("behind"), "");
 '''
-load_repl = '''        decode(prefs.getString(key("occluder"), ""), masks[OCCLUDER]);
-        decode(prefs.getString(key("collision"), ""), masks[COLLISION]);
-        decode(prefs.getString(key("behind"), ""), masks[BEHIND]);
-        decode(prefs.getString(key("water"), ""), masks[WATER]);
+saved_repl = '''        String savedOccluder = prefs.getString(key("occluder"), "");
+        String savedCollision = prefs.getString(key("collision"), "");
+        String savedBehind = prefs.getString(key("behind"), "");
+        String savedWater = prefs.getString(key("water"), "");
+'''
+if text.count(saved_anchor) != 1:
+    raise RuntimeError('SceneMaskEditor seeded saved-mask block not found')
+text = text.replace(saved_anchor, saved_repl)
+
+load_tail = '''            active = prefs.getBoolean(key("active"), false);
+        }
+        data.setSceneMaskRoom(room);
+'''
+load_tail_repl = '''            active = prefs.getBoolean(key("active"), false);
+        }
+        decode(savedWater, masks[WATER]);
         waterActive = prefs.getBoolean(key("waterActive"), false);
-        waterPreviewLoaded = waterActive;
-        boolean active = prefs.getBoolean(key("active"), false);
+        data.setSceneMaskWaterActive(waterActive);
+        data.setSceneMaskRoom(room);
 '''
-if text.count(load_anchor) != 1:
-    raise RuntimeError('SceneMaskEditor room decode block not found')
-text = text.replace(load_anchor, load_repl)
+if text.count(load_tail) != 1:
+    raise RuntimeError('SceneMaskEditor seeded room-load tail not found')
+text = text.replace(load_tail, load_tail_repl)
+
+sync_old = '''    private void syncAll() {
+        for (int layer = 0; layer < 3; layer++) {
+            data.clearSceneMaskLayer(layer);
+            for (int y = 0; y < HEIGHT; y++) {
+                for (int x = 0; x < WIDTH; x++) {
+                    if (masks[layer][y][x]) data.setSceneMaskBit(layer, x, y, true);
+                }
+            }
+        }
+    }
+'''
+sync_new = '''    private void syncAll() {
+        for (int layer = 0; layer < 4; layer++) {
+            data.clearSceneMaskLayer(layer);
+            for (int y = 0; y < HEIGHT; y++) {
+                for (int x = 0; x < WIDTH; x++) {
+                    if (masks[layer][y][x]) data.setSceneMaskBit(layer, x, y, true);
+                }
+            }
+        }
+        data.setSceneMaskWaterActive(waterActive);
+    }
+'''
+if text.count(sync_old) != 1:
+    raise RuntimeError('SceneMaskEditor syncAll method not found')
+text = text.replace(sync_old, sync_new)
 
 save_anchor = '''        prefs.putString(key("occluder"), encode(masks[OCCLUDER]));
         prefs.putString(key("collision"), encode(masks[COLLISION]));
@@ -254,52 +245,18 @@ if text.count(save_anchor) != 1:
     raise RuntimeError('SceneMaskEditor save block not found')
 text = text.replace(save_anchor, save_repl)
 
-sync_old = '''    private void syncAll() {
-        for (int layer = 0; layer < 3; layer++) {
-            data.clearSceneMaskLayer(layer);
-            for (int y = 0; y < HEIGHT; y++) {
-                for (int x = 0; x < WIDTH; x++) {
-                    if (masks[layer][y][x]) data.setSceneMaskBit(layer, x, y, true);
-                }
-            }
-        }
-    }
+activate_helper_anchor = '''    private boolean optionEraseHeld() {
 '''
-sync_new = '''    private void refreshWaterPreview() {
-        if (waterActive || waterPreviewLoaded || !data.getSceneMaskWaterSeeded()) return;
-        for (int y = 0; y < HEIGHT; y++) {
-            for (int x = 0; x < WIDTH; x++) {
-                masks[WATER][y][x] = data.getSceneMaskBit(WATER, x, y);
-            }
-        }
-        waterPreviewLoaded = true;
-    }
-
-    private void activateWaterMask() {
-        refreshWaterPreview();
+activate_helper = '''    private void activateWaterMask() {
         waterActive = true;
-        waterPreviewLoaded = true;
         data.setSceneMaskWaterActive(true);
-        data.setSceneMaskWaterSeeded(true);
     }
 
-    private void syncAll() {
-        for (int layer = 0; layer < 4; layer++) {
-            data.clearSceneMaskLayer(layer);
-            if (layer == WATER && !waterActive) continue;
-            for (int y = 0; y < HEIGHT; y++) {
-                for (int x = 0; x < WIDTH; x++) {
-                    if (masks[layer][y][x]) data.setSceneMaskBit(layer, x, y, true);
-                }
-            }
-        }
-        data.setSceneMaskWaterActive(waterActive);
-        data.setSceneMaskWaterSeeded(waterActive);
-    }
+    private boolean optionEraseHeld() {
 '''
-if text.count(sync_old) != 1:
-    raise RuntimeError('SceneMaskEditor syncAll method not found')
-text = text.replace(sync_old, sync_new)
+if text.count(activate_helper_anchor) != 1:
+    raise RuntimeError('SceneMaskEditor fast-tool helper anchor not found')
+text = text.replace(activate_helper_anchor, activate_helper)
 
 paint_anchor = '''    private void paint(int cx, int cy, boolean erase) {
         ensureRoom();
@@ -334,10 +291,10 @@ mode_keys = '''        if (keycode == Input.Keys.NUM_1) { mode = OCCLUDER; erase
 mode_keys_repl = '''        if (keycode == Input.Keys.NUM_1) { mode = OCCLUDER; eraser = false; lineAnchorX = -1; lineAnchorY = -1; }
         else if (keycode == Input.Keys.NUM_2) { mode = COLLISION; eraser = false; lineAnchorX = -1; lineAnchorY = -1; }
         else if (keycode == Input.Keys.NUM_3) { mode = BEHIND; eraser = false; lineAnchorX = -1; lineAnchorY = -1; }
-        else if (keycode == Input.Keys.NUM_4) { mode = WATER; eraser = false; lineAnchorX = -1; lineAnchorY = -1; refreshWaterPreview(); }
+        else if (keycode == Input.Keys.NUM_4) { mode = WATER; eraser = false; lineAnchorX = -1; lineAnchorY = -1; }
 '''
 if text.count(mode_keys) != 1:
-    raise RuntimeError('SceneMaskEditor fast-tool mode keys not found')
+    raise RuntimeError('SceneMaskEditor layer selection keys not found')
 text = text.replace(mode_keys, mode_keys_repl)
 
 visible_keys = '''        if (keycode == Input.Keys.R) { toggleLayerVisible(OCCLUDER, "RED"); return true; }
@@ -384,14 +341,13 @@ render_anchor = '''        if (paintMode) {
             if (layerVisible[BEHIND]) drawMaskRuns(batch, masks[BEHIND], new Color(0.10f, 1f, 0.25f, 0.35f));
 '''
 render_repl = '''        if (paintMode) {
-            if (mode == WATER) refreshWaterPreview();
             if (layerVisible[OCCLUDER]) drawMaskRuns(batch, masks[OCCLUDER], new Color(1f, 0.12f, 0.08f, 0.45f));
             if (layerVisible[COLLISION]) drawMaskRuns(batch, masks[COLLISION], new Color(0.08f, 0.35f, 1f, 0.50f));
             if (layerVisible[BEHIND]) drawMaskRuns(batch, masks[BEHIND], new Color(0.10f, 1f, 0.25f, 0.35f));
             if (layerVisible[WATER]) drawMaskRuns(batch, masks[WATER], new Color(0.08f, 0.92f, 1f, 0.42f));
 '''
 if text.count(render_anchor) != 1:
-    raise RuntimeError('SceneMaskEditor fast-tool render block not found')
+    raise RuntimeError('SceneMaskEditor mask render block not found')
 text = text.replace(render_anchor, render_repl)
 
 mode_name = '            String baseMode = mode == OCCLUDER ? "FRONT" : mode == COLLISION ? "BLOCK" : "BEHIND";\n'
@@ -407,8 +363,8 @@ hud_repl = '''            font.draw(batch, "1 front 2 block 3 behind 4 water | S
                     6, 184);
 '''
 if text.count(hud) != 1:
-    raise RuntimeError('SceneMaskEditor fast-tool HUD line not found')
+    raise RuntimeError('SceneMaskEditor fast-tools HUD line not found')
 text = text.replace(hud, hud_repl)
 
 editor.write_text(text)
-print('Editable WATER mask installed: 4=water, cyan preview, W visibility, original shoreline imported until first edit')
+print('Editable WATER mask installed: 4=water, W visibility; existing AGI water remains until first WATER edit')
