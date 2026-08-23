@@ -114,7 +114,7 @@ jobs:
           grep -q 'private static final int WATER = 3' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'getSceneMaskWaterActive' agile-gdx/core/src/main/java/com/agifans/agile/VariableData.java
           grep -q 'effectiveControlPriority' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
-          grep -q 'SPACE+DRAG pan' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
+          grep -q '4 water' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'getViewMagnification' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'ROOM1_OCCLUDER_RUNS' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'agi-scene-mask-editor-v3' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
