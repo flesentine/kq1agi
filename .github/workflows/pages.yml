@@ -97,6 +97,7 @@ jobs:
           python3 scripts/add_scene_mask_pan.py agile-gdx
           python3 scripts/add_scene_mask_fast_tools.py agile-gdx
           python3 scripts/add_scene_mask_water.py agile-gdx
+          python3 scripts/fix_scene_mask_ui_sync.py agile-gdx
           cp web/coi-serviceworker.js agile-gdx/html/webapp/coi-serviceworker.js
 
       - name: Verify scene mask editor patch landed
@@ -115,10 +116,12 @@ jobs:
           grep -q 'getSceneMaskWaterActive' agile-gdx/core/src/main/java/com/agifans/agile/VariableData.java
           grep -q 'effectiveControlPriority' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
           grep -q '4 water' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
+          grep -q 'Browser PAINT/TEST control is authoritative' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
+          ! grep -q 'batch.draw(white, 218, 178, 44, 13)' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'getViewMagnification' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'ROOM1_OCCLUDER_RUNS' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'agi-scene-mask-editor-v3' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
-          echo 'scene mask editor, pan, fast tools, editable WATER trigger, and corrected Room 1 matte verified'
+          echo 'scene mask editor, pan, fast tools, WATER trigger, and browser/test UI sync verified'
 
       - name: Build AGILE HTML5 app
         run: |
@@ -146,7 +149,7 @@ jobs:
           cp agile-gdx/LICENSE _site/LICENSE-AGILE.txt
           cp "$GITHUB_WORKSPACE/web/index.html" _site/index.html
           cp "$GITHUB_WORKSPACE/web/coi-serviceworker.js" _site/coi-serviceworker.js
-          sed -i 's/kq1agi-coi-retries-v4/kq1agi-coi-retries-v11/g; s/20260821-export-bg-1/20260823-water-mask-1/g' _site/index.html
+          sed -i 's/kq1agi-coi-retries-v4/kq1agi-coi-retries-v12/g; s/20260821-export-bg-1/20260823-brush-sync-1/g' _site/index.html
           python3 scripts/patch_web_brush_overlay.py _site/index.html
           mkdir -p _site/backgrounds
           find backgrounds -maxdepth 1 -type f \( -iname 'room_*.png' -o -iname 'room_*.jpg' -o -iname 'room_*.jpeg' \) -exec cp {} _site/backgrounds/ \;
@@ -160,10 +163,10 @@ jobs:
           grep -q 'id="brush-size"' _site/index.html
           grep -q 'Space + drag = pan' _site/index.html
           grep -q 'Tab shortcut' _site/index.html
-          grep -q '20260823-water-mask-1' _site/index.html
+          grep -q '20260823-brush-sync-1' _site/index.html
           grep -q 'room_001_hires.png' _site/index.html
           test -f _site/backgrounds/room_001_hires.png
-          echo 'fixed brush overlay, fast mask tools, WATER trigger editing, Space-drag pan, EXPORT BG, and clean background verified'
+          echo 'brush overlay now stays tied to browser PAINT/TEST, with WATER tools and clean background verified'
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
