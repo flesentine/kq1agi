@@ -11,26 +11,28 @@ root = Path(sys.argv[1]).resolve()
 # moved downward while ONWATER, so collision, room edges, scripts and the custom
 # cyan WATER trigger continue to use Graham's real coordinates.
 #
-# A single global offset looked acceptable in one part of the room but failed
-# around narrow/diagonal water near the bridge. Instead, evaluate several visual
-# sink positions against the player's painted WATER mask and choose the position
-# that places the sprite rectangle most convincingly inside the local water.
+# The previous dynamic scorer considered the full width of the swim/drown cel.
+# Those cels are much wider than walking Graham, so near a bridge or narrow bank
+# the land beside the water could incorrectly pull the sprite upward. This version
+# tracks the local painted shoreline under Graham's CENTER instead, then places the
+# visual baseline a fixed immersion depth below that shoreline. A small center-band
+# score refines the result without letting the wide splash art bias the placement.
 runtime = root / 'core/src/main/java/com/agifans/agile/SceneMaskRuntime.java'
 text = runtime.read_text()
 anchor = '''    public static boolean blocksEgoMovement(GameState state, int leftX, int rightX, int y) {
 '''
-helper = '''    private static final int WATER_VISUAL_MIN_SINK = 10;
-    private static final int WATER_VISUAL_PREFERRED_SINK = 14;
-    private static final int WATER_VISUAL_MAX_SINK = 24;
+helper = '''    private static final int WATER_VISUAL_MIN_SINK = 18;
+    private static final int WATER_VISUAL_IMMERSION = 24;
+    private static final int WATER_VISUAL_MAX_SINK = 36;
 
     /**
      * Visual-only downward offset for ego while custom WATER says he is swimming.
      *
-     * The cyan WATER mask is also our best description of the replacement art's
-     * local shoreline. Test a small range of candidate draw positions and choose
-     * the one whose sprite-sized rectangle overlaps the most painted water. This
-     * adapts automatically to sloped/narrow banks instead of using one room-wide
-     * magic number. Logical AGI coordinates are never changed.
+     * Find the top edge of the painted WATER region at the center of Graham, then
+     * place the swim/drown cel baseline about 24 AGI pixels below that local water
+     * surface. We intentionally use only a narrow center band: the drowning splash
+     * cel is much wider than walking Graham and may overlap bridge/bank pixels that
+     * should not pull the animation upward. Logical AGI coordinates never change.
      */
     public static int waterVisualSink(GameState state, AnimatedObject obj) {
         if (obj == null || obj.objectNumber != 0 || !editorOwnsRoom(state)) return 0;
@@ -39,42 +41,61 @@ helper = '''    private static final int WATER_VISUAL_MIN_SINK = 10;
 
         int width = Math.max(1, obj.xSize());
         int height = Math.max(1, obj.ySize());
-        int left = obj.x;
-        int right = left + width - 1;
+        int centerX = obj.x + (width / 2);
+        int bandHalf = Math.max(1, Math.min(3, width / 4));
         int logicalY = obj.y;
 
-        int bestSink = WATER_VISUAL_PREFERRED_SINK;
-        int bestScore = Integer.MIN_VALUE;
+        // Walk upward from ego's logical baseline until the narrow center band is
+        // no longer water. The first water row below that is the local shoreline.
+        int surfaceY = logicalY;
+        while (surfaceY > 0) {
+            boolean waterAbove = false;
+            int probeY = surfaceY - 1;
+            for (int x = centerX - bandHalf; x <= centerX + bandHalf; x++) {
+                if (x >= 0 && x < 160 && data.getSceneMaskBit(WATER, x, probeY)) {
+                    waterAbove = true;
+                    break;
+                }
+            }
+            if (!waterAbove) break;
+            surfaceY--;
+        }
 
-        for (int sink = WATER_VISUAL_MIN_SINK; sink <= WATER_VISUAL_MAX_SINK; sink++) {
-            int top = logicalY + sink - height + 1;
+        int preferredSink = (surfaceY + WATER_VISUAL_IMMERSION) - logicalY;
+        if (preferredSink < WATER_VISUAL_MIN_SINK) preferredSink = WATER_VISUAL_MIN_SINK;
+        if (preferredSink > WATER_VISUAL_MAX_SINK) preferredSink = WATER_VISUAL_MAX_SINK;
+
+        int bestSink = preferredSink;
+        int bestScore = Integer.MIN_VALUE;
+        int from = Math.max(WATER_VISUAL_MIN_SINK, preferredSink - 5);
+        int to = Math.min(WATER_VISUAL_MAX_SINK, preferredSink + 5);
+
+        for (int sink = from; sink <= to; sink++) {
             int bottom = logicalY + sink;
+            int top = bottom - height + 1;
+            int lowerHalfTop = Math.max(top, bottom - Math.max(2, height / 2));
             int score = 0;
 
-            // Score the full sprite rectangle. Water is rewarded more strongly
-            // than land is penalised because transparent pixels are included in
-            // the rectangle and should not make the heuristic too brittle.
-            for (int y = top; y <= bottom; y++) {
+            // Only score the middle of the cel. This keeps a wide splash from
+            // being repelled by legitimate land/bridge pixels at its left/right.
+            for (int y = lowerHalfTop; y <= bottom; y++) {
                 if (y < 0 || y >= 168) continue;
-                for (int x = left; x <= right; x++) {
+                for (int x = centerX - bandHalf; x <= centerX + bandHalf; x++) {
                     if (x < 0 || x >= 160) continue;
-                    score += data.getSceneMaskBit(WATER, x, y) ? 4 : -2;
+                    score += data.getSceneMaskBit(WATER, x, y) ? 5 : -6;
                 }
             }
 
-            // The lower two rows are where the swim/drown cel visually meets the
-            // water. Give them extra weight so the sprite cannot hover on a bank.
-            for (int y = Math.max(top, bottom - 1); y <= bottom; y++) {
-                if (y < 0 || y >= 168) continue;
-                for (int x = left; x <= right; x++) {
+            // Strongly prefer the visible baseline itself to be well inside water.
+            if (bottom >= 0 && bottom < 168) {
+                for (int x = centerX - bandHalf; x <= centerX + bandHalf; x++) {
                     if (x < 0 || x >= 160) continue;
-                    score += data.getSceneMaskBit(WATER, x, y) ? 7 : -8;
+                    score += data.getSceneMaskBit(WATER, x, bottom) ? 14 : -18;
                 }
             }
 
-            // If coverage ties, prefer roughly 14px of immersion rather than
-            // always snapping to the shallowest candidate.
-            score -= Math.abs(sink - WATER_VISUAL_PREFERRED_SINK);
+            // Keep the result close to the shoreline-derived immersion depth.
+            score -= Math.abs(sink - preferredSink) * 2;
 
             if (score > bestScore) {
                 bestScore = score;
@@ -85,7 +106,7 @@ helper = '''    private static final int WATER_VISUAL_MIN_SINK = 10;
         return bestSink;
     }
 
-    /** Extra repaint room so every possible dynamically-sunk cel is cleared. */
+    /** Extra repaint room so every possible shoreline-aligned cel is cleared. */
     public static int waterVisualPadding(GameState state, AnimatedObject obj) {
         if (obj == null || obj.objectNumber != 0 || !editorOwnsRoom(state)) return 0;
         return state.getVariableData().getSceneMaskWaterActive() ? WATER_VISUAL_MAX_SINK : 0;
@@ -137,8 +158,8 @@ if text.count(save_anchor) != 1:
 text = text.replace(save_anchor, save_repl)
 
 # show() copies a taller rectangle for ego whenever a custom water mask exists.
-# It covers both the current dynamic sink and any previous sunk frame when Graham
-# has just stepped back onto land.
+# It covers both the current shoreline-aligned sink and any previous sunk frame
+# when Graham has just stepped back onto land.
 show_anchor = '''            int topmostY = Math.min(prevY - prevCelHeight, this.y - this.ySize()) + 1;
             int bottommostY = Math.max(prevY, this.y);
 '''
@@ -151,4 +172,4 @@ if text.count(show_anchor) != 1:
 text = text.replace(show_anchor, show_repl)
 
 animated.write_text(text)
-print('Dynamic water animation alignment installed: local painted WATER coverage chooses 10-24px visual sink; logical position unchanged')
+print('Water animation shoreline alignment installed: center-band painted WATER surface chooses 18-36px sink; logical position unchanged')
