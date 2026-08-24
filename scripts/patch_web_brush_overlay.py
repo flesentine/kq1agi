@@ -43,8 +43,8 @@ html_anchor = '''<button id="export-bg-button" type="button" title="Download the
 <button id="paint-button" type="button" title="Toggle live scene-mask paint mode (Tab shortcut)">PAINT</button>
 '''
 html_repl = '''<button id="export-bg-button" type="button" title="Download the clean high-resolution room background">EXPORT BG</button>
-<button id="paint-button" type="button" title="Toggle live scene-mask paint mode (Tab shortcut)">PAINT</button>
-<div id="brush-control" aria-label="Paint brush size">
+<button id="paint-button" type="button" title="Open debug edit mode (Tab shortcut)">DEBUG</button>
+<div id="brush-control" aria-label="Debug brush size">
   <div class="brush-row"><span>BRUSH SIZE</span><span id="brush-value" class="brush-value">2 PX</span></div>
   <input id="brush-size" type="range" min="1" max="12" step="1" value="2" aria-label="Brush size from 1 to 12 pixels">
   <div class="brush-hint">1 px = single mask pixel · Space + drag = pan</div>
@@ -104,8 +104,8 @@ helpers = '''  function gameCanvas() {
   function setPaintUiActive(active) {
     paintUiActive = !!active;
     brushControl.style.display = paintUiActive ? 'block' : 'none';
-    paintButton.textContent = paintUiActive ? 'TEST' : 'PAINT';
-    paintButton.title = paintUiActive ? 'Return to live test mode (Tab shortcut)' : 'Toggle live scene-mask paint mode (Tab shortcut)';
+    paintButton.textContent = paintUiActive ? 'TEST' : 'DEBUG';
+    paintButton.title = paintUiActive ? 'Return to live test mode (Tab shortcut)' : 'Open debug edit mode (Tab shortcut)';
   }
 
   function applyBrushSize(value) {
@@ -142,7 +142,7 @@ paint_click_repl = '''  paintButton.addEventListener('click', event => {
   });
 '''
 if text.count(paint_click) != 1:
-    raise RuntimeError('web paint button click anchor not found')
+    raise RuntimeError('web debug button click anchor not found')
 text = text.replace(paint_click, paint_click_repl)
 
 tab_anchor = '''  window.addEventListener('keydown', event => {
@@ -162,7 +162,7 @@ tab_repl = '''  window.addEventListener('keydown', event => {
   }, true);
 
   // If the user presses an actual F2 key, keep the browser overlay in sync. The
-  // synthetic F2 sent by PAINT/Tab is untrusted and therefore does not double-toggle.
+  // synthetic F2 sent by DEBUG/Tab is untrusted and therefore does not double-toggle.
   window.addEventListener('keydown', event => {
     if (!event.isTrusted || event.key !== 'F2' || event.repeat) return;
     setPaintUiActive(!paintUiActive);
@@ -213,4 +213,4 @@ if text.count(recovery_anchor) != 1:
 text = text.replace(recovery_anchor, recovery_repl)
 
 path.write_text(text)
-print('Fixed browser brush overlay installed: persistent through zoom, 1-12 px numeric slider')
+print('Fixed browser debug brush overlay installed: persistent through zoom, 1-12 px numeric slider')
