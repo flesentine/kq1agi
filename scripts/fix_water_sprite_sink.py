@@ -8,14 +8,14 @@ if len(sys.argv) != 2:
 root = Path(sys.argv[1]).resolve()
 
 # Keep the logical AGI baseline untouched. Only the pixels used to render ego are
-# moved downward while ONWATER, so collision, room edges, scripts and the custom
-# cyan WATER trigger continue to use Graham's real coordinates.
+# moved downward while the actual horizontal swim/drown cel is being displayed.
 #
-# The previous shoreline detector treated ANY cyan pixel in a center row as water.
-# On diagonal creek edges that could follow a thin sliver of water too far upward,
-# making the computed shoreline too high and keeping the drowning/swim cel on the
-# bank. This version requires a MAJORITY of the center band to be water and gives
-# the animation a little more immersion below that local painted surface.
+# Important: ONWATER becomes true slightly before KQ1 swaps Graham from his normal
+# walking cel to the water animation. The old patch applied the sink as soon as the
+# flag changed, so the normal walking Graham visibly jumped downward for a frame and
+# then snapped again when the wide swim/drown cel arrived. Gate the visual sink by
+# cel shape so normal standing/walking Graham is NEVER shifted; only the character's
+# distinctly horizontal water cels get the replacement-art alignment.
 runtime = root / 'core/src/main/java/com/agifans/agile/SceneMaskRuntime.java'
 text = runtime.read_text()
 anchor = '''    public static boolean blocksEgoMovement(GameState state, int leftX, int rightX, int y) {
@@ -25,18 +25,27 @@ helper = '''    private static final int WATER_VISUAL_MIN_SINK = 24;
     private static final int WATER_VISUAL_MAX_SINK = 44;
 
     /**
-     * Visual-only downward offset for ego while custom WATER says he is swimming.
-     *
-     * Find the top edge of the painted WATER region underneath Graham's center,
-     * requiring most of a narrow center band to be water. Requiring a majority is
-     * important on diagonal banks: one stray cyan pixel must not drag the detected
-     * shoreline upward. The swim/drown baseline is then placed about 30 AGI pixels
-     * below that local surface. Logical AGI coordinates never change.
+     * KQ1's water cels are wide/horizontal, while normal walking Graham is narrow
+     * and tall. ONWATER can turn on before the view change, so this guard prevents
+     * the normal walking cel from being visually sunk during that transition.
+     */
+    private static boolean isWaterAnimationCel(AnimatedObject obj) {
+        if (obj == null) return false;
+        int width = Math.max(1, obj.xSize());
+        int height = Math.max(1, obj.ySize());
+        return width >= 8 && width >= height;
+    }
+
+    /**
+     * Visual-only downward offset for ego while the custom WATER mask is active and
+     * KQ1 is actually displaying a horizontal swim/drown cel. Graham's logical AGI
+     * coordinates are never changed.
      */
     public static int waterVisualSink(GameState state, AnimatedObject obj) {
         if (obj == null || obj.objectNumber != 0 || !editorOwnsRoom(state)) return 0;
         VariableData data = state.getVariableData();
         if (!data.getSceneMaskWaterActive() || !state.getFlag(Defines.ONWATER)) return 0;
+        if (!isWaterAnimationCel(obj)) return 0;
 
         int width = Math.max(1, obj.xSize());
         int height = Math.max(1, obj.ySize());
@@ -45,8 +54,7 @@ helper = '''    private static final int WATER_VISUAL_MIN_SINK = 24;
         int logicalY = obj.y;
 
         // Walk upward while a MAJORITY of the narrow center band is still water.
-        // This rejects little diagonal water slivers that previously made the
-        // detected surface several rows too high near the bridge/bank.
+        // This rejects little diagonal water slivers near the bridge/bank.
         int surfaceY = logicalY;
         while (surfaceY > 0) {
             int probeY = surfaceY - 1;
@@ -89,7 +97,7 @@ helper = '''    private static final int WATER_VISUAL_MIN_SINK = 24;
             }
 
             // Strongly prefer the visible baseline and the row just above it to
-            // both sit in water, which removes the remaining hovering-on-bank look.
+            // both sit in water, which removes the hovering-on-bank look.
             for (int y = bottom - 1; y <= bottom; y++) {
                 if (y < 0 || y >= 168) continue;
                 for (int x = centerX - bandHalf; x <= centerX + bandHalf; x++) {
@@ -98,7 +106,6 @@ helper = '''    private static final int WATER_VISUAL_MIN_SINK = 24;
                 }
             }
 
-            // Keep the result close to the shoreline-derived immersion depth.
             score -= Math.abs(sink - preferredSink) * 2;
 
             if (score > bestScore) {
@@ -110,7 +117,7 @@ helper = '''    private static final int WATER_VISUAL_MIN_SINK = 24;
         return bestSink;
     }
 
-    /** Extra repaint room so every possible shoreline-aligned cel is cleared. */
+    /** Extra repaint room for a previously sunk water cel when the view changes. */
     public static int waterVisualPadding(GameState state, AnimatedObject obj) {
         if (obj == null || obj.objectNumber != 0 || !editorOwnsRoom(state)) return 0;
         return state.getVariableData().getSceneMaskWaterActive() ? WATER_VISUAL_MAX_SINK : 0;
@@ -125,8 +132,8 @@ runtime.write_text(text.replace(anchor, helper))
 animated = root / 'core/src/main/java/com/agifans/agile/AnimatedObject.java'
 text = animated.read_text()
 
-# Patch only the normal animated-object draw path (not add.to.pic). The source
-# pixels and SaveArea are both based on drawY so restoration stays exact.
+# Patch only the normal animated-object DRAW path. drawY is a local render-only
+# coordinate; this.y is never assigned or altered by this patch.
 draw_anchor = '''        // Calculate starting screen offset. AGI pixels are 2x1 within the picture area.
         int aniObjTop = ((this.y - cellHeight) + 1);
         int screenPos = (aniObjTop * 320) + (this.x * 2);
@@ -136,6 +143,7 @@ draw_anchor = '''        // Calculate starting screen offset. AGI pixels are 2x1
         int priorityPos = (aniObjTop * 160) + this.x;
 '''
 draw_repl = '''        // Calculate starting screen offset. AGI pixels are 2x1 within the picture area.
+        // drawY is VISUAL ONLY. Never modify this.y for water alignment.
         int waterVisualSink = SceneMaskRuntime.waterVisualSink(state, this);
         int drawY = this.y + waterVisualSink;
         int aniObjTop = ((drawY - cellHeight) + 1);
@@ -154,6 +162,8 @@ save_anchor = '''        this.saveArea.x = this.x;
         this.saveArea.width = cellWidth;
 '''
 save_repl = '''        this.saveArea.x = this.x;
+        // SaveArea follows the render position only so background restoration matches.
+        // The AnimatedObject's actual this.y remains the original logical baseline.
         this.saveArea.y = (short)drawY;
         this.saveArea.width = cellWidth;
 '''
@@ -162,8 +172,7 @@ if text.count(save_anchor) != 1:
 text = text.replace(save_anchor, save_repl)
 
 # show() copies a taller rectangle for ego whenever a custom water mask exists.
-# It covers both the current shoreline-aligned sink and any previous sunk frame
-# when Graham has just stepped back onto land.
+# This clears a previously sunk water frame cleanly when KQ1 switches views.
 show_anchor = '''            int topmostY = Math.min(prevY - prevCelHeight, this.y - this.ySize()) + 1;
             int bottommostY = Math.max(prevY, this.y);
 '''
@@ -176,4 +185,4 @@ if text.count(show_anchor) != 1:
 text = text.replace(show_anchor, show_repl)
 
 animated.write_text(text)
-print('Water animation alignment installed: majority-water shoreline plus 24-44px visual sink; logical position unchanged')
+print('Water rendering installed: sink is render-only and gated to horizontal swim/drown cels; walking Graham never moves')
