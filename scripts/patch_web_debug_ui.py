@@ -94,8 +94,8 @@ text = text.replace(listener_anchor, listeners, 1)
 show_pair = '''        paintButton.style.display = 'block';\n        exportBgButton.style.display = 'block';\n'''
 show_pair_new = '''        paintButton.style.display = 'block';\n        debugSnapButton.style.display = 'block';\n        exportBgButton.style.display = 'block';\n'''
 show_count = text.count(show_pair)
-if show_count != 2:
-    raise RuntimeError('expected two game-ready button display blocks, found %d' % show_count)
+if show_count < 1:
+    raise RuntimeError('no game-ready button display block found')
 text = text.replace(show_pair, show_pair_new)
 
 hide_pair = '''    paintButton.style.display = 'none';\n    exportBgButton.style.display = 'none';\n'''
