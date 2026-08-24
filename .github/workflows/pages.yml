@@ -99,6 +99,7 @@ jobs:
           python3 scripts/add_scene_mask_water.py agile-gdx
           python3 scripts/fix_scene_mask_ui_sync.py agile-gdx
           python3 scripts/fix_water_sprite_sink.py agile-gdx
+          python3 scripts/add_scene_object_move.py agile-gdx
           cp web/coi-serviceworker.js agile-gdx/html/webapp/coi-serviceworker.js
 
       - name: Verify scene mask editor patch landed
@@ -113,9 +114,14 @@ jobs:
           grep -q 'optionEraseHeld' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'layerVisible' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'Input.Keys.NUM_4' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
+          grep -q 'Input.Keys.NUM_5' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
+          grep -q 'drawMoveSelection' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'private static final int WATER = 3' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'getSceneMaskWaterActive' agile-gdx/core/src/main/java/com/agifans/agile/VariableData.java
+          grep -q 'getSceneVisualOffsetCount' agile-gdx/core/src/main/java/com/agifans/agile/VariableData.java
           grep -q 'effectiveControlPriority' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
+          grep -q 'objectVisualOffsetX' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
+          grep -q 'publishMoveObjects' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
           grep -q 'WATER_VISUAL_MAX_SINK = 44' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
           grep -q 'WATER_VISUAL_IMMERSION = 30' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
           grep -q 'waterCount \* 2 > validCount' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
@@ -129,7 +135,7 @@ jobs:
           grep -q 'getViewMagnification' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'ROOM1_OCCLUDER_RUNS' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'agi-scene-mask-editor-v3' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
-          echo 'scene mask editor, WATER trigger, render-only swim/drown cel gating, and browser/test UI sync verified'
+          echo 'scene mask editor, WATER trigger, render-only swim/drown gating, and sprite move authoring verified'
 
       - name: Build AGILE HTML5 app
         run: |
@@ -157,8 +163,9 @@ jobs:
           cp agile-gdx/LICENSE _site/LICENSE-AGILE.txt
           cp "$GITHUB_WORKSPACE/web/index.html" _site/index.html
           cp "$GITHUB_WORKSPACE/web/coi-serviceworker.js" _site/coi-serviceworker.js
-          sed -i 's/kq1agi-coi-retries-v4/kq1agi-coi-retries-v17/g; s/20260821-export-bg-1/20260824-water-cel-gate-1/g' _site/index.html
+          sed -i 's/kq1agi-coi-retries-v4/kq1agi-coi-retries-v18/g; s/20260821-export-bg-1/20260824-move-debug-1/g' _site/index.html
           python3 scripts/patch_web_brush_overlay.py _site/index.html
+          python3 scripts/patch_web_debug_capture.py _site/index.html
           mkdir -p _site/backgrounds
           find backgrounds -maxdepth 1 -type f \( -iname 'room_*.png' -o -iname 'room_*.jpg' -o -iname 'room_*.jpeg' \) -exec cp {} _site/backgrounds/ \;
           touch _site/.nojekyll
@@ -169,12 +176,15 @@ jobs:
           grep -q 'id="export-bg-button"' _site/index.html
           grep -q 'id="brush-control"' _site/index.html
           grep -q 'id="brush-size"' _site/index.html
+          grep -q 'id="debug-capture"' _site/index.html
+          grep -q 'DEBUG CAPTURE COPIED' _site/index.html
+          grep -q 'Cmd/Ctrl+Shift+D' _site/index.html
           grep -q 'Space + drag = pan' _site/index.html
           grep -q 'Tab shortcut' _site/index.html
-          grep -q '20260824-water-cel-gate-1' _site/index.html
+          grep -q '20260824-move-debug-1' _site/index.html
           grep -q 'room_001_hires.png' _site/index.html
           test -f _site/backgrounds/room_001_hires.png
-          echo 'WATER trigger, stable render-only swim/drown alignment, brush/test sync, and clean background verified'
+          echo 'sprite MOVE mode, fast debug capture, WATER trigger, brush/test sync, and clean background verified'
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
