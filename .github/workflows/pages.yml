@@ -166,10 +166,11 @@ jobs:
           cp agile-gdx/LICENSE _site/LICENSE-AGILE.txt
           cp "$GITHUB_WORKSPACE/web/index.html" _site/index.html
           cp "$GITHUB_WORKSPACE/web/coi-serviceworker.js" _site/coi-serviceworker.js
-          sed -i 's/kq1agi-coi-retries-v4/kq1agi-coi-retries-v19/g; s/20260821-export-bg-1/20260824-debug-ui-2/g' _site/index.html
+          sed -i 's/kq1agi-coi-retries-v4/kq1agi-coi-retries-v20/g; s/20260821-export-bg-1/20260824-debug-ui-3/g' _site/index.html
           python3 scripts/patch_web_brush_overlay.py _site/index.html
           python3 scripts/patch_web_debug_capture.py _site/index.html
           python3 scripts/patch_web_debug_ui.py _site/index.html
+          python3 scripts/patch_web_debug_image_only.py _site/index.html
           mkdir -p _site/backgrounds
           find backgrounds -maxdepth 1 -type f \( -iname 'room_*.png' -o -iname 'room_*.jpg' -o -iname 'room_*.jpeg' \) -exec cp {} _site/backgrounds/ \;
           touch _site/.nojekyll
@@ -184,17 +185,20 @@ jobs:
           grep -q 'id="brush-control"' _site/index.html
           grep -q 'id="brush-size"' _site/index.html
           grep -q 'id="debug-capture"' _site/index.html
-          grep -q 'COPY IMAGE + TEXT' _site/index.html
+          grep -q '>COPY IMAGE</button>' _site/index.html
           grep -q 'debug-active' _site/index.html
           grep -q 'rgba(0,0,0,.78)' _site/index.html
-          grep -q 'DEBUG CAPTURE COPIED' _site/index.html
+          grep -q 'IMAGE COPIED — PASTE IT HERE' _site/index.html
+          grep -q "new ClipboardItem({ 'image/png': png })" _site/index.html
+          ! grep -q "'text/plain': new Blob" _site/index.html
+          ! grep -q 'fillText(location.href' _site/index.html
           grep -q 'Cmd/Ctrl+Shift+D' _site/index.html
           grep -q 'Space + drag = pan' _site/index.html
           grep -q 'Tab shortcut' _site/index.html
-          grep -q '20260824-debug-ui-2' _site/index.html
+          grep -q '20260824-debug-ui-3' _site/index.html
           grep -q 'room_001_hires.png' _site/index.html
           test -f _site/backgrounds/room_001_hires.png
-          echo 'always-visible DEBUG/COPY DEBUG, easy MOVE SPRITE, overlay capture, WATER trigger, and clean background verified'
+          echo 'single-image debug capture, always-visible DEBUG/COPY DEBUG, easy MOVE SPRITE, WATER trigger, and clean background verified'
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
