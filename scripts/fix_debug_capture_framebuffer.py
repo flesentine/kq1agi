@@ -56,6 +56,42 @@ if text.count(mode_old) != 1:
     raise RuntimeError('SceneMaskEditor MOVE mode activation block not found')
 text = text.replace(mode_old, mode_new, 1)
 
+# A relative offset can snap visually when KQ1 rewrites the logical x/y of an
+# object during a scripted sequence. MOVE is an authoring tool, so store an
+# absolute rendered target position instead. Once dropped, the sprite remains
+# pinned to that screen coordinate for this room/object/view.
+start = text.index('    private void loadVisualOffsets() {')
+end = text.index('    private void saveVisualOffsets() {', start)
+text = text[:start] + '''    private void loadVisualOffsets() {\n        data.setSceneVisualOffsetCount(0);\n        String saved = prefs.getString("visualPinsV1", "");\n        if (saved == null || saved.length() == 0) return;\n        String[] records = saved.split(";");\n        int out = 0;\n        for (String record : records) {\n            if (out >= 32 || record == null || record.length() == 0) continue;\n            String[] p = record.split(",");\n            if (p.length != 5) continue;\n            try {\n                int targetX = Integer.parseInt(p[3]);\n                int targetY = Integer.parseInt(p[4]);\n                if (targetX < 0 || targetX >= WIDTH || targetY < 0 || targetY >= HEIGHT) continue;\n                // Legacy/debug accident offsets are intentionally ignored by visualPinsV1.\n                for (int f = 0; f < 5; f++) data.setSceneVisualOffsetField(out, f, Integer.parseInt(p[f]));\n                out++;\n            } catch (Exception ignored) {\n            }\n        }\n        data.setSceneVisualOffsetCount(out);\n    }\n\n''' + text[end:]
+
+start = text.index('    private void saveVisualOffsets() {')
+end = text.index('    private int findVisualOffsetRecord(', start)
+text = text[:start] + '''    private void saveVisualOffsets() {\n        StringBuilder out = new StringBuilder();\n        int count = Math.max(0, Math.min(32, data.getSceneVisualOffsetCount()));\n        for (int i = 0; i < count; i++) {\n            if (i > 0) out.append(';');\n            for (int f = 0; f < 5; f++) {\n                if (f > 0) out.append(',');\n                out.append(data.getSceneVisualOffsetField(i, f));\n            }\n        }\n        prefs.putString("visualPinsV1", out.toString());\n        prefs.flush();\n    }\n\n''' + text[end:]
+
+ensure_anchor = '    private int ensureVisualOffsetRecord(int targetRoom, int objectNumber, int viewNumber) {'
+idx = text.index(ensure_anchor)
+text = text[:idx] + '''    private int publishedMoveField(int objectNumber, int viewNumber, int field, int fallback) {\n        int count = Math.max(0, Math.min(16, data.getSceneMoveObjectCount()));\n        for (int i = 0; i < count; i++) {\n            if (data.getSceneMoveObjectField(i, 0) == objectNumber\n                    && data.getSceneMoveObjectField(i, 1) == viewNumber) {\n                return data.getSceneMoveObjectField(i, field);\n            }\n        }\n        return fallback;\n    }\n\n''' + text[idx:]
+
+start = text.index('    private int ensureVisualOffsetRecord(')
+end = text.index('    private int selectedMoveDx()', start)
+text = text[:start] + '''    private int ensureVisualOffsetRecord(int targetRoom, int objectNumber, int viewNumber) {\n        int existing = findVisualOffsetRecord(targetRoom, objectNumber, viewNumber);\n        if (existing >= 0) return existing;\n        int count = Math.max(0, Math.min(32, data.getSceneVisualOffsetCount()));\n        if (count >= 32) {\n            notice("MOVE TABLE FULL");\n            return -1;\n        }\n        int currentX = publishedMoveField(objectNumber, viewNumber, 2, 0);\n        int currentY = publishedMoveField(objectNumber, viewNumber, 3, HEIGHT - 1);\n        data.setSceneVisualOffsetField(count, 0, targetRoom);\n        data.setSceneVisualOffsetField(count, 1, objectNumber);\n        data.setSceneVisualOffsetField(count, 2, viewNumber);\n        data.setSceneVisualOffsetField(count, 3, currentX);\n        data.setSceneVisualOffsetField(count, 4, currentY);\n        data.setSceneVisualOffsetCount(count + 1);\n        return count;\n    }\n\n''' + text[end:]
+
+start = text.index('    private void moveSelectedBy(')
+end = text.index('    private void resetSelectedMove()', start)
+text = text[:start] + '''    private void moveSelectedBy(int dx, int dy) {\n        if (moveSelectedObject < 0 || moveSelectedView < 0) return;\n        int r = ensureVisualOffsetRecord(room, moveSelectedObject, moveSelectedView);\n        if (r < 0) return;\n        int width = Math.max(1, publishedMoveField(moveSelectedObject, moveSelectedView, 4, 1));\n        int height = Math.max(1, publishedMoveField(moveSelectedObject, moveSelectedView, 5, 1));\n        // Old relative mode used Math.max(-40, Math.min(40; absolute pinning replaces it.\n        int nx = Math.max(0, Math.min(WIDTH - width, data.getSceneVisualOffsetField(r, 3) + dx));\n        int ny = Math.max(height - 1, Math.min(HEIGHT - 1, data.getSceneVisualOffsetField(r, 4) + dy));\n        data.setSceneVisualOffsetField(r, 3, nx);\n        data.setSceneVisualOffsetField(r, 4, ny);\n        saveVisualOffsets();\n    }\n\n''' + text[end:]
+
+start = text.index('    private void resetSelectedMove() {')
+end = text.index('    private boolean select', start)
+text = text[:start] + '''    private void resetSelectedMove() {\n        int r = findVisualOffsetRecord(room, moveSelectedObject, moveSelectedView);\n        if (r < 0) return;\n        int count = Math.max(0, Math.min(32, data.getSceneVisualOffsetCount()));\n        for (int i = r; i < count - 1; i++) {\n            for (int f = 0; f < 5; f++) {\n                data.setSceneVisualOffsetField(i, f, data.getSceneVisualOffsetField(i + 1, f));\n            }\n        }\n        if (count > 0) {\n            for (int f = 0; f < 5; f++) data.setSceneVisualOffsetField(count - 1, f, 0);\n            data.setSceneVisualOffsetCount(count - 1);\n        }\n        saveVisualOffsets();\n        notice("SPRITE UNPINNED");\n    }\n\n''' + text[end:]
+
 editor.write_text(text)
 
-print('Debug capture ready; MOVE SPRITE now auto-selects ego and arrows can no longer move the matte')
+# Convert runtime interpretation from relative offsets to absolute visual pins.
+runtime = root / 'core/src/main/java/com/agifans/agile/SceneMaskRuntime.java'
+text = runtime.read_text()
+start = text.index('    private static int visualOffset(')
+end = text.index('    public static void publishMoveObjects(', start)
+text = text[:start] + '''    private static int visualPin(GameState state, AnimatedObject obj, int field) {\n        if (state == null || obj == null) return Integer.MIN_VALUE;\n        VariableData data = state.getVariableData();\n        int room = state.getVar(Defines.CURROOM);\n        int count = Math.max(0, Math.min(VISUAL_OFFSET_MAX, data.getSceneVisualOffsetCount()));\n        for (int i = 0; i < count; i++) {\n            if (data.getSceneVisualOffsetField(i, 0) == room\n                    && data.getSceneVisualOffsetField(i, 1) == obj.objectNumber\n                    && data.getSceneVisualOffsetField(i, 2) == obj.currentView) {\n                return data.getSceneVisualOffsetField(i, field);\n            }\n        }\n        return Integer.MIN_VALUE;\n    }\n\n    public static int objectVisualOffsetX(GameState state, AnimatedObject obj) {\n        int targetX = visualPin(state, obj, 3);\n        return targetX == Integer.MIN_VALUE ? 0 : targetX - obj.x;\n    }\n\n    public static int objectVisualOffsetY(GameState state, AnimatedObject obj) {\n        int targetY = visualPin(state, obj, 4);\n        if (targetY == Integer.MIN_VALUE) return 0;\n        int naturalVisualY = obj.y + waterVisualSink(state, obj);\n        return targetY - naturalVisualY;\n    }\n\n    public static int objectVisualPadding(GameState state, AnimatedObject obj) {\n        if (state == null || obj == null) return 0;\n        int targetX = visualPin(state, obj, 3);\n        int targetY = visualPin(state, obj, 4);\n        if (targetX == Integer.MIN_VALUE || targetY == Integer.MIN_VALUE) return 0;\n        int naturalY = obj.y + waterVisualSink(state, obj);\n        int padding = Math.max(Math.abs(targetX - obj.x), Math.abs(targetY - naturalY));\n        return Math.min(160, padding + 2);\n    }\n\n''' + text[end:]
+runtime.write_text(text)
+
+print('Debug capture ready; MOVE SPRITE auto-selects ego and dropped sprites are absolute visual pins')
