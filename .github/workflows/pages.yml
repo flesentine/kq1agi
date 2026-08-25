@@ -101,6 +101,7 @@ jobs:
           python3 scripts/fix_water_sprite_sink.py agile-gdx
           python3 scripts/add_scene_object_move.py agile-gdx
           python3 scripts/improve_scene_object_move.py agile-gdx
+          python3 scripts/fix_scene_object_move_bounds.py agile-gdx
           python3 scripts/fix_debug_capture_framebuffer.py agile-gdx
           cp web/coi-serviceworker.js agile-gdx/html/webapp/coi-serviceworker.js
 
@@ -120,18 +121,22 @@ jobs:
           grep -q 'drawMoveSelection' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'grabPad = 6' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'MOVE SPRITE: click a box once, then drag anywhere' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
+          grep -q 'Math.max(-40, Math.min(40' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
+          grep -q 'Legacy/debug accident' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'private static final int WATER = 3' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'getSceneMaskWaterActive' agile-gdx/core/src/main/java/com/agifans/agile/VariableData.java
           grep -q 'getSceneVisualOffsetCount' agile-gdx/core/src/main/java/com/agifans/agile/VariableData.java
           grep -q 'effectiveControlPriority' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
           grep -q 'objectVisualOffsetX' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
           grep -q 'publishMoveObjects' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
+          grep -q 'Math.min(160 - width' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
           grep -q 'WATER_VISUAL_MAX_SINK = 44' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
           grep -q 'WATER_VISUAL_IMMERSION = 30' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
           grep -q 'waterCount \* 2 > validCount' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
           grep -q 'isWaterAnimationCel' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
           grep -q 'for (int sink = from; sink <= to; sink++)' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
           grep -q 'waterVisualPadding' agile-gdx/core/src/main/java/com/agifans/agile/AnimatedObject.java
+          grep -q 'Math.min(160 - cellWidth' agile-gdx/core/src/main/java/com/agifans/agile/AnimatedObject.java
           grep -q 'drawY is VISUAL ONLY' agile-gdx/core/src/main/java/com/agifans/agile/AnimatedObject.java
           grep -q '4 water' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'Browser PAINT/TEST control is authoritative' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
@@ -141,7 +146,7 @@ jobs:
           grep -q 'agi-scene-mask-editor-v3' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'preserveDrawingBuffer = true' agile-gdx/html/src/main/java/com/agifans/agile/gwt/GwtLauncher.java
           grep -q '__kq1agiVariableSAB' agile-gdx/html/src/main/java/com/agifans/agile/gwt/GwtVariableData.java
-          echo 'scene mask editor, live-frame debug capture, easy sprite move, WATER trigger, and render-only swim/drown gating verified'
+          echo 'scene mask editor, on-screen sprite safety, live-frame debug capture, WATER trigger, and render-only swim/drown gating verified'
 
       - name: Build AGILE HTML5 app
         run: |
@@ -169,7 +174,7 @@ jobs:
           cp agile-gdx/LICENSE _site/LICENSE-AGILE.txt
           cp "$GITHUB_WORKSPACE/web/index.html" _site/index.html
           cp "$GITHUB_WORKSPACE/web/coi-serviceworker.js" _site/coi-serviceworker.js
-          sed -i 's/kq1agi-coi-retries-v4/kq1agi-coi-retries-v22/g; s/20260821-export-bg-1/20260824-debug-ui-5/g' _site/index.html
+          sed -i 's/kq1agi-coi-retries-v4/kq1agi-coi-retries-v23/g; s/20260821-export-bg-1/20260824-debug-ui-6/g' _site/index.html
           python3 scripts/patch_web_brush_overlay.py _site/index.html
           python3 scripts/patch_web_debug_capture.py _site/index.html
           python3 scripts/patch_web_debug_ui.py _site/index.html
@@ -203,10 +208,10 @@ jobs:
           grep -q 'Cmd/Ctrl+Shift+D' _site/index.html
           grep -q 'Space + drag = pan' _site/index.html
           grep -q 'Tab shortcut' _site/index.html
-          grep -q '20260824-debug-ui-5' _site/index.html
+          grep -q '20260824-debug-ui-6' _site/index.html
           grep -q 'room_001_hires.png' _site/index.html
           test -f _site/backgrounds/room_001_hires.png
-          echo 'actual game-frame image debug capture with AGI metadata, always-visible DEBUG, easy MOVE SPRITE, WATER trigger, and clean background verified'
+          echo 'actual game-frame image debug capture with AGI metadata, always-visible DEBUG, safe MOVE SPRITE, WATER trigger, and clean background verified'
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
