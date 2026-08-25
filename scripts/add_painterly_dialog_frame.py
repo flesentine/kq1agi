@@ -201,3 +201,8 @@ text = text[:method_start] + replacement + text[method_end:]
 text_graphics.write_text(text)
 
 print(f'Painterly AGI dialog frame installed: {source_w}x{source_h} embedded nine-slice, transparent dynamic text')
+
+# Refine the generated frame for AGI-scale rendering: trim alpha halo artifacts,
+# make the parchment opaque, and give dynamic messages enough vertical padding.
+import runpy
+runpy.run_path(str(Path(__file__).with_name('fix_painterly_dialog_layout.py')), run_name='__main__')
