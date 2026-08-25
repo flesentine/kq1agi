@@ -159,7 +159,7 @@ clipboard_new = '''    const png = await canvasToBlob(output);
     await navigator.clipboard.write([
       new ClipboardItem({ 'image/png': png })
     ]);
-    debugToast.textContent = 'IMAGE COPIED — PASTE IT HERE';
+    debugToast.textContent = 'IMAGE COPIED';
 '''
 if text.count(clipboard_old) != 1:
     raise RuntimeError('debug mixed clipboard payload anchor not found')
@@ -168,7 +168,7 @@ text = text.replace(clipboard_old, clipboard_new, 1)
 text = text.replace('COPY IMAGE + TEXT', 'COPY IMAGE')
 text = text.replace('Your note is stamped directly onto the screenshot. Enter = copy · Esc = cancel.',
                     'Your note and AGI state are drawn directly on the screenshot. Enter = copy image · Esc = cancel.')
-text = text.replace('DEBUG CAPTURE COPIED — PASTE IT HERE', 'IMAGE COPIED — PASTE IT HERE')
+text = text.replace('DEBUG CAPTURE COPIED — PASTE IT HERE', 'IMAGE COPIED')
 text = text.replace('Capture the game with debug text stamped onto the image',
                     'Capture one game image with your debug note and AGI state overlaid')
 
