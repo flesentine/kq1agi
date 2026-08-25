@@ -39,6 +39,102 @@ new = '''        int nx = Math.max(-40, Math.min(40, data.getSceneVisualOffsetFi
 if text.count(old) != 1:
     raise RuntimeError('SceneMaskEditor move offset clamp anchor not found')
 text = text.replace(old, new, 1)
+
+# Initial sprite selection should be forgiving. Direct box hits still win, but
+# clicks slightly outside tiny AGI sprite boxes select the nearest sprite within
+# 24 AGI pixels. Once selected, drag-anywhere still works.
+old = '''    private boolean selectMoveObjectAt(int px, int py) {
+        int count = Math.max(0, Math.min(16, data.getSceneMoveObjectCount()));
+        int best = -1;
+        int bestBaseline = -9999;
+        int bestDistance = 999999;
+        final int grabPad = 6;
+        for (int i = 0; i < count; i++) {
+            int x = data.getSceneMoveObjectField(i, 2);
+            int baselineY = data.getSceneMoveObjectField(i, 3);
+            int width = Math.max(1, data.getSceneMoveObjectField(i, 4));
+            int height = Math.max(1, data.getSceneMoveObjectField(i, 5));
+            int top = baselineY - height + 1;
+            boolean hit = px >= x - grabPad && px < x + width + grabPad
+                    && py >= top - grabPad && py <= baselineY + grabPad;
+            if (!hit) continue;
+            int cx = x + (width / 2);
+            int cy = top + (height / 2);
+            int distance = Math.abs(px - cx) + Math.abs(py - cy);
+            if (best < 0 || baselineY > bestBaseline
+                    || (baselineY == bestBaseline && distance < bestDistance)) {
+                best = i;
+                bestBaseline = baselineY;
+                bestDistance = distance;
+            }
+        }
+        if (best < 0) {
+            // After the first selection, dragging can begin anywhere in the game
+            // image. This removes the need to keep grabbing a tiny sprite box.
+            if (moveSelectedObject >= 0 && moveSelectedView >= 0) return true;
+            notice("CLICK A SPRITE FIRST");
+            return false;
+        }
+        moveSelectedObject = data.getSceneMoveObjectField(best, 0);
+        moveSelectedView = data.getSceneMoveObjectField(best, 1);
+        return true;
+    }
+'''
+new = '''    private boolean selectMoveObjectAt(int px, int py) {
+        int count = Math.max(0, Math.min(16, data.getSceneMoveObjectCount()));
+        int best = -1;
+        int bestBaseline = -9999;
+        int bestDistance = 999999;
+        int nearest = -1;
+        int nearestDistanceSq = 999999;
+        final int grabPad = 6;
+        final int nearestRadius = 24;
+        for (int i = 0; i < count; i++) {
+            int x = data.getSceneMoveObjectField(i, 2);
+            int baselineY = data.getSceneMoveObjectField(i, 3);
+            int width = Math.max(1, data.getSceneMoveObjectField(i, 4));
+            int height = Math.max(1, data.getSceneMoveObjectField(i, 5));
+            int top = baselineY - height + 1;
+            int cx = x + (width / 2);
+            int cy = top + (height / 2);
+            int ddx = px - cx;
+            int ddy = py - cy;
+            int distanceSq = (ddx * ddx) + (ddy * ddy);
+            if (distanceSq < nearestDistanceSq) {
+                nearest = i;
+                nearestDistanceSq = distanceSq;
+            }
+
+            boolean hit = px >= x - grabPad && px < x + width + grabPad
+                    && py >= top - grabPad && py <= baselineY + grabPad;
+            if (!hit) continue;
+            int distance = Math.abs(ddx) + Math.abs(ddy);
+            if (best < 0 || baselineY > bestBaseline
+                    || (baselineY == bestBaseline && distance < bestDistance)) {
+                best = i;
+                bestBaseline = baselineY;
+                bestDistance = distance;
+            }
+        }
+        if (best < 0) {
+            // After the first selection, dragging can begin anywhere in the game
+            // image. This removes the need to keep grabbing a tiny sprite box.
+            if (moveSelectedObject >= 0 && moveSelectedView >= 0) return true;
+            if (nearest >= 0 && nearestDistanceSq <= nearestRadius * nearestRadius) {
+                best = nearest;
+            } else {
+                notice("CLICK NEAR A CYAN SPRITE BOX");
+                return false;
+            }
+        }
+        moveSelectedObject = data.getSceneMoveObjectField(best, 0);
+        moveSelectedView = data.getSceneMoveObjectField(best, 1);
+        return true;
+    }
+'''
+if text.count(old) != 1:
+    raise RuntimeError('SceneMaskEditor forgiving selection anchor not found')
+text = text.replace(old, new, 1)
 editor.write_text(text)
 
 # 2) Final render safety: even a valid saved offset may combine with a changing
@@ -71,4 +167,132 @@ if text.count(old) != 1:
     raise RuntimeError('SceneMaskRuntime published visual position anchor not found')
 runtime.write_text(text.replace(old, new, 1))
 
-print('Sprite move bounds fixed: stale >40px offsets self-heal and render/debug positions stay on-screen')
+# 4) A normal AGI print window blocks the interpreter worker inside
+# waitAcceptAbort(). The browser UI can still edit SharedArrayBuffer offsets, but
+# the worker won't run another animation cycle until the message closes. Poll the
+# offset table inside windowPrint and visually redraw sprites immediately when a
+# MOVE-SPRITE offset changes.
+text_graphics = root / 'core/src/main/java/com/agifans/agile/TextGraphics.java'
+text = text_graphics.read_text()
+
+anchor = '''    public boolean windowPrint(String str) {
+        return windowPrint(str, null);
+    }
+'''
+helpers = '''    private int sceneMoveVisualSignature() {
+        VariableData data = state.getVariableData();
+        if (!data.getSceneMaskPaintMode()) return 0;
+        int room = state.getVar(Defines.CURROOM);
+        int count = Math.max(0, Math.min(32, data.getSceneVisualOffsetCount()));
+        int hash = 17 + room;
+        for (int i = 0; i < count; i++) {
+            if (data.getSceneVisualOffsetField(i, 0) != room) continue;
+            for (int field = 0; field < 5; field++) {
+                hash = (hash * 31) + data.getSceneVisualOffsetField(i, field);
+            }
+        }
+        return hash;
+    }
+
+    /** Redraws only the visible object layer for DEBUG/MOVE authoring. */
+    private void redrawSceneMoveVisuals() {
+        if (!state.graphicsMode || !state.pictureVisible) return;
+
+        state.restoreBackgrounds();
+        state.drawObjects();
+        for (AnimatedObject aniObj : state.stoppedObjectList) {
+            if (aniObj.drawn) aniObj.show(pixelData);
+        }
+        for (AnimatedObject aniObj : state.updateObjectList) {
+            if (aniObj.drawn) aniObj.show(pixelData);
+        }
+
+        // Message windows are drawn directly into PixelData. Re-capture the
+        // backing pixels after the move so closing the window restores the new
+        // sprite placement, then redraw the message over the scene.
+        if (openWindow != null) {
+            openWindow.backPixels = null;
+            drawWindow();
+        }
+    }
+
+    public boolean windowPrint(String str) {
+        return windowPrint(str, null);
+    }
+'''
+if text.count(anchor) != 1:
+    raise RuntimeError('TextGraphics windowPrint helper anchor not found')
+text = text.replace(anchor, helpers, 1)
+
+old = '''        // Get the response.
+        if (state.getVar(Defines.PRINT_TIMEOUT) == 0) {
+            retVal = (userInput.waitAcceptAbort() == UserInput.ACCEPT);
+        }
+        else {
+            // The timeout value is given in half seconds and the TotalTicks in 1/60ths of a second.
+            timeOut = state.getTotalTicks() + state.getVar(Defines.PRINT_TIMEOUT) * 30;
+
+            while ((state.getTotalTicks() < timeOut) && (userInput.checkAcceptAbort() == -1))  {
+                try {
+                    Thread.sleep(1);
+                } catch (InterruptedException e) {
+                    // Interrupt indicates AGILE is stopping, so throw QuitAction.
+                    QuitAction.exit();
+                }
+            }
+
+            retVal = true;
+
+            state.setVar(Defines.PRINT_TIMEOUT, 0);
+        }
+'''
+new = '''        // Get the response. Also watch DEBUG/MOVE offsets in shared memory so
+        // sprites visibly follow the mouse even while this AGI message blocks the tick.
+        int moveVisualSignature = sceneMoveVisualSignature();
+        if (state.getVar(Defines.PRINT_TIMEOUT) == 0) {
+            // Match waitAcceptAbort(): ignore anything already queued when the
+            // message opens, then wait for a fresh ENTER or ESC.
+            while (userInput.getKey() != 0) ;
+            int action;
+            while ((action = userInput.checkAcceptAbort()) == -1) {
+                int nextSignature = sceneMoveVisualSignature();
+                if (nextSignature != moveVisualSignature) {
+                    moveVisualSignature = nextSignature;
+                    redrawSceneMoveVisuals();
+                }
+                try {
+                    Thread.sleep(1);
+                } catch (InterruptedException e) {
+                    QuitAction.exit();
+                }
+            }
+            retVal = (action == UserInput.ACCEPT);
+        }
+        else {
+            // The timeout value is given in half seconds and the TotalTicks in 1/60ths of a second.
+            timeOut = state.getTotalTicks() + state.getVar(Defines.PRINT_TIMEOUT) * 30;
+
+            while ((state.getTotalTicks() < timeOut) && (userInput.checkAcceptAbort() == -1))  {
+                int nextSignature = sceneMoveVisualSignature();
+                if (nextSignature != moveVisualSignature) {
+                    moveVisualSignature = nextSignature;
+                    redrawSceneMoveVisuals();
+                }
+                try {
+                    Thread.sleep(1);
+                } catch (InterruptedException e) {
+                    // Interrupt indicates AGILE is stopping, so throw QuitAction.
+                    QuitAction.exit();
+                }
+            }
+
+            retVal = true;
+
+            state.setVar(Defines.PRINT_TIMEOUT, 0);
+        }
+'''
+if text.count(old) != 1:
+    raise RuntimeError('TextGraphics print-window wait anchor not found')
+text_graphics.write_text(text.replace(old, new, 1))
+
+print('Sprite move fixed: safe bounds, forgiving selection, and live visual redraw while AGI messages are open')
