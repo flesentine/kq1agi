@@ -8,6 +8,20 @@ if len(sys.argv) != 2:
 path = Path(sys.argv[1])
 text = path.read_text()
 
+# Newer patch_web_debug_image_only.py already burns richer AGI metadata into the
+# screenshot. Keep this older patch compatible with that output and retain the
+# historical readAgiDebugLines symbol used by CI verification.
+if 'function getAgiDebugLines()' in text:
+    if 'function readAgiDebugLines()' not in text:
+        anchor = '''  async function copyDebugCapture() {\n'''
+        alias = '''  function readAgiDebugLines() {\n    return getAgiDebugLines();\n  }\n\n  async function copyDebugCapture() {\n'''
+        if text.count(anchor) != 1:
+            raise RuntimeError('copyDebugCapture anchor not found for metadata alias')
+        text = text.replace(anchor, alias, 1)
+        path.write_text(text)
+    print('Debug capture metadata already present; compatibility alias retained')
+    raise SystemExit(0)
+
 helper_anchor = '''  async function copyDebugCapture() {\n'''
 helper = r'''  function readAgiDebugLines() {
     try {
