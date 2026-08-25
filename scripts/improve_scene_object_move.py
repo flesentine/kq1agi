@@ -177,4 +177,42 @@ text = text.replace('"MOVE: click+drag sprite | arrows nudge | Shift=4px | Backs
                     '"MOVE SPRITE: click a box once, then drag anywhere | arrows nudge | Backspace reset"')
 
 editor.write_text(text)
-print('Sprite move UX improved: forgiving grab boxes, persistent selection, drag-anywhere movement, quiet HUD')
+
+# Debug screenshots copy the WebGL canvas. LibGDX normally discards the WebGL
+# back buffer after each frame, which makes drawImage()/toDataURL() produce a
+# black rectangle. Preserve it so COPY DEBUG gets the actual visible frame.
+launcher = root / 'html/src/main/java/com/agifans/agile/gwt/GwtLauncher.java'
+text = launcher.read_text()
+anchor = '''        cfg.padVertical = 0;
+        cfg.padHorizontal = 0;
+        return cfg;
+'''
+repl = '''        cfg.padVertical = 0;
+        cfg.padHorizontal = 0;
+        cfg.preserveDrawingBuffer = true;
+        return cfg;
+'''
+if text.count(anchor) != 1:
+    raise RuntimeError('GwtLauncher config anchor not found')
+launcher.write_text(text.replace(anchor, repl))
+
+# Expose the SharedArrayBuffer to the page so the pasted image can include live
+# AGI state such as room, ONWATER and Graham's current published view/bounds.
+gwt = root / 'html/src/main/java/com/agifans/agile/gwt/GwtVariableData.java'
+text = gwt.read_text()
+ctor_anchor = '''        this.variableArray = new SharedArray(variableArraySAB);
+    }
+'''
+ctor_repl = '''        this.variableArray = new SharedArray(variableArraySAB);
+        exposeVariableSharedArrayBuffer(variableArraySAB);
+    }
+
+    private static native void exposeVariableSharedArrayBuffer(JavaScriptObject sab) /*-{
+        $wnd.__kq1agiVariableSAB = sab;
+    }-*/;
+'''
+if text.count(ctor_anchor) != 1:
+    raise RuntimeError('GwtVariableData constructor anchor not found')
+gwt.write_text(text.replace(ctor_anchor, ctor_repl))
+
+print('Sprite move UX improved; debug framebuffer preserved and live AGI state exposed to browser')
