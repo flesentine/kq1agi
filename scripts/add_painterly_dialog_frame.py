@@ -13,9 +13,14 @@ asset = repo_root / 'assets/ui/painterly_dialog_frame.png'
 if not asset.exists():
     raise RuntimeError(f'missing painterly dialog asset: {asset}')
 
-image = Image.open(asset).convert('RGBA')
-if image.size != (160, 41):
-    raise RuntimeError(f'expected clean painterly frame 160x41, got {image.size}')
+source = Image.open(asset).convert('RGBA')
+if source.size != (160, 41):
+    raise RuntimeError(f'expected clean painterly frame 160x41, got {source.size}')
+
+# The repo keeps the clean 160x41 PNG as the source of truth. Embed a smaller
+# 128x33 copy in Java: it is still far above AGI's effective detail level, but
+# keeps TextGraphics' static initializer safely below the JVM 64K method limit.
+image = source.resize((128, 33), Image.Resampling.LANCZOS)
 
 pixels = []
 for r, g, b, a in image.getdata():
@@ -34,11 +39,23 @@ marker = '    private static final int UNASSIGNED = -1;\n'
 if text.count(marker) != 1:
     raise RuntimeError('TextGraphics constant marker not found')
 
-frame_constants = f'''    private static final int UNASSIGNED = -1;\n\n    // PAINTERLY_DIALOG_FRAME CLEAN_V4: pre-cleaned hard-alpha nine-slice.\n    private static final int DIALOG_FRAME_WIDTH = {image.width};\n    private static final int DIALOG_FRAME_HEIGHT = {image.height};\n    private static final int DIALOG_FRAME_CAP_X = 9;\n    private static final int DIALOG_FRAME_CAP_Y = 8;\n    private static final int[] DIALOG_FRAME_PIXELS = {{\n{pixel_literal}\n    }};\n'''
+frame_constants = f'''    private static final int UNASSIGNED = -1;
+
+    // PAINTERLY_DIALOG_FRAME CLEAN_V5: clean hard-alpha nine-slice, compact source.
+    private static final int DIALOG_FRAME_WIDTH = {image.width};
+    private static final int DIALOG_FRAME_HEIGHT = {image.height};
+    private static final int DIALOG_FRAME_CAP_X = 8;
+    private static final int DIALOG_FRAME_CAP_Y = 7;
+    private static final int[] DIALOG_FRAME_PIXELS = {{
+{pixel_literal}
+    }};
+'''
 text = text.replace(marker, frame_constants, 1)
 
 method_start = text.index('    public void drawWindow(TextWindow textWindow) {')
-method_end_marker = '''    /**\n     * Checks if there is a text window currently open.\n'''
+method_end_marker = '''    /**
+     * Checks if there is a text window currently open.
+'''
 method_end = text.index(method_end_marker, method_start)
 
 replacement = r'''    private int dialogSourceCoord(int destination, int destinationLength, int sourceLength, int sourceCap) {
@@ -203,11 +220,22 @@ replacement = r'''    private int dialogSourceCoord(int destination, int destina
 '''
 text = text[:method_start] + replacement + text[method_end:]
 
-old_dims = '''        // Compute window size and position and put them into the appropriate bytes of the words.\n        int windowDim = ((numLines * CHARHEIGHT + 2 * VMARGIN) << 8) | (maxLength * CHARWIDTH + 2 * HMARGIN);\n        int windowPos = ((left * CHARWIDTH - HMARGIN) << 8) | (bottom * CHARHEIGHT + VMARGIN - 1);\n'''
-new_dims = '''        // Compute window size and position and put them into the appropriate bytes of the words.\n        // PAINTERLY_DIALOG_CLEAN_V4 keeps the generated rails/corners visible.\n        int windowVMargin = state.graphicsMode ? 10 : VMARGIN;\n        int windowHMargin = state.graphicsMode ? 14 : HMARGIN;\n        int windowDim = ((numLines * CHARHEIGHT + 2 * windowVMargin) << 8)\n                | (maxLength * CHARWIDTH + 2 * windowHMargin);\n        int windowPos = ((left * CHARWIDTH - windowHMargin) << 8)\n                | (bottom * CHARHEIGHT + windowVMargin - 1);\n'''
+old_dims = '''        // Compute window size and position and put them into the appropriate bytes of the words.
+        int windowDim = ((numLines * CHARHEIGHT + 2 * VMARGIN) << 8) | (maxLength * CHARWIDTH + 2 * HMARGIN);
+        int windowPos = ((left * CHARWIDTH - HMARGIN) << 8) | (bottom * CHARHEIGHT + VMARGIN - 1);
+'''
+new_dims = '''        // Compute window size and position and put them into the appropriate bytes of the words.
+        // PAINTERLY_DIALOG_CLEAN_V5 keeps the generated rails/corners visible.
+        int windowVMargin = state.graphicsMode ? 10 : VMARGIN;
+        int windowHMargin = state.graphicsMode ? 14 : HMARGIN;
+        int windowDim = ((numLines * CHARHEIGHT + 2 * windowVMargin) << 8)
+                | (maxLength * CHARWIDTH + 2 * windowHMargin);
+        int windowPos = ((left * CHARWIDTH - windowHMargin) << 8)
+                | (bottom * CHARHEIGHT + windowVMargin - 1);
+'''
 if text.count(old_dims) != 1:
     raise RuntimeError('TextGraphics window dimension block not found')
 text = text.replace(old_dims, new_dims, 1)
 
 text_graphics.write_text(text)
-print('Painterly AGI dialog CLEAN_V4 installed: opaque parchment, preserved wood rails/corners, dynamic AGI text')
+print('Painterly AGI dialog CLEAN_V5 installed: exact repo asset, opaque parchment, preserved wood rails/corners')
