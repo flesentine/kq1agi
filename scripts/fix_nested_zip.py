@@ -17,4 +17,10 @@ if text.count(old) != 1:
     raise RuntimeError('Expected ZIP import loop was not found exactly once')
 
 path.write_text(text.replace(old, new))
-print('Patched AGILE ZIP importer to accept game files inside folders.')
+
+# This script already runs early in every browser build, so chain the gameplay
+# rewind patch here without adding another workflow maintenance point.
+import runpy
+runpy.run_path(str(Path(__file__).with_name('add_shift_left_rewind.py')), run_name='__main__')
+
+print('Patched AGILE ZIP importer to accept game files inside folders; Shift+Left rewind installed.')
