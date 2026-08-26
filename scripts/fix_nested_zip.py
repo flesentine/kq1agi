@@ -19,9 +19,10 @@ if text.count(old) != 1:
 path.write_text(text.replace(old, new))
 
 # This script already runs early in every browser build, so chain the gameplay
-# rewind patch here without adding another workflow maintenance point.
+# rewind patches here without adding more workflow maintenance points.
 import runpy
 runpy.run_path(str(Path(__file__).with_name('add_shift_left_rewind.py')), run_name='__main__')
 runpy.run_path(str(Path(__file__).with_name('fix_rewind_restore_redraw.py')), run_name='__main__')
+runpy.run_path(str(Path(__file__).with_name('smooth_rewind.py')), run_name='__main__')
 
-print('Patched AGILE ZIP importer; Shift+Left rewind and full restore redraw installed.')
+print('Patched AGILE ZIP importer; Shift+Left rewind, restore redraw, and smoothing installed.')
