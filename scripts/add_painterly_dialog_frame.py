@@ -41,7 +41,7 @@ if text.count(marker) != 1:
 
 frame_constants = f'''    private static final int UNASSIGNED = -1;
 
-    // PAINTERLY_DIALOG_FRAME CLEAN_V6: hard-alpha nine-slice + opaque parchment core.
+    // PAINTERLY_DIALOG_FRAME CLEAN_V7: opaque frame plus mask-safe dynamic text.
     private static final int DIALOG_FRAME_WIDTH = {image.width};
     private static final int DIALOG_FRAME_HEIGHT = {image.height};
     private static final int DIALOG_FRAME_CAP_X = 8;
@@ -97,10 +97,10 @@ replacement = r'''    private int dialogSourceCoord(int destination, int destina
         int startX = textWindow.x();
         int startY = textWindow.y();
 
-        // CLEAN_V6: guarantee that the entire parchment/text area is opaque before
+        // CLEAN_V7: guarantee that the entire parchment/text area is opaque before
         // drawing the textured nine-slice. The generated asset contains tiny holes
-        // in its alpha around some brush strokes; without this backing fill those
-        // holes let the game scene show through inside/around AGI letter cells.
+        // in its alpha around some brush strokes, so this backing fill prevents the
+        // game scene from leaking through the parchment itself.
         int parchment = DIALOG_FRAME_PIXELS[
                 ((DIALOG_FRAME_HEIGHT / 2) * DIALOG_FRAME_WIDTH) + (DIALOG_FRAME_WIDTH / 2)];
         parchment = (parchment & 0xFFFFFF00) | 0xFF;
@@ -133,9 +133,18 @@ replacement = r'''    private int dialogSourceCoord(int destination, int destina
         }
     }
 
-    /** Draws AGI glyphs over the already-opaque painterly parchment. */
+    /**
+     * Draws AGI glyphs over the painterly parchment.
+     *
+     * PAINTERLY_DIALOG_TEXT_MASK_SAFE: the browser replacement-background layer
+     * makes any pixel transparent when it exactly matches the original AGI room
+     * background. Pure EGA black glyph pixels could therefore disappear wherever
+     * the old room picture was also black. Toggle one imperceptible blue-channel
+     * bit so dialog glyphs are visually black but can never be mistaken for an
+     * untouched EGA background pixel by that compositor.
+     */
     private void drawWindowCharTransparent(byte charNum, int x, int y, int foregroundColour) {
-        int colour = EgaPalette.colours[foregroundColour & 0x0F];
+        int colour = EgaPalette.colours[foregroundColour & 0x0F] ^ 0x00000100;
 
         for (int byteNum = 0; byteNum < 8; byteNum++) {
             int fontByte = (IBM_BIOS_FONT[(((int)charNum & 0xFF) << 3) + byteNum] & 0xFF);
@@ -247,7 +256,7 @@ old_dims = '''        // Compute window size and position and put them into the 
         int windowPos = ((left * CHARWIDTH - HMARGIN) << 8) | (bottom * CHARHEIGHT + VMARGIN - 1);
 '''
 new_dims = '''        // Compute window size and position and put them into the appropriate bytes of the words.
-        // PAINTERLY_DIALOG_CLEAN_V6 keeps the generated rails/corners visible.
+        // PAINTERLY_DIALOG_CLEAN_V7 keeps the generated rails/corners visible.
         int windowVMargin = state.graphicsMode ? 10 : VMARGIN;
         int windowHMargin = state.graphicsMode ? 14 : HMARGIN;
         int windowDim = ((numLines * CHARHEIGHT + 2 * windowVMargin) << 8)
@@ -260,4 +269,4 @@ if text.count(old_dims) != 1:
 text = text.replace(old_dims, new_dims, 1)
 
 text_graphics.write_text(text)
-print('Painterly AGI dialog CLEAN_V6 installed: opaque parchment backing eliminates scene bleed through text')
+print('Painterly AGI dialog CLEAN_V7 installed: opaque parchment and compositor-safe glyph colours')
