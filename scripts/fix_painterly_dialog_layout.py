@@ -12,10 +12,10 @@ text = text_graphics.read_text()
 if 'PAINTERLY_DIALOG_FRAME' not in text:
     raise RuntimeError('painterly dialog frame patch must run first')
 
-# The generated source art intentionally contains a transparent halo around the
-# painted sign. At AGI scale that halo became long see-through/dashed streaks.
-# Keep only the useful painted area when sampling, and make the parchment itself
-# fully opaque while preserving a little edge antialiasing.
+# The original generated PNG has a very faint alpha halo outside the actual sign.
+# At 320x200 AGI resolution those almost-transparent pixels were being stretched
+# into long grey/green bars. Treat low-alpha fringe as empty, snap the painted
+# sign/parchment to opaque, and retain only a narrow antialiased outer edge.
 old_put = '''    private void putPainterlyPixel(int screenX, int screenY, int sourcePixel) {
         if (screenX < 0 || screenX >= 320 || screenY < 0 || screenY >= 200) return;
         int alpha = sourcePixel & 0xFF;
@@ -43,10 +43,11 @@ old_put = '''    private void putPainterlyPixel(int screenX, int screenY, int so
 new_put = '''    private void putPainterlyPixel(int screenX, int screenY, int sourcePixel) {
         if (screenX < 0 || screenX >= 320 || screenY < 0 || screenY >= 200) return;
         int alpha = sourcePixel & 0xFF;
-        if (alpha == 0) return;
-        // PAINTERLY_DIALOG_LAYOUT_V2: generated parchment is effectively opaque;
-        // snap near-opaque pixels to 255 so the scene never ghosts through it.
-        if (alpha >= 220) alpha = 255;
+        // PAINTERLY_DIALOG_LAYOUT_V3: the original generated image contains a
+        // low-alpha fringe well outside the visible frame. Do not let that fringe
+        // blend the scene into the sign when the nine-slice is stretched.
+        if (alpha < 64) return;
+        if (alpha >= 180) alpha = 255;
         int screenPos = (screenY * 320) + screenX;
         if (alpha == 255) {
             pixelData.putPixel(screenPos, (sourcePixel & 0xFFFFFF00) | 0xFF);
@@ -97,8 +98,7 @@ new_coord = '''    private int dialogSourceCoord(int destination, int destinatio
             return Math.min(sourceLength - 1,
                     sourceLength - sourceCap + ((local * sourceCap) / destinationCap));
         }
-        // Stretch the painted middle rather than wrapping/repeating it. Repeating a
-        // tiny source strip created visible seams when the box was short or very wide.
+        // Stretch the painted middle continuously. Tiling the center produced seams.
         int sourceCenter = Math.max(1, sourceLength - (sourceCap * 2));
         int destinationCenter = Math.max(1, destinationLength - (destinationCap * 2));
         int local = destination - destinationCap;
@@ -109,13 +109,20 @@ if text.count(old_coord) != 1:
     raise RuntimeError('painterly dialogSourceCoord block not found')
 text = text.replace(old_coord, new_coord, 1)
 
-# Skip the transparent halo rows/columns from the generated source. The useful
-# painted sign begins a few source pixels in from the alpha bounding box.
+# The uploaded original is 2048x682. Its actual visible painted frame begins near
+# alpha y=79 and ends near y=596, but the raw alpha bbox extends roughly y=35..682.
+# The embedded 128px copy therefore has about 3 junk rows above and 5-6 below.
+# Rescale source coordinates through the useful area instead of CLAMPING them;
+# clamping was duplicating a fringe row across the whole top/bottom of the popup.
 old_sample = '''                int sourcePixel = DIALOG_FRAME_PIXELS[(sourceY * DIALOG_FRAME_WIDTH) + sourceX];
                 putPainterlyPixel(startX + x, startY + y, sourcePixel);
 '''
-new_sample = '''                sourceX = Math.max(2, Math.min(DIALOG_FRAME_WIDTH - 3, sourceX));
-                sourceY = Math.max(3, Math.min(DIALOG_FRAME_HEIGHT - 7, sourceY));
+new_sample = '''                int usefulTop = Math.min(3, Math.max(0, DIALOG_FRAME_HEIGHT - 1));
+                int usefulBottom = Math.min(6, Math.max(0, DIALOG_FRAME_HEIGHT - usefulTop - 1));
+                int usefulHeight = Math.max(1, DIALOG_FRAME_HEIGHT - usefulTop - usefulBottom);
+                if (DIALOG_FRAME_HEIGHT > 1) {
+                    sourceY = usefulTop + ((sourceY * (usefulHeight - 1)) / (DIALOG_FRAME_HEIGHT - 1));
+                }
                 int sourcePixel = DIALOG_FRAME_PIXELS[(sourceY * DIALOG_FRAME_WIDTH) + sourceX];
                 putPainterlyPixel(startX + x, startY + y, sourcePixel);
 '''
@@ -123,23 +130,25 @@ if text.count(old_sample) != 1:
     raise RuntimeError('painterly source sampling block not found')
 text = text.replace(old_sample, new_sample, 1)
 
-# The original AGI popup only has five vertical pixels of padding. That is fine
-# for a 1px red border but not for a painted wooden frame. Give graphical message
-# windows nine pixels above/below the text, so 1-line, 2-line, and long messages
-# all size naturally from their actual line count without touching the frame.
+# Size the popup around the text while leaving enough room for the generated
+# wooden corners/rails. Horizontal padding also keeps letters off the side posts.
 old_dims = '''        // Compute window size and position and put them into the appropriate bytes of the words.
         int windowDim = ((numLines * CHARHEIGHT + 2 * VMARGIN) << 8) | (maxLength * CHARWIDTH + 2 * HMARGIN);
         int windowPos = ((left * CHARWIDTH - HMARGIN) << 8) | (bottom * CHARHEIGHT + VMARGIN - 1);
 '''
 new_dims = '''        // Compute window size and position and put them into the appropriate bytes of the words.
-        // Painterly graphical windows need extra vertical breathing room for the wood rails.
-        int windowVMargin = state.graphicsMode ? 9 : VMARGIN;
-        int windowDim = ((numLines * CHARHEIGHT + 2 * windowVMargin) << 8) | (maxLength * CHARWIDTH + 2 * HMARGIN);
-        int windowPos = ((left * CHARWIDTH - HMARGIN) << 8) | (bottom * CHARHEIGHT + windowVMargin - 1);
+        // Painterly graphical windows use the proportions of the original generated frame:
+        // a larger fixed border around a text-sized parchment center.
+        int windowVMargin = state.graphicsMode ? 13 : VMARGIN;
+        int windowHMargin = state.graphicsMode ? 14 : HMARGIN;
+        int windowDim = ((numLines * CHARHEIGHT + 2 * windowVMargin) << 8)
+                | (maxLength * CHARWIDTH + 2 * windowHMargin);
+        int windowPos = ((left * CHARWIDTH - windowHMargin) << 8)
+                | (bottom * CHARHEIGHT + windowVMargin - 1);
 '''
 if text.count(old_dims) != 1:
     raise RuntimeError('TextGraphics window dimension block not found')
 text = text.replace(old_dims, new_dims, 1)
 
 text_graphics.write_text(text)
-print('Painterly dialog layout v2 installed: opaque parchment, halo trimmed, stretched nine-slice, dynamic vertical padding')
+print('Painterly dialog layout v3 installed: original-art alpha fringe removed, source rescaled, corners preserved, text-fit padding')
