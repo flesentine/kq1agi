@@ -1,1 +1,0 @@
-CLEAN_V4 uses a pre-cleaned 160x41 hard-alpha frame asset.
