@@ -41,7 +41,7 @@ if text.count(marker) != 1:
 
 frame_constants = f'''    private static final int UNASSIGNED = -1;
 
-    // PAINTERLY_DIALOG_FRAME CLEAN_V5: clean hard-alpha nine-slice, compact source.
+    // PAINTERLY_DIALOG_FRAME CLEAN_V6: hard-alpha nine-slice + opaque parchment core.
     private static final int DIALOG_FRAME_WIDTH = {image.width};
     private static final int DIALOG_FRAME_HEIGHT = {image.height};
     private static final int DIALOG_FRAME_CAP_X = 8;
@@ -97,6 +97,28 @@ replacement = r'''    private int dialogSourceCoord(int destination, int destina
         int startX = textWindow.x();
         int startY = textWindow.y();
 
+        // CLEAN_V6: guarantee that the entire parchment/text area is opaque before
+        // drawing the textured nine-slice. The generated asset contains tiny holes
+        // in its alpha around some brush strokes; without this backing fill those
+        // holes let the game scene show through inside/around AGI letter cells.
+        int parchment = DIALOG_FRAME_PIXELS[
+                ((DIALOG_FRAME_HEIGHT / 2) * DIALOG_FRAME_WIDTH) + (DIALOG_FRAME_WIDTH / 2)];
+        parchment = (parchment & 0xFFFFFF00) | 0xFF;
+        int innerLeft = Math.min(DIALOG_FRAME_CAP_X, Math.max(0, destinationWidth / 2));
+        int innerTop = Math.min(DIALOG_FRAME_CAP_Y, Math.max(0, destinationHeight / 2));
+        int innerRight = Math.max(innerLeft, destinationWidth - innerLeft);
+        int innerBottom = Math.max(innerTop, destinationHeight - innerTop);
+        for (int y = innerTop; y < innerBottom; y++) {
+            int py = startY + y;
+            if (py < 0 || py >= 200) continue;
+            for (int x = innerLeft; x < innerRight; x++) {
+                int px = startX + x;
+                if (px >= 0 && px < 320) {
+                    pixelData.putPixel((py * 320) + px, parchment);
+                }
+            }
+        }
+
         for (int y = 0; y < destinationHeight; y++) {
             int sourceY = dialogSourceCoord(y, destinationHeight,
                     DIALOG_FRAME_HEIGHT, DIALOG_FRAME_CAP_Y);
@@ -111,7 +133,7 @@ replacement = r'''    private int dialogSourceCoord(int destination, int destina
         }
     }
 
-    /** Draws AGI glyphs without painting white 8x8 cells over the parchment. */
+    /** Draws AGI glyphs over the already-opaque painterly parchment. */
     private void drawWindowCharTransparent(byte charNum, int x, int y, int foregroundColour) {
         int colour = EgaPalette.colours[foregroundColour & 0x0F];
 
@@ -225,7 +247,7 @@ old_dims = '''        // Compute window size and position and put them into the 
         int windowPos = ((left * CHARWIDTH - HMARGIN) << 8) | (bottom * CHARHEIGHT + VMARGIN - 1);
 '''
 new_dims = '''        // Compute window size and position and put them into the appropriate bytes of the words.
-        // PAINTERLY_DIALOG_CLEAN_V5 keeps the generated rails/corners visible.
+        // PAINTERLY_DIALOG_CLEAN_V6 keeps the generated rails/corners visible.
         int windowVMargin = state.graphicsMode ? 10 : VMARGIN;
         int windowHMargin = state.graphicsMode ? 14 : HMARGIN;
         int windowDim = ((numLines * CHARHEIGHT + 2 * windowVMargin) << 8)
@@ -238,4 +260,4 @@ if text.count(old_dims) != 1:
 text = text.replace(old_dims, new_dims, 1)
 
 text_graphics.write_text(text)
-print('Painterly AGI dialog CLEAN_V5 installed: exact repo asset, opaque parchment, preserved wood rails/corners')
+print('Painterly AGI dialog CLEAN_V6 installed: opaque parchment backing eliminates scene bleed through text')
