@@ -22,5 +22,6 @@ path.write_text(text.replace(old, new))
 # rewind patch here without adding another workflow maintenance point.
 import runpy
 runpy.run_path(str(Path(__file__).with_name('add_shift_left_rewind.py')), run_name='__main__')
+runpy.run_path(str(Path(__file__).with_name('fix_rewind_restore_redraw.py')), run_name='__main__')
 
-print('Patched AGILE ZIP importer to accept game files inside folders; Shift+Left rewind installed.')
+print('Patched AGILE ZIP importer; Shift+Left rewind and full restore redraw installed.')
