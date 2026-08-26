@@ -105,4 +105,10 @@ if text.count(hide_pair) != 1:
 text = text.replace(hide_pair, hide_pair_new, 1)
 
 path.write_text(text)
-print('Debug browser UI improved: always-visible DEBUG + COPY DEBUG, MOVE SPRITE button, issue text stamped over capture')
+
+# Add an explicit recovery control for accidental visual pins. This runs after
+# the main debug UI patch so it can target the final MOVE SPRITE controls.
+import runpy
+runpy.run_path(str(Path(__file__).with_name('add_reset_sprite_button.py')), run_name='__main__')
+
+print('Debug browser UI improved: always-visible DEBUG + COPY DEBUG, MOVE/RESET SPRITE controls, issue text stamped over capture')
