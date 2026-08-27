@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import sys
+import runpy
 
 if len(sys.argv) != 2:
     raise SystemExit('usage: add_scene_mask_fall.py /path/to/agile-gdx')
@@ -124,3 +125,8 @@ text = text.replace('1=foreground/occluder, 2=collision, 3=behind-zone,',
                     '1=foreground/occluder, 2=collision, 3=behind-zone, 4=water, 5=fall/special,')
 p.write_text(text)
 print('FALL mask installed: 5 paints AGI HITSPEC danger, 6 moves sprites; magenta overlay persists per room')
+
+# Immediately migrate Sierra's hidden 0/1/2/3 control picture into the same
+# visible/editable BLOCK/WATER/FALL planes. Keeping this chained here guarantees
+# the unified pass runs after FALL exists in every browser build.
+runpy.run_path(str(Path(__file__).with_name('unify_scene_control_map.py')), run_name='__main__')
