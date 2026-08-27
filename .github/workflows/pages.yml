@@ -102,6 +102,7 @@ jobs:
           python3 scripts/add_scene_object_move.py agile-gdx
           python3 scripts/improve_scene_object_move.py agile-gdx
           python3 scripts/fix_scene_object_move_bounds.py agile-gdx
+          python3 scripts/add_scene_mask_fall.py agile-gdx
           python3 scripts/fix_debug_capture_framebuffer.py agile-gdx
           cp web/coi-serviceworker.js agile-gdx/html/webapp/coi-serviceworker.js
 
@@ -118,15 +119,21 @@ jobs:
           grep -q 'layerVisible' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'Input.Keys.NUM_4' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'Input.Keys.NUM_5' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
+          grep -q 'Input.Keys.NUM_6' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'drawMoveSelection' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'grabPad = 6' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'MOVE SPRITE: click a box once, then drag anywhere' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'Math.max(-40, Math.min(40' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'Legacy/debug accident' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'private static final int WATER = 3' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
+          grep -q 'private static final int FALL = 4' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
+          grep -q '5 FALL 6 MOVE' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'getSceneMaskWaterActive' agile-gdx/core/src/main/java/com/agifans/agile/VariableData.java
+          grep -q 'getSceneMaskFallActive' agile-gdx/core/src/main/java/com/agifans/agile/VariableData.java
+          grep -q 'SCENE_MASK_FALL_BITS' agile-gdx/html/src/main/java/com/agifans/agile/gwt/GwtVariableData.java
           grep -q 'getSceneVisualOffsetCount' agile-gdx/core/src/main/java/com/agifans/agile/VariableData.java
           grep -q 'effectiveControlPriority' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
+          grep -q 'getSceneMaskBit(FALL, x, y)' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
           grep -q 'objectVisualOffsetX' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
           grep -q 'publishMoveObjects' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
           grep -q 'Math.min(160 - width' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskRuntime.java
@@ -146,7 +153,7 @@ jobs:
           grep -q 'agi-scene-mask-editor-v3' agile-gdx/core/src/main/java/com/agifans/agile/SceneMaskEditor.java
           grep -q 'preserveDrawingBuffer = true' agile-gdx/html/src/main/java/com/agifans/agile/gwt/GwtLauncher.java
           grep -q '__kq1agiVariableSAB' agile-gdx/html/src/main/java/com/agifans/agile/gwt/GwtVariableData.java
-          echo 'scene mask editor, on-screen sprite safety, live-frame debug capture, WATER trigger, and render-only swim/drown gating verified'
+          echo 'scene mask editor, FALL/HITSPEC danger paint, on-screen sprite safety, live-frame debug capture, WATER trigger, and render-only swim/drown gating verified'
 
       - name: Build AGILE HTML5 app
         run: |
@@ -174,12 +181,13 @@ jobs:
           cp agile-gdx/LICENSE _site/LICENSE-AGILE.txt
           cp "$GITHUB_WORKSPACE/web/index.html" _site/index.html
           cp "$GITHUB_WORKSPACE/web/coi-serviceworker.js" _site/coi-serviceworker.js
-          sed -i 's/kq1agi-coi-retries-v4/kq1agi-coi-retries-v23/g; s/20260821-export-bg-1/20260824-debug-ui-6/g' _site/index.html
+          sed -i 's/kq1agi-coi-retries-v4/kq1agi-coi-retries-v23/g; s/20260821-export-bg-1/20260826-fall-debug-1/g' _site/index.html
           python3 scripts/patch_web_brush_overlay.py _site/index.html
           python3 scripts/patch_web_debug_capture.py _site/index.html
           python3 scripts/patch_web_debug_ui.py _site/index.html
           python3 scripts/patch_web_debug_image_only.py _site/index.html
           python3 scripts/patch_web_debug_metadata.py _site/index.html
+          python3 scripts/patch_web_debug_menu.py _site/index.html
           mkdir -p _site/backgrounds
           find backgrounds -maxdepth 1 -type f \( -iname 'room_*.png' -o -iname 'room_*.jpg' -o -iname 'room_*.jpeg' \) -exec cp {} _site/backgrounds/ \;
           touch _site/.nojekyll
@@ -190,6 +198,15 @@ jobs:
           grep -q '>DEBUG</button>' _site/index.html
           grep -q 'id="debug-snap-button"' _site/index.html
           grep -q 'id="move-sprite-button"' _site/index.html
+          grep -q 'id="reset-sprite-button"' _site/index.html
+          grep -q 'id="debug-layer-fall"' _site/index.html
+          grep -q 'data-debug-visibility="v"' _site/index.html
+          grep -q 'FALL = AGI HITSPEC / control 2' _site/index.html
+          grep -q 'id="debug-clear-layer"' _site/index.html
+          grep -q 'id="debug-save-mask"' _site/index.html
+          grep -q 'id="debug-copy-mask"' _site/index.html
+          grep -q "tapGameKey('6', 'Digit6', 54)" _site/index.html
+          ! grep -q "tapGameKey('5', 'Digit5', 53)" _site/index.html
           grep -q 'id="export-bg-button"' _site/index.html
           grep -q 'id="brush-control"' _site/index.html
           grep -q 'id="brush-size"' _site/index.html
@@ -208,10 +225,10 @@ jobs:
           grep -q 'Cmd/Ctrl+Shift+D' _site/index.html
           grep -q 'Space + drag = pan' _site/index.html
           grep -q 'Tab shortcut' _site/index.html
-          grep -q '20260824-debug-ui-6' _site/index.html
+          grep -q '20260826-fall-debug-1' _site/index.html
           grep -q 'room_001_hires.png' _site/index.html
           test -f _site/backgrounds/room_001_hires.png
-          echo 'actual game-frame image debug capture with AGI metadata, always-visible DEBUG, safe MOVE SPRITE, WATER trigger, and clean background verified'
+          echo 'actual game-frame debug capture, grouped debug palette, FALL/HITSPEC paint, safe MOVE/RESET SPRITE, WATER trigger, and clean background verified'
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
