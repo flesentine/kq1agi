@@ -143,6 +143,8 @@
     sendF2();
   });
 
+  // MacBook-friendly shortcut. Tab is not a printable AGI parser character, so
+  // using it for the editor does not sacrifice any command-line input.
   window.addEventListener('keydown', event => {
     if (event.key !== 'Tab' || event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
     event.preventDefault();
