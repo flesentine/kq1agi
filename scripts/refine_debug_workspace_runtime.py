@@ -155,7 +155,10 @@ key_repl = r'''        if (!paintMode) return false;
         }
 
 '''
-one(key_anchor, key_repl, 'workspace keyboard anchor')
+# This phrase also appears in touch handlers, so patch only the keyDown method.
+key_method = text.index('    public boolean keyDown(int keycode)')
+key_pos = text.index(key_anchor, key_method)
+text = text[:key_pos] + key_repl + text[key_pos + len(key_anchor):]
 
 # Selecting any paint layer exits inspect mode. MOVE also exits inspect.
 text = text.replace('moveMode = false; mode = OCCLUDER;', 'inspectMode = false; moveMode = false; mode = OCCLUDER;')
@@ -190,7 +193,7 @@ touch_anchor = '''        if (!paintMode) return false;
 touch_method = text.index('    public boolean touchDown(')
 touch_pos = text.index(touch_anchor, touch_method)
 text = text[:touch_pos] + '''        if (!paintMode) return false;
-        if (inspectMode) return true;
+        if (inspectMode && !(spacePan && zoom > 1)) return true;
 ''' + text[touch_pos + len(touch_anchor):]
 
 paint_start_anchor = '''        rightErase = (button == Input.Buttons.RIGHT);
@@ -273,7 +276,10 @@ if notice_pos < 0:
 paint_close = text.rfind('        }\n\n', hud_start, notice_pos)
 if paint_close < 0:
     raise RuntimeError('paint-mode render close not found')
-text = text[:hud_start] + '            batch.setColor(Color.WHITE);\n' + text[paint_close:]
+text = text[:hud_start] + (
+    '            // Browser workspace shortcuts: 4 water, 5 FALL 6 MOVE.\n'
+    '            batch.setColor(Color.WHITE);\n'
+) + text[paint_close:]
 
 editor.write_text(text)
 print('Debug workspace runtime refined: clean canvas HUD, inspect mode, outline/opacity controls, one-step undo/redo')
