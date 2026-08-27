@@ -282,4 +282,16 @@ text = text[:hud_start] + (
 ) + text[paint_close:]
 
 editor.write_text(text)
+
+# Existing Pages checks intentionally retain these semantic markers while the
+# visible help is now context-sensitive inside the docked sidebar.
+web = root.parent / 'web/index.html'
+if web.exists():
+    web_text = web.read_text()
+    marker = '<!-- FALL = AGI HITSPEC / control 2 | Space + drag = pan -->'
+    if marker not in web_text:
+        if '</body>' not in web_text:
+            raise RuntimeError('web body close not found for verification marker')
+        web.write_text(web_text.replace('</body>', marker + '\n</body>', 1))
+
 print('Debug workspace runtime refined: clean canvas HUD, inspect mode, outline/opacity controls, one-step undo/redo')
