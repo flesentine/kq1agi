@@ -31,15 +31,15 @@ one(
 'debug history fields'
 )
 
+# Unified-control/script-danger patches insert handshake fields between FALL and MOVE,
+# so anchor only on FALL and leave those existing fields exactly where they are.
 one(
 '''    private boolean fallActive;
-    private boolean moveMode;
 ''',
 '''    private boolean fallActive;
     private boolean inspectMode;
     private boolean outlineMode;
     private int overlayOpacityPercent = 70;
-    private boolean moveMode;
 ''',
 'debug workspace fields'
 )
