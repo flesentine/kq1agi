@@ -386,7 +386,7 @@ method = '''    private void rebuildScriptFallDisplay() {
     public void render(SpriteBatch batch) {
 '''
 t = one(t, method_anchor, method, 'editor expanded script fall helper')
-t = one(t, '5 FALL 6 MOVE | orange=script fall | V hide fall',
+t = one(t, '5 FALL 6 MOVE | V hide fall',
         '5 FALL 6 MOVE | orange=script fall expanded | V hide fall',
         'editor help')
 p.write_text(t)
