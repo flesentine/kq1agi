@@ -278,6 +278,7 @@ if paint_close < 0:
     raise RuntimeError('paint-mode render close not found')
 text = text[:hud_start] + (
     '            // Browser workspace shortcuts: 4 water, 5 FALL 6 MOVE.\n'
+    '            // MOVE SPRITE: click a box once, then drag anywhere\n'
     '            batch.setColor(Color.WHITE);\n'
 ) + text[paint_close:]
 
