@@ -105,13 +105,11 @@ if text.count(loop) != 2:
     raise RuntimeError(f'SceneMaskEditor four-layer loops: found {text.count(loop)}')
 text = text.replace(loop, '        for (int layer = 0; layer < 5; layer++) {\n')
 
-# Add FALL metadata to syncAll without touching loadRoom's WATER write.
 sync_start = text.index('    private void syncAll() {')
 marker = '        data.setSceneMaskWaterActive(waterActive);\n'
 pos = text.index(marker, sync_start)
 text = text[:pos] + marker + '        data.setSceneMaskFallActive(fallActive);\n' + text[pos + len(marker):]
 
-# paint() checks mode; morphSelectedLayer() and CLEAR both check local layer.
 mode_water = '        if (mode == WATER) activateWaterMask();\n'
 if text.count(mode_water) != 1:
     raise RuntimeError(f'SceneMaskEditor paint WATER activation: found {text.count(mode_water)}')
@@ -127,6 +125,9 @@ p.write_text(text)
 print('FALL mask installed: 5 paints AGI HITSPEC danger, 6 moves sprites; magenta overlay persists per room')
 
 # Immediately migrate Sierra's hidden 0/1/2/3 control picture into the same
-# visible/editable BLOCK/WATER/FALL planes. Keeping this chained here guarantees
-# the unified pass runs after FALL exists in every browser build.
+# visible/editable BLOCK/WATER/FALL planes.
 runpy.run_path(str(Path(__file__).with_name('unify_scene_control_map.py')), run_name='__main__')
+
+# Then discover position-based scripted hazards (such as bridge-edge falls) and
+# expose them in the FALL debug view as an erasable/suppressible orange layer.
+runpy.run_path(str(Path(__file__).with_name('add_scripted_fall_zones.py')), run_name='__main__')
