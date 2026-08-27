@@ -38,3 +38,9 @@ finally:
 # screen so the normal "press any key" input can always start the game.
 fix = Path(__file__).with_name('fix_debug_workspace_launch.py')
 runpy.run_path(str(fix), run_name='__main__')
+
+# The dock reduces available browser width without changing libGDX's render
+# dimensions. Scale the complete canvas into that remaining space rather than
+# clipping the right side of the AGI screen.
+fit = Path(__file__).with_name('fix_debug_canvas_fit.py')
+runpy.run_path(str(fit), run_name='__main__')
