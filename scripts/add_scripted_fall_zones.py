@@ -258,13 +258,15 @@ t = one(t,
 p.write_text(t)
 
 # Editor: keep SCRIPT_FALL as a hidden sixth plane rendered under FALL in orange.
+# Its exact pixels continue to control gameplay. The debug view expands them by
+# two AGI pixels in every direction so tiny one-pixel Sierra tests are legible.
 p = root / 'core/src/main/java/com/agifans/agile/SceneMaskEditor.java'
 t = p.read_text()
 t = one(t, '    private static final int FALL = 4;\n',
-        '    private static final int FALL = 4;\n    private static final int SCRIPT_FALL = 5;\n',
+        '    private static final int FALL = 4;\n    private static final int SCRIPT_FALL = 5;\n    private static final int SCRIPT_FALL_DISPLAY_RADIUS = 2;\n',
         'editor constant')
 t = one(t, '    private final boolean[][][] masks = new boolean[5][HEIGHT][WIDTH];\n',
-        '    private final boolean[][][] masks = new boolean[6][HEIGHT][WIDTH];\n',
+        '    private final boolean[][][] masks = new boolean[6][HEIGHT][WIDTH];\n    private final boolean[][] scriptFallDisplay = new boolean[HEIGHT][WIDTH];\n',
         'editor mask count')
 t = one(t,
         '    private final boolean[] layerVisible = new boolean[] { true, true, true, true, true };\n',
@@ -336,20 +338,69 @@ t = one(t,
 '''                masks[layer][y][x] = value;
                 data.setSceneMaskBit(layer, x, y, value);
                 if (erase && layer == FALL) {
-                    masks[SCRIPT_FALL][y][x] = false;
-                    data.setSceneMaskBit(SCRIPT_FALL, x, y, false);
+                    // SCRIPT_FALL is displayed with a 2-pixel debug halo. Erasing
+                    // anywhere in that visible halo clears nearby exact trigger
+                    // pixels, but never enlarges the gameplay trigger itself.
+                    for (int sy = Math.max(0, y - SCRIPT_FALL_DISPLAY_RADIUS);
+                            sy <= Math.min(HEIGHT - 1, y + SCRIPT_FALL_DISPLAY_RADIUS); sy++) {
+                        for (int sx = Math.max(0, x - SCRIPT_FALL_DISPLAY_RADIUS);
+                                sx <= Math.min(WIDTH - 1, x + SCRIPT_FALL_DISPLAY_RADIUS); sx++) {
+                            if (!masks[SCRIPT_FALL][sy][sx]) continue;
+                            masks[SCRIPT_FALL][sy][sx] = false;
+                            data.setSceneMaskBit(SCRIPT_FALL, sx, sy, false);
+                        }
+                    }
                 }
 ''', 'editor erase scripted fall')
-t = one(t,
-'''                if (layerVisible[FALL]) drawMaskRuns(batch, masks[FALL], new Color(1f, 0.08f, 0.62f, 0.52f));
-''',
-'''                if (layerVisible[FALL]) {
-                    drawMaskRuns(batch, masks[SCRIPT_FALL], new Color(1f, 0.48f, 0.05f, 0.48f));
+
+draw_anchor = '''                if (layerVisible[FALL]) drawMaskRuns(batch, masks[FALL], new Color(1f, 0.08f, 0.62f, 0.52f));
+'''
+draw_repl = '''                if (layerVisible[FALL]) {
+                    rebuildScriptFallDisplay();
+                    drawMaskRuns(batch, scriptFallDisplay, new Color(1f, 0.48f, 0.05f, 0.55f));
                     drawMaskRuns(batch, masks[FALL], new Color(1f, 0.08f, 0.62f, 0.52f));
                 }
-''', 'editor script fall draw')
-t = one(t, '5 FALL 6 MOVE | V hide fall',
-        '5 FALL 6 MOVE | orange=script fall | V hide fall',
+'''
+t = one(t, draw_anchor, draw_repl, 'editor script fall draw')
+
+method_anchor = '''    public void render(SpriteBatch batch) {
+'''
+method = '''    private void rebuildScriptFallDisplay() {
+        for (int y = 0; y < HEIGHT; y++) {
+            for (int x = 0; x < WIDTH; x++) scriptFallDisplay[y][x] = false;
+        }
+        for (int y = 0; y < HEIGHT; y++) {
+            for (int x = 0; x < WIDTH; x++) {
+                if (!masks[SCRIPT_FALL][y][x]) continue;
+                int top = Math.max(0, y - SCRIPT_FALL_DISPLAY_RADIUS);
+                int bottom = Math.min(HEIGHT - 1, y + SCRIPT_FALL_DISPLAY_RADIUS);
+                int left = Math.max(0, x - SCRIPT_FALL_DISPLAY_RADIUS);
+                int right = Math.min(WIDTH - 1, x + SCRIPT_FALL_DISPLAY_RADIUS);
+                for (int yy = top; yy <= bottom; yy++) {
+                    for (int xx = left; xx <= right; xx++) scriptFallDisplay[yy][xx] = true;
+                }
+            }
+        }
+    }
+
+    public void render(SpriteBatch batch) {
+'''
+t = one(t, method_anchor, method, 'editor expanded script fall helper')
+t = one(t, '5 FALL 6 MOVE | orange=script fall | V hide fall',
+        '5 FALL 6 MOVE | orange=script fall expanded | V hide fall',
         'editor help')
 p.write_text(t)
-print('Scripted FALL installed: orange room-script danger zones are visible; erasing FALL suppresses them')
+
+# Force browsers to fetch the updated runtime; gameplay trigger geometry is
+# unchanged, only the orange debug representation is expanded.
+web = root.parent / 'web/index.html'
+if web.exists():
+    wt = web.read_text()
+    old_tag = "const BUILD_TAG = '20260827-script-fall-1';"
+    new_tag = "const BUILD_TAG = '20260827-script-fall-visible-2';"
+    if old_tag in wt:
+        web.write_text(wt.replace(old_tag, new_tag, 1))
+    elif new_tag not in wt:
+        raise RuntimeError('web BUILD_TAG anchor not found')
+
+print('Scripted FALL installed: orange script hazards use a 5x5 debug footprint; exact gameplay triggers remain unchanged')
