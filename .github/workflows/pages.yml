@@ -102,8 +102,8 @@ jobs:
           python3 scripts/add_scene_object_move.py agile-gdx
           python3 scripts/improve_scene_object_move.py agile-gdx
           python3 scripts/fix_scene_object_move_bounds.py agile-gdx
-          python3 scripts/add_scene_mask_fall.py agile-gdx
           python3 scripts/fix_debug_capture_framebuffer.py agile-gdx
+          python3 scripts/add_scene_mask_fall.py agile-gdx
           cp web/coi-serviceworker.js agile-gdx/html/webapp/coi-serviceworker.js
 
       - name: Verify scene mask editor patch landed
