@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import sys
+import runpy
 
 if len(sys.argv) != 2:
     raise SystemExit('usage: run_debug_workspace_redesign.py /path/to/index.html')
@@ -32,3 +33,8 @@ try:
     exec(compile(source, str(script), 'exec'), scope, scope)
 finally:
     sys.argv = old_argv
+
+# Final guardrail pass: keep the editor vertical and unavailable on the title
+# screen so the normal "press any key" input can always start the game.
+fix = Path(__file__).with_name('fix_debug_workspace_launch.py')
+runpy.run_path(str(fix), run_name='__main__')
