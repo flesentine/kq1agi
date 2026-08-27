@@ -131,3 +131,7 @@ runpy.run_path(str(Path(__file__).with_name('unify_scene_control_map.py')), run_
 # Then discover position-based scripted hazards (such as bridge-edge falls) and
 # expose them in the FALL debug view as an erasable/suppressible orange layer.
 runpy.run_path(str(Path(__file__).with_name('add_scripted_fall_zones.py')), run_name='__main__')
+
+# Final UX pass: keep the game canvas clean and let the docked browser workspace
+# own inspect/outline/opacity/undo controls.
+runpy.run_path(str(Path(__file__).with_name('refine_debug_workspace_runtime.py')), run_name='__main__')
