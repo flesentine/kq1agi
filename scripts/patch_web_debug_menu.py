@@ -190,3 +190,6 @@ text = text.replace(listener_anchor, listeners, 1)
 
 path.write_text(text)
 print('Debug palette improved: clickable FRONT/BLOCK/BEHIND/WATER/FALL layers, visibility toggles, mask tools, MOVE key 6')
+
+# Final UX pass: transform the floating palette into the docked editor workspace.
+__import__('runpy').run_path(str(Path(__file__).with_name('redesign_debug_workspace.py')), run_name='__main__')
