@@ -11,3 +11,4 @@ runpy.run_path(str(here / 'fix_debug_canvas_restore_base.py'), run_name='__main_
 runpy.run_path(str(here / 'patch_web_debug_view_presets.py'), run_name='__main__')
 runpy.run_path(str(here / 'patch_web_debug_view_bridge.py'), run_name='__main__')
 runpy.run_path(str(here / 'patch_web_fall_accessibility.py'), run_name='__main__')
+runpy.run_path(str(here / 'patch_web_fall_scan_refresh.py'), run_name='__main__')
