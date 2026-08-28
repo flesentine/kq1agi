@@ -44,3 +44,9 @@ runpy.run_path(str(fix), run_name='__main__')
 # clipping the right side of the AGI screen.
 fit = Path(__file__).with_name('fix_debug_canvas_fit.py')
 runpy.run_path(str(fit), run_name='__main__')
+
+# TEST must restore the exact inline canvas sizing that AGILE/libGDX owned before
+# DEBUG opened. Removing those properties makes the canvas fall back to its large
+# intrinsic render size and looks like a zoomed/cropped game.
+restore = Path(__file__).with_name('fix_debug_canvas_restore.py')
+runpy.run_path(str(restore), run_name='__main__')
