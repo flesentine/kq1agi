@@ -9,3 +9,4 @@ if len(sys.argv) != 2:
 here = Path(__file__).resolve().parent
 runpy.run_path(str(here / 'refine_debug_workspace_runtime_base.py'), run_name='__main__')
 runpy.run_path(str(here / 'fix_debug_view_presets_runtime.py'), run_name='__main__')
+runpy.run_path(str(here / 'fix_debug_view_bridge_runtime.py'), run_name='__main__')
