@@ -42,11 +42,11 @@ help_repl = '''  function retryFallScan() {\n    try {\n      const sab = window
 one(help_anchor, help_repl, 'FALL retry handler anchor')
 
 old = "const BUILD_TAG = '20260828-fall-accessible-v1';"
-new = "const BUILD_TAG = '20260828-fall-accessible-v5-worker';"
+new = "const BUILD_TAG = '20260828-fall-accessible-v6-adopt';"
 if old in text:
     text = text.replace(old, new, 1)
 elif new not in text:
-    raise RuntimeError('FALL accessibility build tag not found for worker refresh')
+    raise RuntimeError('FALL accessibility build tag not found for preload-adoption refresh')
 
 path.write_text(text)
-print('FALL worker diagnostic UI installed: stalled scans expose game/editor room + seed state')
+print('FALL preload-adoption UI tag installed: worker-ready maps survive initial editor sync')
