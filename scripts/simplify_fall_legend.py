@@ -27,7 +27,7 @@ old_summary = '''    let html = '<span class="fall-access-title">FALL · AGI HIT
 new_summary = '''    let html = '<span class="fall-access-title">FALL AREAS</span>'
       + '<span class="fall-access-status' + (empty ? ' fall-access-none' : '') + '">'
       + (empty
-          ? 'NONE IN THIS ROOM'
+          ? ('NONE IN THIS ROOM · Editable: ' + fallText + ' · Scripted: ' + scriptText)
           : ('Editable: ' + fallText + ' · Scripted: ' + scriptText))
       + '</span>';
 '''
@@ -50,11 +50,11 @@ new_legend = '''    if (ready && !empty) {
 one(old_legend, new_legend, 'FALL plain-language legend')
 
 old_tag = "const BUILD_TAG = '20260829-fall-accessible-v7-signed';"
-new_tag = "const BUILD_TAG = '20260829-fall-accessible-v8-legend';"
+new_tag = "const BUILD_TAG = '20260829-fall-accessible-v9-zero-counts';"
 if old_tag in text:
     text = text.replace(old_tag, new_tag, 1)
 elif new_tag not in text:
     raise RuntimeError('FALL legend build tag not found')
 
 path.write_text(text)
-print('FALL legend simplified: plain Editable / Scripted / Dotted edge labels')
+print('FALL legend simplified: plain Editable / Scripted / Dotted edge labels with exact empty-room counts')
