@@ -33,12 +33,16 @@ one(
 'room-change reset state'
 )
 
-# If a reset reseed completes, it is now a stable redo/undo state.
-one(
-'''        waitingForControlSeed = false;\n        waterActive = true;\n        fallActive = true;\n''',
-'''        waitingForControlSeed = false;\n        resetSeedPending = false;\n        waterActive = true;\n        fallActive = true;\n''',
-'adopt reset seed completion'
-)
+# If a reset reseed completes, it is now a stable redo/undo state. Patch only
+# the adoption method; the same lines also occur in the normal first-load path.
+adopt_method = text.find('    private void adoptUnifiedControlSeedIfReady() {')
+if adopt_method < 0:
+    raise RuntimeError('adoptUnifiedControlSeedIfReady method not found')
+adopt_tail = '''        waitingForControlSeed = false;\n        waterActive = true;\n        fallActive = true;\n'''
+adopt_pos = text.find(adopt_tail, adopt_method)
+if adopt_pos < 0:
+    raise RuntimeError('adopt unified-control completion block not found')
+text = text[:adopt_pos] + '''        waitingForControlSeed = false;\n        resetSeedPending = false;\n        waterActive = true;\n        fallActive = true;\n''' + text[adopt_pos + len(adopt_tail):]
 
 # Add a whole-room reset immediately after the existing snapshot helper. Layers
 # 0..4 are editable FRONT/BLOCK/BEHIND/WATER/FALL. Layer 5 is the detected
