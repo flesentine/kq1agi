@@ -10,6 +10,7 @@ here = Path(__file__).resolve().parent
 runpy.run_path(str(here / 'refine_debug_workspace_runtime_base.py'), run_name='__main__')
 runpy.run_path(str(here / 'fix_debug_view_presets_runtime.py'), run_name='__main__')
 runpy.run_path(str(here / 'fix_debug_view_bridge_runtime.py'), run_name='__main__')
+runpy.run_path(str(here / 'fix_debug_eraser_bridge_runtime.py'), run_name='__main__')
 runpy.run_path(str(here / 'improve_fall_accessibility_runtime.py'), run_name='__main__')
 runpy.run_path(str(here / 'fix_scene_seed_tick.py'), run_name='__main__')
 runpy.run_path(str(here / 'fix_shared_array_signed_reads.py'), run_name='__main__')
