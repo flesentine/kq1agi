@@ -53,5 +53,19 @@ if text.count(render_old) != 1:
     raise RuntimeError('SceneMaskEditor in-canvas PAINT render block not found')
 text = text.replace(render_old, render_new)
 
+# Arrow keys used to shift every editable mask plane at once. That is too easy to
+# trigger accidentally while authoring or testing a room. Remove only the four
+# shiftAllMasks bindings, but keep the nudge-size local above them because the
+# later sprite-move patch intentionally uses that line as its insertion anchor.
+matte_arrow_bindings = '''        if (keycode == Input.Keys.LEFT) { shiftAllMasks(-nudge, 0); return true; }
+        else if (keycode == Input.Keys.RIGHT) { shiftAllMasks(nudge, 0); return true; }
+        else if (keycode == Input.Keys.UP) { shiftAllMasks(0, -nudge); return true; }
+        else if (keycode == Input.Keys.DOWN) { shiftAllMasks(0, nudge); return true; }
+
+'''
+if text.count(matte_arrow_bindings) != 1:
+    raise RuntimeError('SceneMaskEditor matte arrow-key bindings not found')
+text = text.replace(matte_arrow_bindings, '')
+
 editor.write_text(text)
-print('Scene mask UI sync fixed: browser PAINT/TEST is the single toggle; brush overlay cannot remain from canvas-only test toggles')
+print('Scene mask UI sync fixed: browser PAINT/TEST is authoritative and arrow keys no longer move the matte')
