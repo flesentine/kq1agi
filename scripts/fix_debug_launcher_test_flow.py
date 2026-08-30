@@ -124,8 +124,10 @@ poll_anchor = '''  setInterval(refreshDebugButtonAvailability, 200);\n'''
 poll_new = '''  setInterval(() => {\n    refreshDebugButtonAvailability();\n    if (paintUiActive && !debugWorkspaceAllowed()) {\n      setDebugWorkspaceEngineActive(false);\n      setPaintUiActive(false);\n      restoreGameFocusAfterDebug();\n    }\n  }, 200);\n'''
 one(poll_anchor, poll_new, 'workspace safety poll')
 
-# Make the browser shell cache change obvious.
-old_tag = "const BUILD_TAG = '20260827-debug-workspace-v3-fix1';"
+# Make the browser shell cache change obvious. This script runs after the final
+# FALL/ERASE browser patches, so target their current build tag rather than the
+# earlier workspace-fit tag.
+old_tag = "const BUILD_TAG = '20260829-debug-eraser-bridge-v1';"
 new_tag = "const BUILD_TAG = '20260830-debug-left-test-bridge-v1';"
 if old_tag in text:
     text = text.replace(old_tag, new_tag, 1)
