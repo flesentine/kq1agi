@@ -14,3 +14,4 @@ runpy.run_path(str(here / 'fix_debug_eraser_bridge_runtime.py'), run_name='__mai
 runpy.run_path(str(here / 'improve_fall_accessibility_runtime.py'), run_name='__main__')
 runpy.run_path(str(here / 'fix_scene_seed_tick.py'), run_name='__main__')
 runpy.run_path(str(here / 'fix_shared_array_signed_reads.py'), run_name='__main__')
+runpy.run_path(str(here / 'add_scene_mask_reset_default.py'), run_name='__main__')
