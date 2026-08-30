@@ -54,20 +54,18 @@ if text.count(render_old) != 1:
 text = text.replace(render_old, render_new)
 
 # Arrow keys used to shift every editable mask plane at once. That is too easy to
-# trigger accidentally while authoring or testing a room, so leave the legacy
-# shiftAllMasks helper in place for patch compatibility but remove all arrow-key
-# bindings. Arrow input can now fall through normally instead of mutating masks.
-arrow_nudge = '''        int nudge = (Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT)
-                || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT)) ? 4 : 1;
-        if (keycode == Input.Keys.LEFT) { shiftAllMasks(-nudge, 0); return true; }
+# trigger accidentally while authoring or testing a room. Remove only the four
+# shiftAllMasks bindings, but keep the nudge-size local above them because the
+# later sprite-move patch intentionally uses that line as its insertion anchor.
+matte_arrow_bindings = '''        if (keycode == Input.Keys.LEFT) { shiftAllMasks(-nudge, 0); return true; }
         else if (keycode == Input.Keys.RIGHT) { shiftAllMasks(nudge, 0); return true; }
         else if (keycode == Input.Keys.UP) { shiftAllMasks(0, -nudge); return true; }
         else if (keycode == Input.Keys.DOWN) { shiftAllMasks(0, nudge); return true; }
 
 '''
-if text.count(arrow_nudge) != 1:
-    raise RuntimeError('SceneMaskEditor matte arrow-key nudge block not found')
-text = text.replace(arrow_nudge, '')
+if text.count(matte_arrow_bindings) != 1:
+    raise RuntimeError('SceneMaskEditor matte arrow-key bindings not found')
+text = text.replace(matte_arrow_bindings, '')
 
 editor.write_text(text)
 print('Scene mask UI sync fixed: browser PAINT/TEST is authoritative and arrow keys no longer move the matte')
