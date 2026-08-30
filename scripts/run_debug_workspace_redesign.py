@@ -55,3 +55,9 @@ runpy.run_path(str(restore), run_name='__main__')
 # stable. It restores the built-in/Sierra baseline and promises one-step Undo.
 reset = Path(__file__).with_name('add_reset_room_button.py')
 runpy.run_path(str(reset), run_name='__main__')
+
+# Final launcher/test pass: keep normal-game debug controls on the left where the
+# dock lives, and use a direct browser->Java command for DEBUG/TEST so Chrome
+# cannot leave the engine stuck in paint mode after the sidebar closes.
+launcher = Path(__file__).with_name('fix_debug_launcher_test_flow.py')
+runpy.run_path(str(launcher), run_name='__main__')
