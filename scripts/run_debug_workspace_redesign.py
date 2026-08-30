@@ -50,3 +50,8 @@ runpy.run_path(str(fit), run_name='__main__')
 # intrinsic render size and looks like a zoomed/cropped game.
 restore = Path(__file__).with_name('fix_debug_canvas_restore.py')
 runpy.run_path(str(restore), run_name='__main__')
+
+# Add the room-wide safety reset only after the final workspace markup and JS are
+# stable. It restores the built-in/Sierra baseline and promises one-step Undo.
+reset = Path(__file__).with_name('add_reset_room_button.py')
+runpy.run_path(str(reset), run_name='__main__')
