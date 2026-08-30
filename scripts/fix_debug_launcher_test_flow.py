@@ -19,8 +19,9 @@ def one(old, new, label):
 
 # Keep the normal-game debug launcher in the same left-side zone where the dock
 # appears. In DEBUG the three floating launch buttons are still hidden and the
-# dock's own TEST / room tools remain authoritative.
-style_anchor = '  </style>\n'
+# dock's own TEST / room tools remain authoritative. Insert immediately before
+# the final closing style tag rather than depending on indentation left by an
+# earlier patch.
 launcher_css = r'''    /* Normal-game debug launcher: left aligned with the editor dock. */
     #export-bg-button,
     #debug-snap-button,
@@ -40,11 +41,11 @@ launcher_css = r'''    /* Normal-game debug launcher: left aligned with the edit
       #debug-snap-button { left: 94px !important; width: 96px; }
       #paint-button { left: 194px !important; width: 64px; }
     }
-  </style>
 '''
-if text.count(style_anchor) != 1:
-    raise RuntimeError('final style close anchor not found')
-text = text.replace(style_anchor, launcher_css, 1)
+style_close = text.rfind('</style>')
+if style_close < 0:
+    raise RuntimeError('final style close tag not found')
+text = text[:style_close] + launcher_css + text[style_close:]
 
 # Direct browser -> Java command. 101 = enter DEBUG paint mode, 100 = exit to
 # TEST. Also mirror the worker-visible paint-mode slot immediately so Graham is
