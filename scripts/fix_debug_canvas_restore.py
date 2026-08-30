@@ -13,3 +13,4 @@ runpy.run_path(str(here / 'patch_web_debug_view_bridge.py'), run_name='__main__'
 runpy.run_path(str(here / 'patch_web_fall_accessibility.py'), run_name='__main__')
 runpy.run_path(str(here / 'patch_web_fall_scan_refresh.py'), run_name='__main__')
 runpy.run_path(str(here / 'simplify_fall_legend.py'), run_name='__main__')
+runpy.run_path(str(here / 'patch_web_debug_eraser_bridge.py'), run_name='__main__')
