@@ -40,7 +40,7 @@ new_click = '''  debugEraserButton.addEventListener('click', event => {\n    eve
 one(old_click, new_click, 'debug eraser click direct-only path')
 
 old_tag = "const BUILD_TAG = '20260829-fall-accessible-v9-zero-counts';"
-new_tag = "const BUILD_TAG = '20260829-debug-eraser-bridge-v2';"
+new_tag = "const BUILD_TAG = '20260829-debug-eraser-bridge-v1';"
 if old_tag in text:
     text = text.replace(old_tag, new_tag, 1)
 elif new_tag not in text:
