@@ -73,3 +73,12 @@ runpy.run_path(str(polish), run_name='__main__')
 # adapts its close-state hook to the final guarded EDIT function body.
 danger = Path(__file__).with_name('run_danger_view_ui.py')
 runpy.run_path(str(danger), run_name='__main__')
+
+# Make provenance unmistakable: DANGER becomes a full analysis mode and a
+# separate EDITED / SIERRA selector lets users compare against the original
+# control picture without touching their authored room masks.
+compare = Path(__file__).with_name('polish_danger_compare_ui.py')
+runpy.run_path(str(compare), run_name='__main__')
+# Complete the read-only contract in the visible workspace too: destructive
+# Advanced controls are disabled whenever SIERRA is selected.
+runpy.run_path(str(Path(__file__).with_name('enforce_original_readonly_ui.py')), run_name='__main__')

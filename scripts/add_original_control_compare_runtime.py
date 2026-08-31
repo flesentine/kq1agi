@@ -54,15 +54,17 @@ gwt.write_text(text)
 runtime = root / 'core/src/main/java/com/agifans/agile/SceneMaskRuntime.java'
 text = runtime.read_text()
 anchor = '    public static boolean unifiedControlReady(GameState state) {\n'
-helper = '''    /** Seed a non-destructive read-only snapshot of Sierra's original control picture. */\n    public static void ensureOriginalControlSeed(GameState state) {\n        if (state == null || !editorOwnsRoom(state)) return;\n        VariableData data = state.getVariableData();\n        int room = state.getVar(Defines.CURROOM);\n        if (data.getSceneOriginalControlSeedState() != -(room + 1)) return;\n        if (state.controlPixels == null || state.controlPixels.length < (160 * 168)) return;\n\n        for (int layer = 0; layer < 3; layer++) data.clearSceneOriginalControlLayer(layer);\n        for (int y = 0; y < 168; y++) {\n            for (int x = 0; x < 160; x++) {\n                int legacy = state.controlPixels[(y * 160) + x];\n                if (legacy == 0 || legacy == 1) data.setSceneOriginalControlBit(0, x, y, true);\n                else if (legacy == 2) data.setSceneOriginalControlBit(1, x, y, true);\n                else if (legacy == 3) data.setSceneOriginalControlBit(2, x, y, true);\n            }\n        }\n        data.setSceneOriginalControlSeedState(room + 1);\n    }\n\n'''
+helper = '''    /** Seed a non-destructive read-only snapshot of Sierra's original control picture. */\n    public static void ensureOriginalControlSeed(GameState state) {\n        if (state == null) return;\n        VariableData data = state.getVariableData();\n        int room = state.getVar(Defines.CURROOM);\n        if (data.getSceneOriginalControlSeedState() != -(room + 1)) return;\n        if (state.controlPixels == null || state.controlPixels.length < (160 * 168)) return;\n\n        for (int layer = 0; layer < 3; layer++) data.clearSceneOriginalControlLayer(layer);\n        for (int y = 0; y < 168; y++) {\n            for (int x = 0; x < 160; x++) {\n                int legacy = state.controlPixels[(y * 160) + x];\n                if (legacy == 0 || legacy == 1) data.setSceneOriginalControlBit(0, x, y, true);\n                else if (legacy == 2) data.setSceneOriginalControlBit(1, x, y, true);\n                else if (legacy == 3) data.setSceneOriginalControlBit(2, x, y, true);\n            }\n        }\n        data.setSceneOriginalControlSeedState(room + 1);\n    }\n\n'''
 if text.count(anchor) != 1:
     raise RuntimeError('SceneMaskRuntime original-control helper anchor not found')
 text = text.replace(anchor, helper + anchor, 1)
 
-old = '''        ensureUnifiedControlSeed(state);\n        ensureScriptDangerSeed(state);\n        VariableData data = state.getVariableData();\n'''
-new = '''        ensureUnifiedControlSeed(state);\n        ensureScriptDangerSeed(state);\n        ensureOriginalControlSeed(state);\n        VariableData data = state.getVariableData();\n'''
+# The seed-race fix already consolidated control/script preloading into one worker
+# path. Extend that same path instead of adding another redraw-only hook.
+old = '''        int controlState = data.getSceneControlSeedState();\n        int scriptState = data.getSceneScriptDangerSeedState();\n\n        if (controlState != expected && controlState != -expected) {\n            data.setSceneControlSeedState(-expected);\n            controlState = -expected;\n        }\n        if (scriptState != expected && scriptState != -expected) {\n            data.setSceneScriptDangerSeedState(-expected);\n            scriptState = -expected;\n        }\n\n        if (controlState == -expected) ensureUnifiedControlSeed(state);\n        if (scriptState == -expected) ensureScriptDangerSeed(state);\n'''
+new = '''        int controlState = data.getSceneControlSeedState();\n        int scriptState = data.getSceneScriptDangerSeedState();\n        int originalState = data.getSceneOriginalControlSeedState();\n\n        if (controlState != expected && controlState != -expected) {\n            data.setSceneControlSeedState(-expected);\n            controlState = -expected;\n        }\n        if (scriptState != expected && scriptState != -expected) {\n            data.setSceneScriptDangerSeedState(-expected);\n            scriptState = -expected;\n        }\n        if (originalState != expected && originalState != -expected) {\n            data.setSceneOriginalControlSeedState(-expected);\n            originalState = -expected;\n        }\n\n        if (controlState == -expected) ensureUnifiedControlSeed(state);\n        if (scriptState == -expected) ensureScriptDangerSeed(state);\n        if (originalState == -expected) ensureOriginalControlSeed(state);\n'''
 if text.count(old) != 1:
-    raise RuntimeError('SceneMaskRuntime original-control seed call anchor not found')
+    raise RuntimeError('SceneMaskRuntime consolidated seed-preload anchor not found')
 text = text.replace(old, new, 1)
 runtime.write_text(text)
 
@@ -82,8 +84,10 @@ if text.count(old) != 1:
     raise RuntimeError('SceneMaskEditor original-view state anchor not found')
 text = text.replace(old, new, 1)
 
-old = '''        data.setSceneScriptDangerSeedState(scriptSaved ? room + 1 : -(room + 1));\n        dirty = false;\n'''
-new = '''        data.setSceneScriptDangerSeedState(scriptSaved ? room + 1 : -(room + 1));\n        // Always request a fresh read-only Sierra baseline for comparison. It is\n        // never merged into masks[] and cannot overwrite edits.\n        waitingForOriginalControlSeed = true;\n        data.setSceneOriginalControlSeedState(-(room + 1));\n        sourceOriginalView = false;\n        dirty = false;\n'''
+# The worker may have preloaded ORIGINAL before the UI claims the room. Always arm
+# one local adoption pass; request a seed only if it is not already ready.
+old = '''        if (preloadedControlSeed || preloadedScriptSeed) prefs.flush();\n        dirty = false;\n'''
+new = '''        if (preloadedControlSeed || preloadedScriptSeed) prefs.flush();\n        waitingForOriginalControlSeed = true;\n        if (data.getSceneOriginalControlSeedState() != expectedSceneSeed)\n            data.setSceneOriginalControlSeedState(-expectedSceneSeed);\n        dirty = false;\n'''
 if text.count(old) != 1:
     raise RuntimeError('SceneMaskEditor original seed request anchor not found')
 text = text.replace(old, new, 1)
@@ -100,12 +104,15 @@ if text.count(old) != 1:
     raise RuntimeError('SceneMaskEditor original adopt call anchor not found')
 text = text.replace(old, new, 1)
 
+# Direct browser bridge. 100=EDITED, 101=SIERRA ORIGINAL. If DANGER is toggled
+# while Sierra source remains active, keep inspectMode read-only.
 old = '''        int encodedDanger = data.getSceneMaskDangerViewBridge();\n        if (encodedDanger == 100 || encodedDanger == 101) {\n            setDangerView(encodedDanger == 101);\n            data.setSceneMaskDangerViewBridge(0);\n        }\n    }\n'''
-new = '''        int encodedDanger = data.getSceneMaskDangerViewBridge();\n        if (encodedDanger == 100 || encodedDanger == 101) {\n            setDangerView(encodedDanger == 101);\n            data.setSceneMaskDangerViewBridge(0);\n        }\n\n        int encodedSource = data.getSceneMaskSourceViewBridge();\n        if (encodedSource == 100 || encodedSource == 101) {\n            sourceOriginalView = encodedSource == 101;\n            if (sourceOriginalView) {\n                eraser = false;\n                moveMode = false;\n                inspectMode = true;\n                notice("SIERRA ORIGINAL - READ ONLY");\n            } else {\n                inspectMode = dangerView;\n                notice("EDITED MAP");\n            }\n            data.setSceneMaskSourceViewBridge(0);\n        }\n    }\n'''
+new = '''        int encodedDanger = data.getSceneMaskDangerViewBridge();\n        if (encodedDanger == 100 || encodedDanger == 101) {\n            setDangerView(encodedDanger == 101);\n            if (sourceOriginalView) inspectMode = true;\n            data.setSceneMaskDangerViewBridge(0);\n        }\n\n        int encodedSource = data.getSceneMaskSourceViewBridge();\n        if (encodedSource == 100 || encodedSource == 101) {\n            sourceOriginalView = encodedSource == 101;\n            if (sourceOriginalView) {\n                eraser = false;\n                moveMode = false;\n                inspectMode = true;\n                notice("SIERRA ORIGINAL - READ ONLY");\n            } else {\n                inspectMode = dangerView;\n                notice("EDITED MAP");\n            }\n            data.setSceneMaskSourceViewBridge(0);\n        }\n    }\n'''
 if text.count(old) != 1:
     raise RuntimeError('SceneMaskEditor original source bridge consume anchor not found')
 text = text.replace(old, new, 1)
 
+# A real paint-layer selection exits the comparison source in the engine too.
 for mode in ('OCCLUDER', 'COLLISION', 'BEHIND', 'WATER', 'FALL'):
     old = f'dangerView = false; inspectMode = false; moveMode = false; mode = {mode};'
     new = f'sourceOriginalView = false; dangerView = false; inspectMode = false; moveMode = false; mode = {mode};'
@@ -113,12 +120,14 @@ for mode in ('OCCLUDER', 'COLLISION', 'BEHIND', 'WATER', 'FALL'):
         raise RuntimeError(f'SceneMaskEditor {mode} original-view exit anchor: found {text.count(old)}')
     text = text.replace(old, new, 1)
 
-old = '''            if (dangerView) {\n                // WATER is one source. Scripted marks expose bridge/death positions\n                // that do not coincide with WATER pixels.\n                drawMaskRuns(batch, masks[WATER], new Color(0.08f, 0.92f, 1f, 0.50f));\n                rebuildScriptFallDisplay();\n                drawAccessibleEditableFall(batch);\n                drawAccessibleScriptFall(batch);\n            }\n'''
-new = '''            if (sourceOriginalView) {\n                if (dangerView) {\n                    drawMaskRuns(batch, originalControls[2], new Color(0.08f, 0.92f, 1f, 0.50f));\n                    drawMaskRuns(batch, originalControls[1], new Color(1f, 0.72f, 0.10f, 0.55f));\n                    rebuildScriptFallDisplay();\n                    drawAccessibleScriptFall(batch);\n                } else {\n                    drawMaskRuns(batch, originalControls[0], new Color(0.08f, 0.35f, 1f, 0.50f));\n                    drawMaskRuns(batch, originalControls[2], new Color(0.08f, 0.92f, 1f, 0.48f));\n                    drawMaskRuns(batch, originalControls[1], new Color(1f, 0.72f, 0.10f, 0.55f));\n                }\n            } else if (dangerView) {\n                // EDITED DANGER: authored WATER/FALL plus scripted game triggers.\n                drawMaskRuns(batch, masks[WATER], new Color(0.08f, 0.92f, 1f, 0.50f));\n                rebuildScriptFallDisplay();\n                drawAccessibleEditableFall(batch);\n                drawAccessibleScriptFall(batch);\n            }\n'''
+# DANGER's accessible renderer is indented one level by the accessibility wrapper.
+old = '''                if (dangerView) {\n                    // WATER is one source. Scripted marks expose bridge/death positions\n                    // that do not coincide with WATER pixels.\n                    drawMaskRuns(batch, masks[WATER], new Color(0.08f, 0.92f, 1f, 0.50f));\n                    rebuildScriptFallDisplay();\n                    drawAccessibleEditableFall(batch);\n                    drawAccessibleScriptFall(batch);\n                }\n'''
+new = '''                if (sourceOriginalView) {\n                    if (dangerView) {\n                        drawMaskRuns(batch, originalControls[2], new Color(0.08f, 0.92f, 1f, 0.50f));\n                        drawMaskRuns(batch, originalControls[1], new Color(1f, 0.72f, 0.10f, 0.55f));\n                        rebuildScriptFallDisplay();\n                        drawAccessibleScriptFall(batch);\n                    } else {\n                        drawMaskRuns(batch, originalControls[0], new Color(0.08f, 0.35f, 1f, 0.50f));\n                        drawMaskRuns(batch, originalControls[2], new Color(0.08f, 0.92f, 1f, 0.48f));\n                        drawMaskRuns(batch, originalControls[1], new Color(1f, 0.72f, 0.10f, 0.55f));\n                    }\n                } else if (dangerView) {\n                    // EDITED DANGER: authored WATER/FALL plus scripted game triggers.\n                    drawMaskRuns(batch, masks[WATER], new Color(0.08f, 0.92f, 1f, 0.50f));\n                    rebuildScriptFallDisplay();\n                    drawAccessibleEditableFall(batch);\n                    drawAccessibleScriptFall(batch);\n                }\n'''
 if text.count(old) != 1:
     raise RuntimeError('SceneMaskEditor source-aware DANGER render anchor not found')
 text = text.replace(old, new, 1)
 
+# Ordinary authored overlays disappear while ORIGINAL is displayed.
 for old, new, label in [
     ('if (!dangerView && layerVisible[OCCLUDER])', 'if (!sourceOriginalView && !dangerView && layerVisible[OCCLUDER])', 'FRONT'),
     ('if (!dangerView && layerVisible[COLLISION])', 'if (!sourceOriginalView && !dangerView && layerVisible[COLLISION])', 'BLOCK'),
