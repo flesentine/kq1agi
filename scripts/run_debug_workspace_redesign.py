@@ -67,3 +67,9 @@ runpy.run_path(str(launcher), run_name='__main__')
 # or the bridge logic established by the preceding patches.
 polish = Path(__file__).with_name('polish_edit_workspace.py')
 runpy.run_path(str(polish), run_name='__main__')
+
+# DANGER is the final view-level control: a read-only composite of WATER,
+# recovered Sierra fall/death positions, and editable FALL/HITSPEC. The wrapper
+# adapts its close-state hook to the final guarded EDIT function body.
+danger = Path(__file__).with_name('run_danger_view_ui.py')
+runpy.run_path(str(danger), run_name='__main__')
