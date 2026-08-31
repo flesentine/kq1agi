@@ -70,7 +70,11 @@ try:
 finally:
     sys.argv = old_argv
 
-# Detector v3 runs after the composite patch so it can replace v2's flattened
-# per-condition painting with nested-IF-aware geometry and invalidate old caches.
+# Detector v3 preserves nested IF geometry first.
 geometry = Path(__file__).with_name('fix_danger_condition_geometry.py')
 __import__('runpy').run_path(str(geometry), run_name='__main__')
+
+# Detector v4 then removes generic scenery vocabulary from lethal text
+# classification and invalidates detector-v3 caches.
+semantics = Path(__file__).with_name('fix_danger_text_semantics.py')
+__import__('runpy').run_path(str(semantics), run_name='__main__')
