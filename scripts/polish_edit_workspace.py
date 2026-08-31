@@ -173,8 +173,8 @@ if old_width in text:
 elif new_width not in text:
     raise RuntimeError('debug canvas available-width calculation not found')
 
-# Final cache marker for this UI-only pass.
-old_tag = "const BUILD_TAG = '20260830-debug-left-test-bridge-v2-vertical';"
+# Final cache marker for this UI-only pass. PR #37 currently leaves this tag.
+old_tag = "const BUILD_TAG = '20260830-debug-left-vertical-v1';"
 new_tag = "const BUILD_TAG = '20260830-edit-workspace-ux-v1';"
 if old_tag in text:
     text = text.replace(old_tag, new_tag, 1)
