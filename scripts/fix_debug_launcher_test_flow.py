@@ -22,24 +22,31 @@ def one(old, new, label):
 # dock's own TEST / room tools remain authoritative. Insert immediately before
 # the final closing style tag rather than depending on indentation left by an
 # earlier patch.
-launcher_css = r'''    /* Normal-game debug launcher: left aligned with the editor dock. */
+launcher_css = r'''    /* Normal-game debug launcher: vertical stack beside the editor dock. */
     #export-bg-button,
     #debug-snap-button,
     #paint-button {
-      top: 14px !important;
       right: auto !important;
-      z-index: 10001 !important;
+      left: 14px !important;
+      width: 104px !important;
       min-height: 36px;
+      z-index: 10001 !important;
       box-sizing: border-box;
     }
-    #export-bg-button { left: 14px !important; width: 88px; }
-    #debug-snap-button { left: 108px !important; width: 104px; }
-    #paint-button { left: 218px !important; width: 68px; }
+    #export-bg-button { top: 14px !important; }
+    #debug-snap-button { top: 58px !important; }
+    #paint-button { top: 102px !important; }
 
     @media (max-width: 520px) {
-      #export-bg-button { left: 8px !important; width: 82px; }
-      #debug-snap-button { left: 94px !important; width: 96px; }
-      #paint-button { left: 194px !important; width: 64px; }
+      #export-bg-button,
+      #debug-snap-button,
+      #paint-button {
+        left: 8px !important;
+        width: 96px !important;
+      }
+      #export-bg-button { top: 8px !important; }
+      #debug-snap-button { top: 50px !important; }
+      #paint-button { top: 92px !important; }
     }
 '''
 style_close = text.rfind('</style>')
@@ -129,11 +136,11 @@ one(poll_anchor, poll_new, 'workspace safety poll')
 # FALL/ERASE browser patches, so target their current build tag rather than the
 # earlier workspace-fit tag.
 old_tag = "const BUILD_TAG = '20260829-debug-eraser-bridge-v1';"
-new_tag = "const BUILD_TAG = '20260830-debug-left-test-bridge-v1';"
+new_tag = "const BUILD_TAG = '20260830-debug-left-vertical-v1';"
 if old_tag in text:
     text = text.replace(old_tag, new_tag, 1)
 elif new_tag not in text:
     raise RuntimeError('debug workspace build tag not found')
 
 path.write_text(text)
-print('Debug launcher moved left; DEBUG/TEST now use direct bridge with repeated game-focus restore')
+print('Debug launcher stacked vertically on the left; DEBUG/TEST direct bridge remains enabled')
