@@ -57,6 +57,16 @@ regex_once(
     'COPY DATA launcher',
 )
 
+# The workspace state renderer rewrites the launcher label after every enter/exit.
+# Keep that runtime label synchronized with the new visible EDIT terminology.
+replace_once(
+    "    paintButton.textContent = 'DEBUG';\n",
+    "    paintButton.textContent = 'EDIT';\n",
+    'runtime EDIT launcher label',
+)
+text = text.replace("paintButton.title = paintUiActive ? 'Debug editor active' : 'Open debug editor (Tab shortcut)';",
+                    "paintButton.title = paintUiActive ? 'Room editor active' : 'Open room editor (Tab shortcut)';")
+
 # Inside Advanced, remove redundant DEBUG wording from the image tool.
 text = text.replace('>COPY DEBUG IMAGE</button>', '>COPY IMAGE</button>')
 text = text.replace('Tab: exit DEBUG', 'Tab: exit EDIT')
@@ -165,9 +175,10 @@ if style_close < 0:
 text = text[:style_close] + css + text[style_close:]
 
 # The canvas-fit helper previously budgeted the full post-sidebar width. Reserve
-# our small left gutter too so the right edge can never be clipped.
+# our small left gutter too so the right edge can never be clipped. Do not impose
+# the old 320px floor: narrow browser windows must be allowed to shrink the game.
 old_width = 'const availableWidth = Math.max(320, window.innerWidth - sidebarWidth);'
-new_width = 'const availableWidth = Math.max(320, window.innerWidth - sidebarWidth - 8);'
+new_width = 'const availableWidth = Math.max(220, window.innerWidth - sidebarWidth - 8);'
 if old_width in text:
     text = text.replace(old_width, new_width, 1)
 elif new_width not in text:
@@ -182,4 +193,4 @@ elif new_tag not in text:
     raise RuntimeError('vertical launcher build tag not found')
 
 path.write_text(text)
-print('EDIT workspace polished: compact 280px dock, 8px viewer gutter, PLAY button, simplified labels')
+print('EDIT workspace polished: compact 280px dock, 8px viewer gutter, stable EDIT label, responsive canvas fit')
