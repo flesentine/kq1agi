@@ -69,3 +69,8 @@ try:
     exec(compile(source, str(script), 'exec'), scope, scope)
 finally:
     sys.argv = old_argv
+
+# Detector v3 runs after the composite patch so it can replace v2's flattened
+# per-condition painting with nested-IF-aware geometry and invalidate old caches.
+geometry = Path(__file__).with_name('fix_danger_condition_geometry.py')
+__import__('runpy').run_path(str(geometry), run_name='__main__')
