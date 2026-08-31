@@ -93,25 +93,23 @@ if text.count(old) != 1:
 text = text.replace(old, new, 1)
 
 # Existing browsers have a valid-length, but detector-v1, empty SCRIPT_FALL mask
-# cached for Room 1. Version it so the improved scan runs once instead of keeping
-# that stale "Scripted: 0 px" forever. Future user erases remain persistent.
-old = '''        boolean scriptSaved = savedScriptFall.length() == HEIGHT * 40;
-        waitingForScriptDangerSeed = !scriptSaved;
-        data.setSceneScriptDangerSeedState(scriptSaved ? room + 1 : -(room + 1));
-'''
+# cached for Room 1. The final seed-race fix computes scriptSaved before deciding
+# whether to adopt a worker preload, so version that single decision point. If the
+# old cache is invalid, clear its local plane and let the already-existing preload
+# / request machinery repopulate it with detector v2.
+old = '        boolean scriptSaved = savedScriptFall.length() == HEIGHT * 40;\n'
 new = '''        int scriptDetectorVersion = prefs.getInteger(key("scriptFallDetectorVersion"), 0);
         boolean scriptSaved = savedScriptFall.length() == HEIGHT * 40 && scriptDetectorVersion >= 2;
         if (!scriptSaved) {
             for (int y = 0; y < HEIGHT; y++) for (int x = 0; x < WIDTH; x++)
                 masks[SCRIPT_FALL][y][x] = false;
         }
-        waitingForScriptDangerSeed = !scriptSaved;
-        data.setSceneScriptDangerSeedState(scriptSaved ? room + 1 : -(room + 1));
 '''
 if text.count(old) != 1:
-    raise RuntimeError('SCRIPT_FALL detector-version load anchor not found')
+    raise RuntimeError(f'SCRIPT_FALL final scriptSaved anchor: expected 1, found {text.count(old)}')
 text = text.replace(old, new, 1)
 
+# Async seed adoption path.
 old = '''        waitingForScriptDangerSeed = false;
         dirty = true;
         saveRoom();
@@ -124,7 +122,22 @@ new = '''        waitingForScriptDangerSeed = false;
         notice("SCRIPTED DANGER ZONES IMPORTED");
 '''
 if text.count(old) != 1:
-    raise RuntimeError('SCRIPT_FALL detector-version save anchor not found')
+    raise RuntimeError('SCRIPT_FALL async detector-version save anchor not found')
+text = text.replace(old, new, 1)
+
+# Worker-preloaded adoption path. Persist the detector version beside the newly
+# adopted bits so an erased/edited script mask remains authoritative afterward.
+old = '''        if (preloadedScriptSeed) {
+            prefs.putString(key("scriptFall"), encode(masks[SCRIPT_FALL]));
+        }
+'''
+new = '''        if (preloadedScriptSeed) {
+            prefs.putString(key("scriptFall"), encode(masks[SCRIPT_FALL]));
+            prefs.putInteger(key("scriptFallDetectorVersion"), 2);
+        }
+'''
+if text.count(old) != 1:
+    raise RuntimeError('SCRIPT_FALL preloaded detector-version save anchor not found')
 text = text.replace(old, new, 1)
 
 # Browser DANGER is absolute state. Turning it on makes the editor inspect-only;
