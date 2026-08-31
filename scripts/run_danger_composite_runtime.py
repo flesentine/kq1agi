@@ -12,7 +12,7 @@ source = script.read_text()
 # than the older raw overlay block. Keep the DANGER patch itself readable, but
 # adapt its final render anchor to the exact post-accessibility Java source before
 # executing it.
-old_source = r'''old = '''            if (layerVisible[FALL]) {
+old_source = """old = '''            if (layerVisible[FALL]) {
                 rebuildScriptFallDisplay();
                 drawAccessibleEditableFall(batch);
                 // Script markers render last so editable FALL can never bury them.
@@ -34,8 +34,8 @@ new = '''            if (!dangerView && layerVisible[FALL]) {
                 drawAccessibleScriptFall(batch);
             }
 '''
-'''
-new_source = r'''old = '''                if (layerVisible[FALL]) {
+"""
+new_source = """old = '''                if (layerVisible[FALL]) {
                     rebuildScriptFallDisplay();
                     drawAccessibleEditableFall(batch);
                     // Script markers render last so editable FALL can never bury them.
@@ -57,7 +57,7 @@ new = '''                if (!dangerView && layerVisible[FALL]) {
                     drawAccessibleScriptFall(batch);
                 }
 '''
-'''
+"""
 if source.count(old_source) != 1:
     raise RuntimeError('DANGER runtime FALL source anchor not found')
 source = source.replace(old_source, new_source, 1)
