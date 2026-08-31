@@ -22,3 +22,6 @@ runpy.run_path(str(here / 'run_danger_composite_runtime.py'), run_name='__main__
 # Final comparison layer: keep Sierra's original control picture in a separate,
 # read-only snapshot so inspecting ORIGINAL can never overwrite authored masks.
 runpy.run_path(str(here / 'add_original_control_compare_runtime.py'), run_name='__main__')
+# Browser-disabled controls are not enough: physical shortcuts still reach Java.
+# Enforce ORIGINAL's read-only promise inside the engine as the final runtime pass.
+runpy.run_path(str(here / 'enforce_original_readonly_runtime.py'), run_name='__main__')
