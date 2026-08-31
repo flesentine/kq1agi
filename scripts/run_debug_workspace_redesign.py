@@ -79,3 +79,6 @@ runpy.run_path(str(danger), run_name='__main__')
 # control picture without touching their authored room masks.
 compare = Path(__file__).with_name('polish_danger_compare_ui.py')
 runpy.run_path(str(compare), run_name='__main__')
+# Complete the read-only contract in the visible workspace too: destructive
+# Advanced controls are disabled whenever SIERRA is selected.
+runpy.run_path(str(Path(__file__).with_name('enforce_original_readonly_ui.py')), run_name='__main__')
