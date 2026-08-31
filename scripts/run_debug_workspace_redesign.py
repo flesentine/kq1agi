@@ -61,3 +61,9 @@ runpy.run_path(str(reset), run_name='__main__')
 # cannot leave the engine stuck in paint mode after the sidebar closes.
 launcher = Path(__file__).with_name('fix_debug_launcher_test_flow.py')
 runpy.run_path(str(launcher), run_name='__main__')
+
+# User-facing UX pass comes last so it can safely rename DEBUG -> EDIT, tighten
+# the dock, and left-align the game viewer without disturbing internal debug ids
+# or the bridge logic established by the preceding patches.
+polish = Path(__file__).with_name('polish_edit_workspace.py')
+runpy.run_path(str(polish), run_name='__main__')
