@@ -21,11 +21,6 @@ def one(path, old, new, label):
 # ---------------------------------------------------------------------------
 runtime = root / 'core/src/main/java/com/agifans/agile/SceneMaskRuntime.java'
 text = runtime.read_text()
-
-# A Sierra death handler often ends with new.room(99). The old detector rejected
-# every IF containing a room change, even if that same IF explicitly printed a
-# fall/death message. That is why the castle bridge could kill Graham while the
-# scripted FALL counter still said 0 px.
 old = '        return !roomChange && (text || (programControl && motion));\n'
 new = '        return text || (!roomChange && programControl && motion);\n'
 if text.count(old) != 1:
@@ -50,9 +45,7 @@ runtime.write_text(text)
 
 
 # ---------------------------------------------------------------------------
-# 2) Direct browser -> SceneMaskEditor DANGER command.
-#    7/8/9 are already SOLO/ALL/NONE, so do not steal a keyboard shortcut and
-#    do not rely on synthetic key events. Slot 5830 follows the workspace bridge.
+# 2) Direct browser -> SceneMaskEditor DANGER command at shared slot 5830.
 # ---------------------------------------------------------------------------
 variable_data = root / 'core/src/main/java/com/agifans/agile/VariableData.java'
 one(
@@ -82,7 +75,7 @@ gwt.write_text(text)
 
 
 # ---------------------------------------------------------------------------
-# 3) Editor state + detector-version migration.
+# 3) Editor state + one-time detector-v2 cache migration.
 # ---------------------------------------------------------------------------
 editor = root / 'core/src/main/java/com/agifans/agile/SceneMaskEditor.java'
 text = editor.read_text()
@@ -92,11 +85,6 @@ if text.count(old) != 1:
     raise RuntimeError('SceneMaskEditor DANGER field anchor not found')
 text = text.replace(old, new, 1)
 
-# Existing browsers have a valid-length, but detector-v1, empty SCRIPT_FALL mask
-# cached for Room 1. The final seed-race fix computes scriptSaved before deciding
-# whether to adopt a worker preload, so version that single decision point. If the
-# old cache is invalid, clear its local plane and let the already-existing preload
-# / request machinery repopulate it with detector v2.
 old = '        boolean scriptSaved = savedScriptFall.length() == HEIGHT * 40;\n'
 new = '''        int scriptDetectorVersion = prefs.getInteger(key("scriptFallDetectorVersion"), 0);
         boolean scriptSaved = savedScriptFall.length() == HEIGHT * 40 && scriptDetectorVersion >= 2;
@@ -109,7 +97,6 @@ if text.count(old) != 1:
     raise RuntimeError(f'SCRIPT_FALL final scriptSaved anchor: expected 1, found {text.count(old)}')
 text = text.replace(old, new, 1)
 
-# Async seed adoption path.
 old = '''        waitingForScriptDangerSeed = false;
         dirty = true;
         saveRoom();
@@ -125,8 +112,6 @@ if text.count(old) != 1:
     raise RuntimeError('SCRIPT_FALL async detector-version save anchor not found')
 text = text.replace(old, new, 1)
 
-# Worker-preloaded adoption path. Persist the detector version beside the newly
-# adopted bits so an erased/edited script mask remains authoritative afterward.
 old = '''        if (preloadedScriptSeed) {
             prefs.putString(key("scriptFall"), encode(masks[SCRIPT_FALL]));
         }
@@ -140,9 +125,6 @@ if text.count(old) != 1:
     raise RuntimeError('SCRIPT_FALL preloaded detector-version save anchor not found')
 text = text.replace(old, new, 1)
 
-# Browser DANGER is absolute state. Turning it on makes the editor inspect-only;
-# turning it off returns to normal paint interaction. Normal layer selection also
-# clears this state so keyboard and mouse workflows cannot get stuck read-only.
 helper_anchor = '''    private void syncDebugDisplayBridge() {
 '''
 helper = '''    private void setDangerView(boolean enabled) {
@@ -167,15 +149,17 @@ if text.count(helper_anchor) != 1:
     raise RuntimeError('SceneMaskEditor display bridge helper anchor not found')
 text = text.replace(helper_anchor, helper, 1)
 
-old = '''        int encodedOpacity = data.getSceneMaskOpacityBridge();
-        if (encodedOpacity >= 25 && encodedOpacity <= 100) {
-            overlayOpacityPercent = encodedOpacity;
+# ERASE and PLAY have already extended syncDebugDisplayBridge. Append DANGER at
+# the actual end of that chain, after the workspace one-shot is consumed.
+old = '''            // One-shot command. Physical F2 remains usable afterward.
+            data.setSceneMaskWorkspaceBridge(0);
         }
     }
+
+    private boolean optionEraseHeld() {
 '''
-new = '''        int encodedOpacity = data.getSceneMaskOpacityBridge();
-        if (encodedOpacity >= 25 && encodedOpacity <= 100) {
-            overlayOpacityPercent = encodedOpacity;
+new = '''            // One-shot command. Physical F2 remains usable afterward.
+            data.setSceneMaskWorkspaceBridge(0);
         }
 
         int encodedDanger = data.getSceneMaskDangerViewBridge();
@@ -184,9 +168,11 @@ new = '''        int encodedOpacity = data.getSceneMaskOpacityBridge();
             data.setSceneMaskDangerViewBridge(0);
         }
     }
+
+    private boolean optionEraseHeld() {
 '''
 if text.count(old) != 1:
-    raise RuntimeError('SceneMaskEditor DANGER bridge consume anchor not found')
+    raise RuntimeError('SceneMaskEditor final DANGER bridge consume anchor not found')
 text = text.replace(old, new, 1)
 
 for mode in ('OCCLUDER', 'COLLISION', 'BEHIND', 'WATER', 'FALL'):
@@ -220,12 +206,9 @@ if text.count(old) != 1:
     raise RuntimeError('SceneMaskEditor SPRITES DANGER-exit anchor not found')
 text = text.replace(old, new, 1)
 
+
 # ---------------------------------------------------------------------------
-# 4) Read-only DANGER renderer.
-#    Cyan = current WATER control, striped yellow = editable FALL/HITSPEC,
-#    black/white dotted+exact marks = recovered Sierra scripted fall/death zones.
-#    The important bridge fix is the recovered scripted trigger, so DANGER no
-#    longer depends on WATER extending visually onto the bridge surface.
+# 4) Read-only composite renderer.
 # ---------------------------------------------------------------------------
 for old, new, label in [
     ('            if (layerVisible[OCCLUDER]) drawMaskRuns(batch, masks[OCCLUDER], new Color(1f, 0.12f, 0.08f, 0.45f));\n',
@@ -255,8 +238,8 @@ new = '''            if (!dangerView && layerVisible[FALL]) {
                 drawAccessibleScriptFall(batch);
             }
             if (dangerView) {
-                // WATER is a hazard source, but the recovered scripted marks are what
-                // reveal bridge/death positions that do not coincide with water pixels.
+                // WATER is one source. Scripted marks expose bridge/death positions
+                // that do not coincide with WATER pixels.
                 drawMaskRuns(batch, masks[WATER], new Color(0.08f, 0.92f, 1f, 0.50f));
                 rebuildScriptFallDisplay();
                 drawAccessibleEditableFall(batch);
