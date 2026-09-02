@@ -64,6 +64,14 @@ def verify_lane(root: Path, label: str) -> dict:
     ]:
         require(variables, marker, f'{label} variable layout {name}')
 
+    if label == 'edited':
+        # The final current runtime extends through source-view bridge slot 8352.
+        # Checking the generated GwtVariableData source makes CI fail whenever a
+        # later editor patch changes the real shared-memory capacity without also
+        # updating the certification host.
+        require(variables, 'SCENE_MASK_SOURCE_VIEW_BRIDGE = 8352', 'edited final shared slot')
+        require(variables, 'Defines.NUMVARS + Defines.NUMFLAGS + 7841', 'edited final shared capacity')
+
     return {
         'trace_v2': 'PASS',
         'deterministic_prng': 'PASS',
@@ -81,7 +89,7 @@ edited = verify_lane(edited_root, 'edited')
 for marker in [
     'TOTAL_TICKS: 512', 'MOUSE_BUTTON: 513', 'MOUSE_X: 514', 'MOUSE_Y: 515',
     'OLD_MOUSE_BUTTON: 516', 'IN_TICK: 517', 'FLAGS_OFFSET: 256',
-    'CORE_VARIABLE_SLOTS: 518', 'VARIABLE_SLOTS: 5831', 'variableSlots: VAR.VARIABLE_SLOTS',
+    'CORE_VARIABLE_SLOTS: 518', 'VARIABLE_SLOTS: 8353', 'variableSlots: VAR.VARIABLE_SLOTS',
     'SNAPSHOT_REQUEST: 8', 'SNAPSHOT_ACK: 9', 'digestSlots: 10',
 ]:
     require(host, marker, 'certification host layout')
