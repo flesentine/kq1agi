@@ -21,6 +21,7 @@ const DEFAULTS = Object.freeze({
   digestSlots: 8,
   seed: 0x4b513142,
   barrierTimeoutMs: 3000,
+  maxBarrierPulses: 3600,
 });
 
 function assertSharedArrayBuffer() {
@@ -172,6 +173,10 @@ function cloneArrayBuffer(buffer) {
   return buffer.slice(0);
 }
 
+function isIdle(lane) {
+  return Atomics.load(lane.vars, VAR.IN_TICK) === 0;
+}
+
 export class CertificationHost {
   constructor(options = {}) {
     assertSharedArrayBuffer();
@@ -179,9 +184,11 @@ export class CertificationHost {
     if (!WorkerCtor) throw new Error('CertificationHost requires a Worker constructor.');
     this.seed = (options.seed ?? DEFAULTS.seed) | 0;
     this.barrierTimeoutMs = options.barrierTimeoutMs ?? DEFAULTS.barrierTimeoutMs;
+    this.maxBarrierPulses = options.maxBarrierPulses ?? DEFAULTS.maxBarrierPulses;
     this.truth = makeLane('truth', WorkerCtor, options.truthWorkerUrl ?? '/truth-worker/worker.nocache.js', options);
-    this.edited = makeLane('edited', WorkerCtor, options.editedWorkerUrl ?? '/worker/worker.nocache.js', options);
+    this.edited = makeLane('edited', WorkerCtor, options.editedWorkerUrl ?? '/edited-worker/worker.nocache.js', options);
     this.logicalTick = 0;
+    this.cycle = 0;
     this.pendingSoundCompletions = [];
     this.pendingExternalDivergence = null;
     this.started = false;
@@ -232,10 +239,9 @@ export class CertificationHost {
       this.pendingExternalDivergence ??= { type: 'sound-event', truth: a, edited: b };
       return;
     }
-    if (a.stop) {
-      this.pendingSoundCompletions.length = 0;
-      return;
-    }
+    // AGILE stops the currently playing sound before starting a replacement.
+    this.pendingSoundCompletions.length = 0;
+    if (a.stop) return;
     this.pendingSoundCompletions.push({
       dueTick: this.logicalTick + Math.max(1, a.durationTicks),
       endFlag: a.endFlag & 0xff,
@@ -321,38 +327,72 @@ export class CertificationHost {
     if ((total % 60) === 0) advanceGameClock(lane.vars);
   }
 
-  async step() {
+  /**
+   * Advances one logical 1/60-second clock pulse. The clock advances even while an
+   * interpreter cycle is blocked, matching AgileRunner.tick(). A new interpreter
+   * cycle is released only when BOTH lanes are idle, keeping their cycle boundaries
+   * aligned without freezing timeouts or the AGI game clock.
+   */
+  async pulse() {
     if (!this.started || !this.truth.ready || !this.edited.ready) throw new Error('CertificationHost is not ready.');
     if (this.truth.quit !== this.edited.quit) {
       return { status: 'DIVERGED', tick: this.logicalTick, reason: 'quit-state', truthQuit: this.truth.quit, editedQuit: this.edited.quit };
     }
     if (this.truth.quit && this.edited.quit) return { status: 'COMPLETE', tick: this.logicalTick };
-    await this._waitForIdle();
+
+    const bothIdleBefore = isIdle(this.truth) && isIdle(this.edited);
     const nextTick = this.logicalTick + 1;
     this._applyExternalEvents(nextTick);
     this._advanceLogicalClock(this.truth);
     this._advanceLogicalClock(this.edited);
-    Atomics.store(this.truth.vars, VAR.IN_TICK, 1);
-    Atomics.store(this.edited.vars, VAR.IN_TICK, 1);
-    await this._waitForIdle();
     this.logicalTick = nextTick;
+
+    if (bothIdleBefore) {
+      Atomics.store(this.truth.vars, VAR.IN_TICK, 1);
+      Atomics.store(this.edited.vars, VAR.IN_TICK, 1);
+      this.cycle += 1;
+    }
+
+    // Give worker messages and short cycles a chance to settle, but never make clock
+    // progress depend on real elapsed wall time.
     await new Promise(resolve => setTimeout(resolve, 0));
+
+    const truthIdle = isIdle(this.truth);
+    const editedIdle = isIdle(this.edited);
+    if (!truthIdle || !editedIdle) {
+      return { status: 'BUSY', tick: this.logicalTick, cycle: this.cycle, truthIdle, editedIdle };
+    }
     return this.compare();
   }
 
-  async _waitForIdle() {
-    const deadline = Date.now() + this.barrierTimeoutMs;
-    while (Atomics.load(this.truth.vars, VAR.IN_TICK) !== 0 || Atomics.load(this.edited.vars, VAR.IN_TICK) !== 0) {
-      if (Date.now() > deadline) {
-        throw new Error(`Certification barrier timed out at logical tick ${this.logicalTick}.`);
-      }
-      await new Promise(resolve => setTimeout(resolve, 0));
+  /**
+   * Advances logical time until the currently aligned interpreter cycle completes.
+   * This is useful for automated tests. Interactive certification can call pulse()
+   * directly so user input can be injected at exact logical ticks.
+   */
+  async step(options = {}) {
+    const maxPulses = options.maxPulses ?? this.maxBarrierPulses;
+    const startCycle = this.cycle;
+    for (let pulses = 1; pulses <= maxPulses; pulses += 1) {
+      const result = await this.pulse();
+      if (result.status === 'DIVERGED' || result.status === 'COMPLETE') return result;
+      if (result.status !== 'BUSY' && this.cycle > startCycle) return result;
     }
+    throw new Error(`Certification cycle did not reach a shared barrier after ${maxPulses} logical clock pulses.`);
   }
 
   compare() {
     if (this.pendingExternalDivergence) {
       return { status: 'DIVERGED', tick: this.logicalTick, reason: 'external-event', detail: this.pendingExternalDivergence };
+    }
+    if (Boolean(this.truth.soundRequest) !== Boolean(this.edited.soundRequest)) {
+      return {
+        status: 'DIVERGED', tick: this.logicalTick, reason: 'external-event',
+        detail: { type: 'unpaired-sound-event', truth: this.truth.soundRequest, edited: this.edited.soundRequest },
+      };
+    }
+    if (!isIdle(this.truth) || !isIdle(this.edited)) {
+      return { status: 'BUSY', tick: this.logicalTick, cycle: this.cycle, truthIdle: isIdle(this.truth), editedIdle: isIdle(this.edited) };
     }
     const truthTrace = readTrace(this.truth);
     const editedTrace = readTrace(this.edited);
@@ -376,7 +416,7 @@ export class CertificationHost {
       };
     }
     return {
-      status: 'MATCH', scope: 'semantic-v1', tick: this.logicalTick,
+      status: 'MATCH', scope: 'semantic-v1', tick: this.logicalTick, cycle: this.cycle,
       room: truthTrace[2], x: truthTrace[3], y: truthTrace[4], randomDraws: truthDigest[5], digest: truthDigest.slice(1, 5),
     };
   }
