@@ -10,7 +10,10 @@ const VAR = Object.freeze({
   OLD_MOUSE_BUTTON: 516,
   IN_TICK: 517,
   FLAGS_OFFSET: 256,
-  VARIABLE_SLOTS: 518,
+  // Pristine AGILE owns slots 0..517. The edited runtime extends the same shared
+  // transport through slot 5830 for control-mask state and direct debug bridges.
+  CORE_VARIABLE_SLOTS: 518,
+  VARIABLE_SLOTS: 5831,
 });
 
 const DIGEST = Object.freeze({
@@ -33,6 +36,7 @@ const DEFAULTS = Object.freeze({
   keyCapacity: 256,
   traceSlots: 16,
   digestSlots: 10,
+  variableSlots: VAR.VARIABLE_SLOTS,
   seed: 0x4b513142,
   barrierTimeoutMs: 3000,
   maxBarrierPulses: 3600,
@@ -51,17 +55,21 @@ export function createLaneBuffers(options = {}) {
   const keyCapacity = options.keyCapacity ?? DEFAULTS.keyCapacity;
   const traceSlots = options.traceSlots ?? DEFAULTS.traceSlots;
   const digestSlots = options.digestSlots ?? DEFAULTS.digestSlots;
+  const variableSlots = options.variableSlots ?? DEFAULTS.variableSlots;
   if (digestSlots < 10) throw new Error('Certification digest needs at least 10 Uint32 slots.');
+  if (variableSlots < VAR.VARIABLE_SLOTS) {
+    throw new Error(`Certification shared state needs at least ${VAR.VARIABLE_SLOTS} Int32 slots.`);
+  }
   const queueSlots = keyCapacity + 1;
   const keyPressQueueSAB = new SharedArrayBuffer(8 + queueSlots * 4);
   const keysSAB = new SharedArrayBuffer(256 * 4);
   const oldKeysSAB = new SharedArrayBuffer(256 * 4);
-  const variableSAB = new SharedArrayBuffer(VAR.VARIABLE_SLOTS * 4);
+  const variableSAB = new SharedArrayBuffer(variableSlots * 4);
   const pixelDataSAB = new SharedArrayBuffer(width * height * 4);
   const diagnosticTraceSAB = new SharedArrayBuffer(traceSlots * 4);
   const certificationDigestSAB = new SharedArrayBuffer(digestSlots * 4);
   return {
-    keyCapacity, width, height,
+    keyCapacity, width, height, variableSlots,
     keyPressQueueSAB, keysSAB, oldKeysSAB, variableSAB, pixelDataSAB,
     diagnosticTraceSAB, certificationDigestSAB,
     queue: new Uint32Array(keyPressQueueSAB),
