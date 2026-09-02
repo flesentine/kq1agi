@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import re
 import sys
 
 if len(sys.argv) != 2:
@@ -15,6 +16,15 @@ def one(text: str, old: str, new: str, label: str) -> str:
     if count != 1:
         raise RuntimeError(f'{label}: expected 1 match, found {count}')
     return text.replace(old, new, 1)
+
+
+def one_regex(text: str, pattern: str, replacement, label: str) -> str:
+    matches = list(re.finditer(pattern, text, flags=re.MULTILINE))
+    if len(matches) != 1:
+        raise RuntimeError(f'{label}: expected 1 match, found {len(matches)}')
+    match = matches[0]
+    value = replacement(match) if callable(replacement) else replacement
+    return text[:match.start()] + value + text[match.end():]
 
 
 # Read-only diagnostic access. This deliberately does not change movement, logic,
@@ -87,14 +97,20 @@ text = one(
     'truth trace field',
 )
 
-# Attach an optional trace SAB without making the pristine worker depend on one.
+# Attach an optional trace SAB without making either the pristine worker or the
+# current edited worker depend on one. KQ1AGI may extend the GwtPixelData constructor,
+# so anchor on the single assignment statement rather than its exact argument list.
 init_anchor = '''                JavaScriptObject pixelDataSAB = getNestedObject(eventObject, "pixelDataSAB");\n'''
 init_repl = init_anchor + '''                JavaScriptObject diagnosticTraceSAB = getOptionalNestedObject(eventObject, "diagnosticTraceSAB");\n'''
 text = one(text, init_anchor, init_repl, 'truth trace Initialise field')
 
-construct_anchor = '''                pixelData = new GwtPixelData(pixelDataSAB);\n'''
-construct_repl = construct_anchor + '''                int diagnosticTraceBytes = getBufferByteLength(diagnosticTraceSAB);\n                if (diagnosticTraceBytes >= 64 && (diagnosticTraceBytes & 3) == 0)\n                    diagnosticTrace = new SharedArray(diagnosticTraceSAB);\n'''
-text = one(text, construct_anchor, construct_repl, 'truth trace construction')
+construct_tail = '''                int diagnosticTraceBytes = getBufferByteLength(diagnosticTraceSAB);\n                if (diagnosticTraceBytes >= 64 && (diagnosticTraceBytes & 3) == 0)\n                    diagnosticTrace = new SharedArray(diagnosticTraceSAB);\n'''
+text = one_regex(
+    text,
+    r'^\s*pixelData\s*=\s*new\s+GwtPixelData\([^\n;]*\);\s*$',
+    lambda match: match.group(0) + '\n' + construct_tail.rstrip('\n'),
+    'truth trace GwtPixelData construction',
+)
 
 # Publish only after the interpreter has completed the tick. This observer does not
 # participate in any interpreter decisions. A future host reads only after IN_TICK
