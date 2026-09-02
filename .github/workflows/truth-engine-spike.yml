@@ -1,0 +1,71 @@
+name: Truth engine spike
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/truth-engine-spike.yml'
+      - 'scripts/instrument_truth_worker.py'
+      - 'scripts/check_truth_engine_feasibility.py'
+      - 'docs/TRUTH_ENGINE_SPIKE.md'
+
+permissions:
+  contents: read
+
+jobs:
+  truth-spike:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Fetch exact pristine AGILE reference
+        run: |
+          git clone https://github.com/lanceewing/agile-gdx.git agile-gdx-truth
+          git -C agile-gdx-truth checkout 81c42ba63b3b7f5fb260d282592681c097d46da9
+          test "$(git -C agile-gdx-truth rev-parse HEAD)" = "81c42ba63b3b7f5fb260d282592681c097d46da9"
+
+      - name: Add read-only observer only
+        run: |
+          python3 scripts/instrument_truth_worker.py agile-gdx-truth
+          echo '=== truth observer diff ==='
+          git -C agile-gdx-truth diff --name-only | sort | tee /tmp/truth-diff.txt
+          printf '%s\n' \
+            core/src/main/java/com/agifans/agile/Interpreter.java \
+            html/src/main/java/com/agifans/agile/worker/AgileWebWorker.java \
+            | sort > /tmp/truth-expected.txt
+          diff -u /tmp/truth-expected.txt /tmp/truth-diff.txt
+
+      - name: Verify feasibility contracts
+        run: |
+          mkdir -p truth-spike-artifact
+          python3 scripts/check_truth_engine_feasibility.py \
+            agile-gdx-truth truth-spike-artifact/truth-engine-feasibility.json
+
+      - name: Compile observed pristine worker
+        run: |
+          chmod +x agile-gdx-truth/gradlew
+          cd agile-gdx-truth
+          ./gradlew html:dist --no-daemon
+
+      - name: Verify standalone truth worker bundle
+        run: |
+          test -f agile-gdx-truth/html/build/dist/worker/worker.nocache.js
+          grep -q 'getDiagnosticValue' agile-gdx-truth/core/src/main/java/com/agifans/agile/Interpreter.java
+          grep -q 'publishDiagnosticTrace' agile-gdx-truth/html/src/main/java/com/agifans/agile/worker/AgileWebWorker.java
+          mkdir -p truth-spike-artifact/truth-worker
+          cp -R agile-gdx-truth/html/build/dist/worker/. truth-spike-artifact/truth-worker/
+          du -sh truth-spike-artifact/truth-worker
+
+      - name: Upload spike evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: truth-engine-spike
+          path: truth-spike-artifact
