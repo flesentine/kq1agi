@@ -40,12 +40,18 @@ def verify_lane(root: Path, label: str) -> dict:
     require(random_java, 'protected int next(int bits)', f'{label} counted Random draws')
     require(save_store, 'class CertificationSavedGameStore extends GwtSavedGameStore', f'{label} isolated save store')
     require(save_store, 'Map<Integer, SavedGame>', f'{label} in-memory saved games')
+    require(save_store, 'System.arraycopy', f'{label} GWT-safe save copies')
     require(worker, 'certificationDigestSAB', f'{label} digest transport')
     require(worker, 'certificationMode', f'{label} certification mode')
     require(worker, 'certificationSeed', f'{label} certification seed')
     require(worker, 'CertificationReady', f'{label} ready handshake')
     require(worker, 'new CertificationSavedGameStore()', f'{label} saved-game isolation')
     require(worker, 'certificationDigest.set(0, 1)', f'{label} digest schema')
+    require(worker, 'certificationDigestBytes >= 40', f'{label} snapshot digest transport size')
+    require(worker, 'publishCertificationSnapshotIfRequested()', f'{label} idle snapshot poll')
+    require(worker, 'certificationDigest.get(8)', f'{label} snapshot request epoch')
+    require(worker, 'certificationDigest.set(9, request)', f'{label} snapshot acknowledgement epoch')
+    require(worker, 'CertificationSnapshotReady', f'{label} ordered snapshot acknowledgement')
 
     for marker, name in [
         ('TOTAL_TICKS = 512', 'TOTAL_TICKS'),
@@ -64,6 +70,7 @@ def verify_lane(root: Path, label: str) -> dict:
         'semantic_digest_v1': 'PASS',
         'isolated_session_saves': 'PASS',
         'ready_handshake': 'PASS',
+        'common_barrier_snapshot': 'PASS',
     }
 
 
@@ -74,8 +81,9 @@ edited = verify_lane(edited_root, 'edited')
 for marker in [
     'TOTAL_TICKS: 512', 'MOUSE_BUTTON: 513', 'MOUSE_X: 514', 'MOUSE_Y: 515',
     'OLD_MOUSE_BUTTON: 516', 'IN_TICK: 517', 'FLAGS_OFFSET: 256', 'VARIABLE_SLOTS: 518',
+    'SNAPSHOT_REQUEST: 8', 'SNAPSHOT_ACK: 9', 'digestSlots: 10',
 ]:
-    require(host, marker, 'certification host variable layout')
+    require(host, marker, 'certification host layout')
 
 for marker, label in [
     ('async pulse()', 'logical 60 Hz pulse'),
@@ -83,6 +91,10 @@ for marker, label in [
     ('this._advanceLogicalClock(this.truth)', 'truth logical clock'),
     ('this._advanceLogicalClock(this.edited)', 'edited logical clock'),
     ('queueCanPush(this.truth) || !queueCanPush(this.edited)', 'atomic mirrored key-queue precheck'),
+    ('_synchronizeBarrierSnapshot()', 'common barrier snapshot'),
+    ('this.truth.snapshotAck !== epoch || this.edited.snapshotAck !== epoch', 'dual snapshot acknowledgement'),
+    ('soundRequests: []', 'ordered per-lane sound queues'),
+    ('wavHash: hashArrayBuffer(buffer)', 'WAV payload identity'),
     ('this.pendingSoundCompletions.length = 0', 'sound replacement/stop semantics'),
     ("status: 'MATCH', scope: 'semantic-v1'", 'scoped MATCH result'),
     ("'random-stream'", 'PRNG divergence result'),
@@ -99,6 +111,9 @@ report = {
         'mirrored_keyboard_mouse': 'PASS',
         'logical_clock_while_worker_busy': 'PASS',
         'aligned_interpreter_cycle_release': 'PASS',
+        'common_barrier_snapshot': 'PASS',
+        'ordered_sound_event_pairing': 'PASS',
+        'wav_payload_identity': 'PASS',
         'deterministic_sound_completion': 'PASS',
         'semantic_comparator': 'PASS',
     },
