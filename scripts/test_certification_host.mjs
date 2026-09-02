@@ -71,12 +71,12 @@ class MockWorker {
 
 {
   const lane = createLaneBuffers();
-  assert.equal(lane.variableSAB.byteLength, 5831 * 4);
-  assert.equal(lane.variableSlots, 5831);
+  assert.equal(lane.variableSAB.byteLength, 8353 * 4);
+  assert.equal(lane.variableSlots, 8353);
   assert.equal(lane.keyPressQueueSAB.byteLength, 8 + 257 * 4);
   assert.equal(lane.certificationDigestSAB.byteLength, 10 * 4);
   assert.throws(() => createLaneBuffers({ digestSlots: 9 }), /at least 10/);
-  assert.throws(() => createLaneBuffers({ variableSlots: 5830 }), /at least 5831/);
+  assert.throws(() => createLaneBuffers({ variableSlots: 8352 }), /at least 8353/);
 }
 
 {
@@ -156,7 +156,7 @@ class MockWorker {
 }
 
 assert.equal(CertificationLayout.VAR.CORE_VARIABLE_SLOTS, 518);
-assert.equal(CertificationLayout.VAR.VARIABLE_SLOTS, 5831);
+assert.equal(CertificationLayout.VAR.VARIABLE_SLOTS, 8353);
 assert.equal(CertificationLayout.VAR.IN_TICK, 517);
 assert.equal(CertificationLayout.DIGEST.SNAPSHOT_REQUEST, 8);
 assert.equal(CertificationLayout.DIGEST.SNAPSHOT_ACK, 9);
