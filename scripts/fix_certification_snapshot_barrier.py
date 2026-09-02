@@ -42,8 +42,12 @@ method = r'''    private void publishCertificationSnapshotIfRequested() {
 
         // postMessage ordering guarantees any earlier sound events from this worker
         // are delivered before the host observes this barrier acknowledgement.
-        postObject("CertificationSnapshotReady", JavaScriptObject.createObject());
+        postObject("CertificationSnapshotReady", createCertificationSnapshotReadyObject(request));
     }
+
+    private native JavaScriptObject createCertificationSnapshotReadyObject(int epoch)/*-{
+        return { epoch: epoch >>> 0 };
+    }-*/;
 
 '''
 if text.count(anchor) != 1:
