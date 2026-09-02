@@ -394,15 +394,55 @@ export class CertificationHost {
     return epoch;
   }
 
+  async _resolveQuitIfObserved() {
+    if (!this.truth.quit && !this.edited.quit) return null;
+
+    // QuitGame is delivered through independent worker postMessage queues. One lane
+    // can therefore be observed a few milliseconds before the other even when both
+    // threw QuitAction in the same interpreter cycle. Freeze the logical clock and
+    // wait for the counterpart instead of reporting an asynchronous false divergence.
+    const deadline = Date.now() + this.barrierTimeoutMs;
+    while (this.truth.quit !== this.edited.quit) {
+      if (this.pendingExternalDivergence) {
+        return { status: 'DIVERGED', tick: this.logicalTick, reason: 'external-event', detail: this.pendingExternalDivergence };
+      }
+      if (Date.now() > deadline) {
+        return {
+          status: 'DIVERGED', tick: this.logicalTick, cycle: this.cycle, reason: 'quit-state',
+          truthQuit: this.truth.quit, editedQuit: this.edited.quit,
+        };
+      }
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    // Each certification worker publishes its final semantic snapshot and clears
+    // IN_TICK before posting QuitGame. postMessage ordering also means all earlier
+    // sound events from that lane have arrived before its quit acknowledgement.
+    this._pairSoundRequests();
+    if (this.truth.soundRequests.length || this.edited.soundRequests.length) {
+      this.pendingExternalDivergence ??= {
+        type: 'unpaired-sound-event',
+        truth: [...this.truth.soundRequests],
+        edited: [...this.edited.soundRequests],
+      };
+    }
+    const finalResult = this.compare();
+    if (finalResult.status !== 'MATCH') return finalResult;
+    this.comparedCycle = this.cycle;
+    return {
+      status: 'COMPLETE', scope: finalResult.scope, tick: this.logicalTick, cycle: this.cycle,
+      finalMatch: finalResult,
+    };
+  }
+
   /**
    * Advance one logical 1/60-second pulse. Time keeps moving while an interpreter
    * cycle is blocked; a new cycle is released only when both lanes are idle.
    */
   async pulse() {
     if (!this.started || !this.truth.ready || !this.edited.ready) throw new Error('CertificationHost is not ready.');
-    if (this.truth.quit !== this.edited.quit) {
-      return { status: 'DIVERGED', tick: this.logicalTick, reason: 'quit-state', truthQuit: this.truth.quit, editedQuit: this.edited.quit };
-    }
+    const quitBefore = await this._resolveQuitIfObserved();
+    if (quitBefore) return quitBefore;
     const bothIdleBefore = isIdle(this.truth) && isIdle(this.edited);
     // If the previous interpreter cycle completed between host pulses, certify that
     // exact shared barrier before time advances or another cycle is released. Without
@@ -413,8 +453,6 @@ export class CertificationHost {
       this.comparedCycle = this.cycle;
       return result;
     }
-    if (this.truth.quit && this.edited.quit) return { status: 'COMPLETE', tick: this.logicalTick };
-
     const nextTick = this.logicalTick + 1;
     this._applyExternalEvents(nextTick);
     this._advanceLogicalClock(this.truth);
@@ -428,6 +466,8 @@ export class CertificationHost {
     }
 
     await new Promise(resolve => setTimeout(resolve, 0));
+    const quitAfter = await this._resolveQuitIfObserved();
+    if (quitAfter) return quitAfter;
     const truthIdle = isIdle(this.truth);
     const editedIdle = isIdle(this.edited);
     if (!truthIdle || !editedIdle) {
