@@ -8,8 +8,11 @@ if len(sys.argv) != 2:
 
 root = Path(sys.argv[1]).resolve()
 worker = root / 'html/src/main/java/com/agifans/agile/worker/AgileWebWorker.java'
+interpreter = root / 'core/src/main/java/com/agifans/agile/Interpreter.java'
 if not worker.exists():
     raise RuntimeError(f'missing generated certification worker: {worker}')
+if not interpreter.exists():
+    raise RuntimeError(f'missing generated certification interpreter: {interpreter}')
 
 text = worker.read_text()
 
@@ -53,6 +56,30 @@ method = r'''    private void publishCertificationSnapshotIfRequested() {
 if text.count(anchor) != 1:
     raise RuntimeError(f'certification snapshot method insertion: expected 1 anchor, found {text.count(anchor)}')
 text = text.replace(anchor, method + anchor, 1)
-
 worker.write_text(text)
-print('Certification snapshot barrier installed: common-clock republish + ordered acknowledgement')
+
+# HashMap iteration order is not semantic state. Canonicalize controller mappings by
+# key so two lanes with the same mappings cannot false-diverge merely because entries
+# were inserted in a different order.
+itext = interpreter.read_text()
+old_map_digest = r'''                hash = certificationMix(hash, state.keyToControllerMap.size());
+                for (java.util.Map.Entry<Integer, Integer> entry : state.keyToControllerMap.entrySet()) {
+                    hash = certificationMix(hash, entry.getKey());
+                    hash = certificationMix(hash, entry.getValue());
+                }
+'''
+new_map_digest = r'''                hash = certificationMix(hash, state.keyToControllerMap.size());
+                java.util.ArrayList<Integer> certificationControllerKeys = new java.util.ArrayList<Integer>();
+                certificationControllerKeys.addAll(state.keyToControllerMap.keySet());
+                java.util.Collections.sort(certificationControllerKeys);
+                for (Integer key : certificationControllerKeys) {
+                    hash = certificationMix(hash, key);
+                    hash = certificationMix(hash, state.keyToControllerMap.get(key));
+                }
+'''
+if itext.count(old_map_digest) != 1:
+    raise RuntimeError(f'certification controller-map digest: expected 1 match, found {itext.count(old_map_digest)}')
+itext = itext.replace(old_map_digest, new_map_digest, 1)
+interpreter.write_text(itext)
+
+print('Certification snapshot barrier installed: common-clock republish + ordered acknowledgement + canonical map digest')
