@@ -156,11 +156,13 @@ jobs:
         run: |
           for dir in agile-gdx-truth agile-gdx-edited; do
             test -f "$dir/html/build/dist/worker/worker.nocache.js"
+            test -f "$dir/html/build/dist/opfs-saved-games.js"
             grep -R -q 'diagnosticTraceSAB' "$dir/html/build/dist/worker"
             grep -R -q 'certificationDigestSAB' "$dir/html/build/dist/worker"
             grep -R -q 'CertificationReady' "$dir/html/build/dist/worker"
             grep -R -q 'CertificationSnapshotReady' "$dir/html/build/dist/worker"
           done
+          cmp agile-gdx-truth/html/build/dist/opfs-saved-games.js agile-gdx-edited/html/build/dist/opfs-saved-games.js
           test -f web/certification-host.mjs
           grep -q "scope: 'semantic-v1'" web/certification-host.mjs
           grep -q 'async pulse()' web/certification-host.mjs
@@ -171,12 +173,14 @@ jobs:
           mkdir -p certification-artifact/truth-worker certification-artifact/edited-worker
           cp -R agile-gdx-truth/html/build/dist/worker/. certification-artifact/truth-worker/
           cp -R agile-gdx-edited/html/build/dist/worker/. certification-artifact/edited-worker/
+          cp agile-gdx-truth/html/build/dist/opfs-saved-games.js certification-artifact/opfs-saved-games.js
           cp web/certification-host.mjs certification-artifact/certification-host.mjs
           cp docs/TRUTH_ENGINE_PHASE_1B.md certification-artifact/README.md
           printf '%s\n' \
             'Phase -1B artifact only. No KQ1 game resources are included.' \
             'truth-worker = pinned pristine AGILE + certification instrumentation' \
             'edited-worker = current KQ1AGI runtime + same certification instrumentation' \
+            'opfs-saved-games.js = worker bootstrap dependency; certification saves remain session-local in memory' \
             > certification-artifact/ARTIFACT.txt
           find certification-artifact -maxdepth 2 -type f | sort
 
