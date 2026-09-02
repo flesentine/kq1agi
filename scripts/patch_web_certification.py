@@ -11,6 +11,14 @@ html = path.read_text()
 if 'id="certify-button"' in html or 'certification/certification-panel.mjs' in html:
     raise RuntimeError('CERTIFY browser integration is already present')
 
+for anchor, label in [
+    ('</style>', 'style close'),
+    ('<div id="boot-message">', 'boot message'),
+    ('</body>', 'body close'),
+]:
+    if html.count(anchor) != 1:
+        raise RuntimeError(f'CERTIFY {label}: expected exactly one anchor, found {html.count(anchor)}')
+
 css = r'''
     #certify-button {
       position: fixed; top: 14px; left: 14px; z-index: 10003; display: none;
@@ -47,7 +55,7 @@ css = r'''
     #certify-detail { margin: 0; padding: 9px; white-space: pre-wrap; overflow-wrap: anywhere; background: #070b09; border-radius: 6px; color: #d7e7dc; }
     #certify-privacy { color: #8fa99a; font: 11px/1.35 system-ui, sans-serif; margin: 8px 0 0; }
 '''
-html = html.replace('  </style>', css + '  </style>', 1)
+html = html.replace('</style>', css + '</style>', 1)
 
 panel = r'''<button id="certify-button" type="button" title="Open deterministic ORIGINAL-vs-EDITED certification">CERTIFY</button>
 <aside id="certify-panel" aria-hidden="true" aria-label="Truth engine certification">
@@ -74,5 +82,15 @@ panel = r'''<button id="certify-button" type="button" title="Open deterministic 
 '''
 html = html.replace('<div id="boot-message">', panel + '<div id="boot-message">', 1)
 html = html.replace('</body>', '<script type="module" src="certification/certification-panel.mjs"></script>\n</body>', 1)
+
+for marker in [
+    '#certify-button {',
+    'id="certify-button"',
+    'id="certify-panel"',
+    'certification/certification-panel.mjs',
+]:
+    if marker not in html:
+        raise RuntimeError(f'CERTIFY injection failed to produce marker: {marker}')
+
 path.write_text(html)
 print('Phase -1C CERTIFY panel injected')
