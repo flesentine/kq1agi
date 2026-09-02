@@ -9,6 +9,7 @@ class MockWorker {
     this.onmessage = null;
     this.onerror = null;
     this.terminated = false;
+    this.hold = false;
     MockWorker.instances.push(this);
   }
 
@@ -21,7 +22,7 @@ class MockWorker {
     } else if (message.name === 'Start') {
       queueMicrotask(() => this.onmessage?.({ data: { name: 'CertificationReady', object: {} } }));
       this.timer = setInterval(() => {
-        if (Atomics.load(this.vars, 517) === 1) {
+        if (!this.hold && Atomics.load(this.vars, 517) === 1) {
           this.trace[0] = 2;
           this.trace[1] = this.vars[512];
           this.trace[2] = 1;
@@ -76,9 +77,27 @@ class MockWorker {
   let result = await host.step();
   assert.equal(result.status, 'MATCH');
 
-  for (let i = 1; i < 60; i += 1) result = await host.step();
-  assert.equal(Atomics.load(host.truth.vars, 512), 60);
-  assert.equal(Atomics.load(host.edited.vars, 512), 60);
+  // Time must continue while an aligned interpreter cycle is blocked. This mirrors
+  // AgileRunner.tick(), which advances TOTAL_TICKS/game clock outside the worker.
+  for (const worker of MockWorker.instances) worker.hold = true;
+  result = await host.pulse();
+  assert.equal(result.status, 'BUSY');
+  const beforeBlockedTicks = host.logicalTick;
+  await host.pulse();
+  await host.pulse();
+  assert.equal(host.logicalTick, beforeBlockedTicks + 2);
+  assert.equal(Atomics.load(host.truth.vars, 512), host.logicalTick);
+  assert.equal(Atomics.load(host.edited.vars, 512), host.logicalTick);
+  for (const worker of MockWorker.instances) worker.hold = false;
+  // A pulse lets the blocked cycle finish; the following step releases the next one.
+  await host.pulse();
+  result = await host.step();
+  assert.equal(result.status, 'MATCH');
+
+  while (host.logicalTick < 60) result = await host.step();
+  assert.equal(Atomics.load(host.truth.vars, 512), host.logicalTick);
+  assert.equal(Atomics.load(host.edited.vars, 512), host.logicalTick);
+  assert.ok(host.logicalTick >= 60);
   assert.equal(Atomics.load(host.truth.vars, 11), 1);
   assert.equal(result.status, 'MATCH');
 
