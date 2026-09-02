@@ -214,6 +214,10 @@ export class CertificationHost {
     this.edited = makeLane('edited', WorkerCtor, options.editedWorkerUrl ?? '/edited-worker/worker.nocache.js', options);
     this.logicalTick = 0;
     this.cycle = 0;
+    // Highest interpreter cycle whose shared idle barrier has been certified.
+    // A worker can finish after pulse() returns BUSY but before the next pulse;
+    // this prevents that completed barrier from being skipped by releasing a new cycle.
+    this.comparedCycle = 0;
     this.snapshotEpoch = 0;
     this.pendingSoundCompletions = [];
     this.pendingExternalDivergence = null;
@@ -399,9 +403,18 @@ export class CertificationHost {
     if (this.truth.quit !== this.edited.quit) {
       return { status: 'DIVERGED', tick: this.logicalTick, reason: 'quit-state', truthQuit: this.truth.quit, editedQuit: this.edited.quit };
     }
+    const bothIdleBefore = isIdle(this.truth) && isIdle(this.edited);
+    // If the previous interpreter cycle completed between host pulses, certify that
+    // exact shared barrier before time advances or another cycle is released. Without
+    // this gate, a fast between-pulse completion could be skipped entirely.
+    if (bothIdleBefore && this.cycle > this.comparedCycle) {
+      const snapshotEpoch = await this._synchronizeBarrierSnapshot();
+      const result = this.compare(snapshotEpoch);
+      this.comparedCycle = this.cycle;
+      return result;
+    }
     if (this.truth.quit && this.edited.quit) return { status: 'COMPLETE', tick: this.logicalTick };
 
-    const bothIdleBefore = isIdle(this.truth) && isIdle(this.edited);
     const nextTick = this.logicalTick + 1;
     this._applyExternalEvents(nextTick);
     this._advanceLogicalClock(this.truth);
@@ -422,16 +435,19 @@ export class CertificationHost {
     }
 
     const snapshotEpoch = await this._synchronizeBarrierSnapshot();
-    return this.compare(snapshotEpoch);
+    const result = this.compare(snapshotEpoch);
+    this.comparedCycle = this.cycle;
+    return result;
   }
 
   async step(options = {}) {
     const maxPulses = options.maxPulses ?? this.maxBarrierPulses;
-    const startCycle = this.cycle;
     for (let pulses = 1; pulses <= maxPulses; pulses += 1) {
       const result = await this.pulse();
       if (result.status === 'DIVERGED' || result.status === 'COMPLETE') return result;
-      if (result.status !== 'BUSY' && this.cycle > startCycle) return result;
+      // Any non-BUSY result is a certified shared barrier. This also handles a
+      // cycle that completed between an external pulse() and this step() call.
+      if (result.status !== 'BUSY') return result;
     }
     if (this.truth.soundRequests.length || this.edited.soundRequests.length) {
       return {
