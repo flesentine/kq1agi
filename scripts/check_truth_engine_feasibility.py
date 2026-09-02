@@ -23,6 +23,7 @@ def require(text: str, needle: str, label: str) -> None:
 
 
 user_input = read('core/src/main/java/com/agifans/agile/UserInput.java')
+agile_runner = read('core/src/main/java/com/agifans/agile/AgileRunner.java')
 gwt_input = read('html/src/main/java/com/agifans/agile/gwt/GwtUserInput.java')
 gwt_vars = read('html/src/main/java/com/agifans/agile/gwt/GwtVariableData.java')
 gwt_pixels = read('html/src/main/java/com/agifans/agile/gwt/GwtPixelData.java')
@@ -41,9 +42,9 @@ require(runner, 'worker.postObject("Initialise", createInitialiseObject(', 'work
 require(worker, 'userInput = new GwtUserInput(keyPressQueueSAB, keysSAB, oldKeysSAB);', 'worker input attachment')
 require(worker, 'variableData = new GwtVariableData(variableSAB);', 'worker variable attachment')
 
-# 2) Deterministic input surface: all keyboard input funnels through setKey and the
-# encoded key queue. Both are SharedArrayBuffer-backed and can be mirrored. Tick
-# scheduling is also explicitly gated by IN_TICK, so a two-worker barrier is possible.
+# 2) Deterministic input surface: keyboard state and the encoded key queue are SAB
+# backed and can be mirrored. Worker execution is gated by IN_TICK, which is useful
+# for a barrier, but the normal AgileRunner still owns a wall-clock 60 Hz scheduler.
 require(user_input, 'setKey((keycode & 0xFF), true);', 'keyboard state funnel')
 require(user_input, 'keyPressQueueAdd(', 'keyboard queue funnel')
 require(gwt_input, 'protected boolean keyPressQueueAdd(Integer key)', 'GWT key queue hook')
@@ -53,18 +54,26 @@ require(worker, 'while (variableData.getInTick() == false)', 'worker tick gate')
 # 3) Read-only semantic trace: observer instrumentation must compile against the
 # pristine interpreter without replacing movement or logic code.
 require(interpreter, 'public int getDiagnosticValue(int slot)', 'read-only interpreter snapshot')
+require(interpreter, 'case 0: return 2;', 'trace v2 schema')
+require(interpreter, 'Defines.SECONDS', 'packed game-clock trace')
 require(worker, 'private SharedArray diagnosticTrace;', 'truth trace SAB')
 require(worker, 'publishDiagnosticTrace();', 'post-tick truth trace publication')
+require(worker, 'getBufferByteLength(diagnosticTraceSAB) >= 64', 'truth trace capacity guard')
 
 # Known determinism constraints discovered by the spike. These are deliberately
 # reported as blockers/constraints rather than being papered over.
 rng_unseeded = 'public Random random = new Random();' in game_state
+wall_clock_driven = (
+    'TimeUtils.nanoTime()' in agile_runner
+    and 'variableData.incrementTotalTicks()' in agile_runner
+    and 'updateGameClock();' in agile_runner
+)
 sound_async = 'currentlyPlayingSound = playSound(soundBuffer, endFlag);' in runner and 'variableData.setFlag(endFlag, true);' in runner
 saved_store_shared = 'savedGameStore = new GwtSavedGameStore();' in worker
 mouse_shared = 'MOUSE_X' in gwt_vars and 'MOUSE_Y' in gwt_vars and 'MOUSE_BUTTON' in gwt_vars
 
 report = {
-    'schema': 1,
+    'schema': 2,
     'upstream_contract': {
         'independent_worker_state': {
             'status': 'PASS_WITH_EXTERNAL_STORE_CONSTRAINT',
@@ -74,16 +83,21 @@ report = {
             'status': 'PASS',
             'evidence': 'Keyboard state and encoded key presses funnel through SAB-backed GwtUserInput storage and can be duplicated before either worker consumes them.',
         },
-        'tick_barrier': {
+        'worker_tick_barrier': {
             'status': 'PASS',
-            'evidence': 'Both UI and worker coordinate each interpreter tick through VariableData.IN_TICK, allowing a dual-worker host to release ticks only when both lanes are idle.',
+            'evidence': 'The worker side is gated by VariableData.IN_TICK, so a dual-worker host can wait for both workers to finish before releasing the next interpreter tick.',
         },
         'read_only_semantic_trace': {
             'status': 'PASS',
-            'evidence': 'The pristine worker compiles with a post-tick observer that publishes room/ego/flag state without participating in interpreter decisions.',
+            'evidence': 'The pristine worker compiles with a post-tick observer that publishes room/ego/flag/game-clock state without participating in interpreter decisions.',
         },
     },
     'determinism_constraints': {
+        'wall_clock_and_game_clock': {
+            'status': 'MUST_CENTRALIZE' if wall_clock_driven else 'REVIEW',
+            'evidence': 'AgileRunner.tick() uses TimeUtils.nanoTime() to advance TOTAL_TICKS and the AGI game clock on the UI thread.' if wall_clock_driven else 'Expected wall-clock runner markers changed; re-audit required.',
+            'required_fix': 'Certification must use one logical 60 Hz clock that advances TOTAL_TICKS and DAYS/HOURS/MINUTES/SECONDS identically for both lanes before releasing the worker barrier. Do not run two independent AgileRunner.tick() clocks.',
+        },
         'random_number_generator': {
             'status': 'BLOCKS_BIT_EXACT_PARITY' if rng_unseeded else 'REVIEW',
             'evidence': 'GameState constructs java.util.Random with no shared seed.' if rng_unseeded else 'Unseeded Random marker changed; re-audit required.',
@@ -92,7 +106,7 @@ report = {
         'sound_completion': {
             'status': 'BLOCKS_GENERAL_PARITY' if sound_async else 'REVIEW',
             'evidence': 'Sound end flags are set asynchronously on the UI thread.' if sound_async else 'Expected asynchronous sound callback marker changed; re-audit required.',
-            'required_fix': 'Record/replay sound-completion events, or use a certification clock that feeds the same completion event to both lanes.',
+            'required_fix': 'Record/replay sound-completion events, or feed the same logical completion tick to both lanes.',
         },
         'saved_game_store': {
             'status': 'MUST_ISOLATE' if saved_store_shared else 'REVIEW',
@@ -104,9 +118,16 @@ report = {
             'evidence': 'Mouse X/Y/button are already carried in VariableData shared slots.' if mouse_shared else 'Mouse transport markers changed; re-audit required.',
         },
     },
+    'comparison_scope': {
+        'trace_v2': {
+            'status': 'DIAGNOSTIC_ONLY_NOT_FULL_PARITY_PROOF',
+            'evidence': 'Trace v2 intentionally samples a small set of room/ego/hazard/clock fields. It does not cover every AGI variable, flag, object, inventory/resource state, scan start, or script state.',
+            'required_fix': 'Before the UI can say full runtime MATCH, add a deterministic semantic state digest (or equivalent complete comparison). Trace v2 can still identify and explain observed divergences.',
+        },
+    },
     'overall': {
         'status': 'FEASIBLE_WITH_DETERMINISM_WORK_REQUIRED',
-        'next_step': 'Build an opt-in dual-worker certification host only after shared PRNG and external-event replay are defined. Do not use pixel comparison or the modified engine itself as the oracle.',
+        'next_step': 'Build an opt-in dual-worker certification host with one logical clock, deterministic PRNG, mirrored external events, isolated persistence, and a full semantic state digest. Do not use pixel comparison, trace v2 alone, or the modified engine itself as the oracle.',
     },
 }
 
