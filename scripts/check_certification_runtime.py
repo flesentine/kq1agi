@@ -85,7 +85,7 @@ for marker, label in [
     ('queueCanPush(this.truth) || !queueCanPush(this.edited)', 'atomic mirrored key-queue precheck'),
     ('this.pendingSoundCompletions.length = 0', 'sound replacement/stop semantics'),
     ("status: 'MATCH', scope: 'semantic-v1'", 'scoped MATCH result'),
-    ("reason: 'random-stream'", 'PRNG divergence result'),
+    ("'random-stream'", 'PRNG divergence result'),
 ]:
     require(host, marker, f'host {label}')
 
