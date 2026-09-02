@@ -54,6 +54,7 @@ jobs:
         run: |
           python3 scripts/instrument_truth_worker.py agile-gdx-truth
           python3 scripts/instrument_certification_runtime.py agile-gdx-truth
+          python3 scripts/fix_certification_gwt_compat.py agile-gdx-truth
           git -C agile-gdx-truth add -N \
             core/src/main/java/com/agifans/agile/CertificationRandom.java \
             html/src/main/java/com/agifans/agile/gwt/CertificationSavedGameStore.java
@@ -127,6 +128,7 @@ jobs:
         run: |
           python3 scripts/instrument_truth_worker.py agile-gdx-edited
           python3 scripts/instrument_certification_runtime.py agile-gdx-edited
+          python3 scripts/fix_certification_gwt_compat.py agile-gdx-edited
           git -C agile-gdx-edited diff --check
 
       - name: Verify dual-lane certification contracts
