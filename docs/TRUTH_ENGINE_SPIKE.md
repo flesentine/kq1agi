@@ -44,7 +44,7 @@ The compiled truth worker is uploaded as a CI artifact. It is **not** loaded by 
 | 14 | hold-key mode |
 | 15 | packed AGI game clock: `DAYS:HOURS:MINUTES:SECONDS` |
 
-The optional trace SharedArrayBuffer must be at least 64 bytes (16 Uint32 slots). Shorter buffers are ignored rather than being allowed to crash the truth worker.
+The optional trace SharedArrayBuffer must be at least 64 bytes (16 Uint32 slots) **and its byte length must be divisible by 4**. Shorter or misaligned buffers are ignored rather than being allowed to crash the truth worker.
 
 This trace is deliberately a **diagnostic observation surface**, not a complete parity proof. It is excellent for saying where an observed room/ego/hazard/clock divergence first became visible. It cannot prove that every piece of AGI state is identical, because it does not yet include every variable, flag, animated object, inventory/resource state, scan start, script state, and other interpreter state.
 
