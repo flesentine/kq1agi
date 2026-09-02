@@ -176,6 +176,73 @@ class MockWorker {
   host.terminate();
 }
 
+// QuitGame is posted independently by each worker. A delayed counterpart from the
+// same cycle must complete the final semantic barrier instead of false-diverging.
+{
+  MockWorker.instances.length = 0;
+  const host = new CertificationHost({ WorkerCtor: MockWorker, barrierTimeoutMs: 100 });
+  await host.start(new ArrayBuffer(16));
+  let result = await host.step();
+  assert.equal(result.status, 'MATCH');
+
+  const [truthWorker, editedWorker] = MockWorker.instances;
+  truthWorker.hold = true;
+  editedWorker.hold = true;
+  result = await host.pulse();
+  assert.equal(result.status, 'BUSY');
+
+  truthWorker.publishSnapshot();
+  Atomics.store(host.truth.vars, 517, 0);
+  host._handleLaneMessage(host.truth, { name: 'QuitGame' });
+  setTimeout(() => {
+    editedWorker.publishSnapshot();
+    Atomics.store(host.edited.vars, 517, 0);
+    host._handleLaneMessage(host.edited, { name: 'QuitGame' });
+  }, 10);
+
+  const quitTick = host.logicalTick;
+  result = await host.pulse();
+  assert.equal(result.status, 'COMPLETE');
+  assert.equal(result.scope, 'semantic-v1');
+  assert.equal(result.finalMatch.status, 'MATCH');
+  assert.equal(host.logicalTick, quitTick);
+  host.terminate();
+}
+
+// A genuinely one-sided quit still diverges after the bounded handshake wait.
+{
+  MockWorker.instances.length = 0;
+  const host = new CertificationHost({ WorkerCtor: MockWorker, barrierTimeoutMs: 20 });
+  await host.start(new ArrayBuffer(16));
+  let result = await host.step();
+  assert.equal(result.status, 'MATCH');
+  host._handleLaneMessage(host.truth, { name: 'QuitGame' });
+  const quitTick = host.logicalTick;
+  result = await host.pulse();
+  assert.equal(result.status, 'DIVERGED');
+  assert.equal(result.reason, 'quit-state');
+  assert.equal(result.truthQuit, true);
+  assert.equal(result.editedQuit, false);
+  assert.equal(host.logicalTick, quitTick);
+  host.terminate();
+}
+
+// Matching quit messages do not hide a final semantic difference.
+{
+  MockWorker.instances.length = 0;
+  const host = new CertificationHost({ WorkerCtor: MockWorker, barrierTimeoutMs: 50 });
+  await host.start(new ArrayBuffer(16));
+  let result = await host.step();
+  assert.equal(result.status, 'MATCH');
+  host.edited.digest[2] ^= 1;
+  host._handleLaneMessage(host.truth, { name: 'QuitGame' });
+  host._handleLaneMessage(host.edited, { name: 'QuitGame' });
+  result = await host.pulse();
+  assert.equal(result.status, 'DIVERGED');
+  assert.equal(result.reason, 'semantic-digest');
+  host.terminate();
+}
+
 assert.equal(CertificationLayout.VAR.CORE_VARIABLE_SLOTS, 518);
 assert.equal(CertificationLayout.VAR.VARIABLE_SLOTS, 8353);
 assert.equal(CertificationLayout.VAR.IN_TICK, 517);
