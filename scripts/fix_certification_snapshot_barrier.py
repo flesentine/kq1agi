@@ -56,6 +56,16 @@ method = r'''    private void publishCertificationSnapshotIfRequested() {
 if text.count(anchor) != 1:
     raise RuntimeError(f'certification snapshot method insertion: expected 1 anchor, found {text.count(anchor)}')
 text = text.replace(anchor, method + anchor, 1)
+
+# QuitAction bypasses the normal post-animation snapshot and IN_TICK clear. In
+# certification mode, publish the final semantic state and mark the lane idle before
+# posting QuitGame. The host then treats the two ordered QuitGame messages as a final
+# barrier acknowledgement instead of comparing whichever message arrived first.
+quit_old = '''        } catch (QuitAction qa) {\n            // The user has quit the game, so notify the UI thread of this.\n            postObject("QuitGame", JavaScriptObject.createObject());\n        }\n'''
+quit_new = '''        } catch (QuitAction qa) {\n            // The user has quit the game, so notify the UI thread of this.\n            if (certificationMode) {\n                publishDiagnosticTrace();\n                variableData.setInTick(false);\n            }\n            postObject("QuitGame", JavaScriptObject.createObject());\n        }\n'''
+if text.count(quit_old) != 1:
+    raise RuntimeError(f'certification quit handshake: expected 1 catch block, found {text.count(quit_old)}')
+text = text.replace(quit_old, quit_new, 1)
 worker.write_text(text)
 
 # HashMap iteration order is not semantic state. Canonicalize controller mappings by
@@ -82,4 +92,4 @@ if itext.count(old_map_digest) != 1:
 itext = itext.replace(old_map_digest, new_map_digest, 1)
 interpreter.write_text(itext)
 
-print('Certification snapshot barrier installed: common-clock republish + ordered acknowledgement + canonical map digest')
+print('Certification snapshot barrier installed: common-clock republish + ordered acknowledgement + final quit handshake + canonical map digest')
