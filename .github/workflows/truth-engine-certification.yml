@@ -55,6 +55,7 @@ jobs:
           python3 scripts/instrument_truth_worker.py agile-gdx-truth
           python3 scripts/instrument_certification_runtime.py agile-gdx-truth
           python3 scripts/fix_certification_gwt_compat.py agile-gdx-truth
+          python3 scripts/fix_certification_snapshot_barrier.py agile-gdx-truth
           git -C agile-gdx-truth add -N \
             core/src/main/java/com/agifans/agile/CertificationRandom.java \
             html/src/main/java/com/agifans/agile/gwt/CertificationSavedGameStore.java
@@ -129,6 +130,7 @@ jobs:
           python3 scripts/instrument_truth_worker.py agile-gdx-edited
           python3 scripts/instrument_certification_runtime.py agile-gdx-edited
           python3 scripts/fix_certification_gwt_compat.py agile-gdx-edited
+          python3 scripts/fix_certification_snapshot_barrier.py agile-gdx-edited
           git -C agile-gdx-edited diff --check
 
       - name: Verify dual-lane certification contracts
@@ -157,10 +159,12 @@ jobs:
             grep -R -q 'diagnosticTraceSAB' "$dir/html/build/dist/worker"
             grep -R -q 'certificationDigestSAB' "$dir/html/build/dist/worker"
             grep -R -q 'CertificationReady' "$dir/html/build/dist/worker"
+            grep -R -q 'CertificationSnapshotReady' "$dir/html/build/dist/worker"
           done
           test -f web/certification-host.mjs
           grep -q "scope: 'semantic-v1'" web/certification-host.mjs
           grep -q 'async pulse()' web/certification-host.mjs
+          grep -q '_synchronizeBarrierSnapshot' web/certification-host.mjs
 
       - name: Assemble Phase -1B artifact
         run: |
