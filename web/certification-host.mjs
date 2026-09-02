@@ -11,9 +11,10 @@ const VAR = Object.freeze({
   IN_TICK: 517,
   FLAGS_OFFSET: 256,
   // Pristine AGILE owns slots 0..517. The edited runtime extends the same shared
-  // transport through slot 5830 for control-mask state and direct debug bridges.
+  // transport through slot 8352: editable/debug state plus the read-only Sierra
+  // original-control snapshot used by ORIGINAL-vs-EDITED comparison.
   CORE_VARIABLE_SLOTS: 518,
-  VARIABLE_SLOTS: 5831,
+  VARIABLE_SLOTS: 8353,
 });
 
 const DIGEST = Object.freeze({
