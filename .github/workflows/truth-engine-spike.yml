@@ -9,6 +9,13 @@ on:
       - 'scripts/instrument_truth_worker.py'
       - 'scripts/check_truth_engine_feasibility.py'
       - 'docs/TRUTH_ENGINE_SPIKE.md'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/truth-engine-spike.yml'
+      - 'scripts/instrument_truth_worker.py'
+      - 'scripts/check_truth_engine_feasibility.py'
+      - 'docs/TRUTH_ENGINE_SPIKE.md'
 
 permissions:
   contents: read
@@ -36,6 +43,7 @@ jobs:
         run: |
           python3 scripts/instrument_truth_worker.py agile-gdx-truth
           echo '=== truth observer diff ==='
+          git -C agile-gdx-truth diff --check
           git -C agile-gdx-truth diff --name-only | sort | tee /tmp/truth-diff.txt
           printf '%s\n' \
             core/src/main/java/com/agifans/agile/Interpreter.java \
@@ -60,6 +68,7 @@ jobs:
           test -f agile-gdx-truth/html/build/dist/worker/worker.nocache.js
           grep -q 'getDiagnosticValue' agile-gdx-truth/core/src/main/java/com/agifans/agile/Interpreter.java
           grep -q 'publishDiagnosticTrace' agile-gdx-truth/html/src/main/java/com/agifans/agile/worker/AgileWebWorker.java
+          grep -R -q 'diagnosticTraceSAB' agile-gdx-truth/html/build/dist/worker
           mkdir -p truth-spike-artifact/truth-worker
           cp -R agile-gdx-truth/html/build/dist/worker/. truth-spike-artifact/truth-worker/
           du -sh truth-spike-artifact/truth-worker
