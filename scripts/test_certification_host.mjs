@@ -10,6 +10,7 @@ class MockWorker {
     this.onerror = null;
     this.terminated = false;
     this.hold = false;
+    this.digestXor = 0;
     MockWorker.instances.push(this);
   }
 
@@ -25,12 +26,11 @@ class MockWorker {
       | (this.vars[11] & 255);
     this.digest[0] = 1;
     this.digest[1] = this.vars[512] ^ 0x1111;
-    this.digest[2] = 0x2222;
+    this.digest[2] = 0x2222 ^ this.digestXor;
     this.digest[3] = 0x3333;
     this.digest[4] = 0x4444;
     this.digest[5] = 0;
     this.digest[6] = 1;
-    this.digest[7] = 0;
   }
 
   postMessage(message) {
@@ -61,6 +61,16 @@ class MockWorker {
         }
       }, 0);
     }
+  }
+
+  quit(delayMs = 0) {
+    const fire = () => {
+      Atomics.store(this.digest, 7, 1);
+      Atomics.store(this.vars, 517, 0);
+      queueMicrotask(() => this.onmessage?.({ data: { name: 'QuitGame', object: {} } }));
+    };
+    if (delayMs > 0) setTimeout(fire, delayMs);
+    else fire();
   }
 
   terminate() {
@@ -191,14 +201,8 @@ class MockWorker {
   result = await host.pulse();
   assert.equal(result.status, 'BUSY');
 
-  truthWorker.publishSnapshot();
-  Atomics.store(host.truth.vars, 517, 0);
-  host._handleLaneMessage(host.truth, { name: 'QuitGame' });
-  setTimeout(() => {
-    editedWorker.publishSnapshot();
-    Atomics.store(host.edited.vars, 517, 0);
-    host._handleLaneMessage(host.edited, { name: 'QuitGame' });
-  }, 10);
+  truthWorker.quit();
+  editedWorker.quit(10);
 
   const quitTick = host.logicalTick;
   result = await host.pulse();
@@ -216,7 +220,8 @@ class MockWorker {
   await host.start(new ArrayBuffer(16));
   let result = await host.step();
   assert.equal(result.status, 'MATCH');
-  host._handleLaneMessage(host.truth, { name: 'QuitGame' });
+  const [truthWorker] = MockWorker.instances;
+  truthWorker.quit();
   const quitTick = host.logicalTick;
   result = await host.pulse();
   assert.equal(result.status, 'DIVERGED');
@@ -234,9 +239,10 @@ class MockWorker {
   await host.start(new ArrayBuffer(16));
   let result = await host.step();
   assert.equal(result.status, 'MATCH');
-  host.edited.digest[2] ^= 1;
-  host._handleLaneMessage(host.truth, { name: 'QuitGame' });
-  host._handleLaneMessage(host.edited, { name: 'QuitGame' });
+  const [truthWorker, editedWorker] = MockWorker.instances;
+  editedWorker.digestXor = 1;
+  truthWorker.quit();
+  editedWorker.quit();
   result = await host.pulse();
   assert.equal(result.status, 'DIVERGED');
   assert.equal(result.reason, 'semantic-digest');
