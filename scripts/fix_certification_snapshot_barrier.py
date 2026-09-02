@@ -57,12 +57,20 @@ if text.count(anchor) != 1:
     raise RuntimeError(f'certification snapshot method insertion: expected 1 anchor, found {text.count(anchor)}')
 text = text.replace(anchor, method + anchor, 1)
 
-# QuitAction bypasses the normal post-animation snapshot and IN_TICK clear. In
-# certification mode, publish the final semantic state and mark the lane idle before
-# posting QuitGame. The host then treats the two ordered QuitGame messages as a final
-# barrier acknowledgement instead of comparing whichever message arrived first.
+# Digest slot 7 is the shared terminal-state marker. Normal snapshots leave it at
+# its zero-initialized value; the QuitAction path raises it exactly once and final
+# barrier republishing must preserve it.
+quit_reset = '            certificationDigest.set(7, 0);\n'
+if text.count(quit_reset) != 1:
+    raise RuntimeError(f'certification quit marker reset: expected 1 match, found {text.count(quit_reset)}')
+text = text.replace(quit_reset, '', 1)
+
+# QuitAction bypasses the normal post-animation snapshot and IN_TICK clear. Raise a
+# shared terminal marker before clearing IN_TICK, post QuitGame, then remain in the
+# existing shared-memory snapshot poll until the host requests and acknowledges one
+# final common-barrier snapshot. This decouples correctness from postMessage timing.
 quit_old = '''        } catch (QuitAction qa) {\n            // The user has quit the game, so notify the UI thread of this.\n            postObject("QuitGame", JavaScriptObject.createObject());\n        }\n'''
-quit_new = '''        } catch (QuitAction qa) {\n            // The user has quit the game, so notify the UI thread of this.\n            if (certificationMode) {\n                publishDiagnosticTrace();\n                variableData.setInTick(false);\n            }\n            postObject("QuitGame", JavaScriptObject.createObject());\n        }\n'''
+quit_new = '''        } catch (QuitAction qa) {\n            // The user has quit the game, so notify the UI thread of this.\n            if (certificationMode && certificationDigest != null) {\n                certificationDigest.set(7, 1);\n                variableData.setInTick(false);\n                int quitSnapshotAck = certificationDigest.get(9);\n                postObject("QuitGame", JavaScriptObject.createObject());\n                while (certificationDigest.get(9) == quitSnapshotAck) {\n                    publishCertificationSnapshotIfRequested();\n                }\n            } else {\n                postObject("QuitGame", JavaScriptObject.createObject());\n            }\n        }\n'''
 if text.count(quit_old) != 1:
     raise RuntimeError(f'certification quit handshake: expected 1 catch block, found {text.count(quit_old)}')
 text = text.replace(quit_old, quit_new, 1)
@@ -92,4 +100,4 @@ if itext.count(old_map_digest) != 1:
 itext = itext.replace(old_map_digest, new_map_digest, 1)
 interpreter.write_text(itext)
 
-print('Certification snapshot barrier installed: common-clock republish + ordered acknowledgement + final quit handshake + canonical map digest')
+print('Certification snapshot barrier installed: common-clock republish + ordered acknowledgement + shared quit marker + final quit snapshot + canonical map digest')
