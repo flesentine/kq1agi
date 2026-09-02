@@ -30,6 +30,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Fetch pinned AGILE source
         run: |
           git clone https://github.com/lanceewing/agile-gdx.git agile-gdx
@@ -155,6 +160,9 @@ jobs:
           grep -q '__kq1agiVariableSAB' agile-gdx/html/src/main/java/com/agifans/agile/gwt/GwtVariableData.java
           echo 'scene mask editor, FALL/HITSPEC danger paint, on-screen sprite safety, live-frame debug capture, WATER trigger, and render-only swim/drown gating verified'
 
+      - name: Build Phase -1C certification browser bundle
+        run: scripts/build_browser_certification.sh agile-gdx
+
       - name: Build AGILE HTML5 app
         run: |
           chmod +x agile-gdx/gradlew
@@ -188,8 +196,10 @@ jobs:
           python3 scripts/patch_web_debug_image_only.py _site/index.html
           python3 scripts/patch_web_debug_metadata.py _site/index.html
           python3 scripts/patch_web_debug_menu.py _site/index.html
-          mkdir -p _site/backgrounds
+          python3 scripts/patch_web_certification.py _site/index.html
+          mkdir -p _site/backgrounds _site/certification
           find backgrounds -maxdepth 1 -type f \( -iname 'room_*.png' -o -iname 'room_*.jpg' -o -iname 'room_*.jpeg' \) -exec cp {} _site/backgrounds/ \;
+          cp -R certification-browser-artifact/. _site/certification/
           touch _site/.nojekyll
 
       - name: Verify editor controls in Pages artifact
@@ -229,6 +239,22 @@ jobs:
           grep -q 'room_001_hires.png' _site/index.html
           test -f _site/backgrounds/room_001_hires.png
           echo 'actual game-frame debug capture, grouped debug palette, FALL/HITSPEC paint, safe MOVE/RESET SPRITE, WATER trigger, and clean background verified'
+
+      - name: Verify Phase -1C CERTIFY integration
+        run: |
+          grep -q 'id="certify-button"' _site/index.html
+          grep -q 'id="certify-panel"' _site/index.html
+          grep -q 'No game data is uploaded' _site/index.html
+          grep -q 'certification/certification-panel.mjs' _site/index.html
+          test -f _site/certification/certification-host.mjs
+          test -f _site/certification/certification-panel.mjs
+          test -f _site/certification/opfs-saved-games.js
+          test -f _site/certification/truth-worker/worker.nocache.js
+          test -f _site/certification/edited-worker/worker.nocache.js
+          grep -q 'GAMEFILES.DAT' _site/certification/certification-panel.mjs
+          grep -q 'navigator.storage.getDirectory' _site/certification/certification-panel.mjs
+          grep -q 'runCertificationSession' _site/certification/certification-panel.mjs
+          echo 'Phase -1C local OPFS bridge, dual workers, and opt-in CERTIFY panel verified'
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
