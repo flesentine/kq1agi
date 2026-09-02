@@ -13,12 +13,26 @@ const VAR = Object.freeze({
   VARIABLE_SLOTS: 518,
 });
 
+const DIGEST = Object.freeze({
+  SCHEMA: 0,
+  STATE0: 1,
+  STATE1: 2,
+  STATE2: 3,
+  STATE3: 4,
+  RANDOM_DRAWS: 5,
+  ROOM: 6,
+  RESERVED: 7,
+  SNAPSHOT_REQUEST: 8,
+  SNAPSHOT_ACK: 9,
+  SEMANTIC_SLOTS: 8,
+});
+
 const DEFAULTS = Object.freeze({
   width: 320,
   height: 200,
   keyCapacity: 256,
   traceSlots: 16,
-  digestSlots: 8,
+  digestSlots: 10,
   seed: 0x4b513142,
   barrierTimeoutMs: 3000,
   maxBarrierPulses: 3600,
@@ -37,6 +51,7 @@ export function createLaneBuffers(options = {}) {
   const keyCapacity = options.keyCapacity ?? DEFAULTS.keyCapacity;
   const traceSlots = options.traceSlots ?? DEFAULTS.traceSlots;
   const digestSlots = options.digestSlots ?? DEFAULTS.digestSlots;
+  if (digestSlots < 10) throw new Error('Certification digest needs at least 10 Uint32 slots.');
   const queueSlots = keyCapacity + 1;
   const keyPressQueueSAB = new SharedArrayBuffer(8 + queueSlots * 4);
   const keysSAB = new SharedArrayBuffer(256 * 4);
@@ -46,16 +61,9 @@ export function createLaneBuffers(options = {}) {
   const diagnosticTraceSAB = new SharedArrayBuffer(traceSlots * 4);
   const certificationDigestSAB = new SharedArrayBuffer(digestSlots * 4);
   return {
-    keyCapacity,
-    width,
-    height,
-    keyPressQueueSAB,
-    keysSAB,
-    oldKeysSAB,
-    variableSAB,
-    pixelDataSAB,
-    diagnosticTraceSAB,
-    certificationDigestSAB,
+    keyCapacity, width, height,
+    keyPressQueueSAB, keysSAB, oldKeysSAB, variableSAB, pixelDataSAB,
+    diagnosticTraceSAB, certificationDigestSAB,
     queue: new Uint32Array(keyPressQueueSAB),
     keys: new Uint32Array(keysSAB),
     oldKeys: new Uint32Array(oldKeysSAB),
@@ -66,19 +74,17 @@ export function createLaneBuffers(options = {}) {
 }
 
 function queueCanPush(lane) {
-  const q = lane.queue;
   const storageCapacity = lane.keyCapacity + 1;
-  const wr = Atomics.load(q, 0);
-  const rd = Atomics.load(q, 1);
+  const wr = Atomics.load(lane.queue, 0);
+  const rd = Atomics.load(lane.queue, 1);
   return ((wr + 1) % storageCapacity) !== rd;
 }
 
 function queuePush(lane, value) {
-  const q = lane.queue;
   const storageCapacity = lane.keyCapacity + 1;
-  const wr = Atomics.load(q, 0);
-  q[2 + wr] = value >>> 0;
-  Atomics.store(q, 0, (wr + 1) % storageCapacity);
+  const wr = Atomics.load(lane.queue, 0);
+  lane.queue[2 + wr] = value >>> 0;
+  Atomics.store(lane.queue, 0, (wr + 1) % storageCapacity);
 }
 
 function u8Set(vars, index, value) {
@@ -112,8 +118,8 @@ function readTrace(lane) {
   return Array.from(lane.trace, value => value >>> 0);
 }
 
-function readDigest(lane) {
-  return Array.from(lane.digest, value => value >>> 0);
+function readSemanticDigest(lane) {
+  return Array.from(lane.digest.slice(0, DIGEST.SEMANTIC_SLOTS), value => value >>> 0);
 }
 
 function firstDifference(a, b) {
@@ -122,6 +128,16 @@ function firstDifference(a, b) {
     if ((a[i] ?? null) !== (b[i] ?? null)) return i;
   }
   return -1;
+}
+
+function hashArrayBuffer(buffer) {
+  if (!(buffer instanceof ArrayBuffer)) return 0;
+  const bytes = new Uint8Array(buffer);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < bytes.length; i += 1) {
+    hash = Math.imul(hash ^ bytes[i], 0x01000193) >>> 0;
+  }
+  return hash >>> 0;
 }
 
 function parseWavDurationTicks(buffer) {
@@ -156,15 +172,15 @@ function parseWavDurationTicks(buffer) {
 
 function makeLane(name, WorkerCtor, workerUrl, options) {
   const buffers = createLaneBuffers(options);
-  const worker = new WorkerCtor(workerUrl);
   return {
     name,
-    worker,
+    worker: new WorkerCtor(workerUrl),
     ...buffers,
     ready: false,
     quit: false,
     error: null,
-    soundRequest: null,
+    soundRequests: [],
+    snapshotAck: 0,
   };
 }
 
@@ -189,6 +205,7 @@ export class CertificationHost {
     this.edited = makeLane('edited', WorkerCtor, options.editedWorkerUrl ?? '/edited-worker/worker.nocache.js', options);
     this.logicalTick = 0;
     this.cycle = 0;
+    this.snapshotEpoch = 0;
     this.pendingSoundCompletions = [];
     this.pendingExternalDivergence = null;
     this.started = false;
@@ -212,40 +229,52 @@ export class CertificationHost {
       this._flushReadyResolvers();
       return;
     }
+    if (name === 'CertificationSnapshotReady') {
+      lane.snapshotAck = Number(data?.object?.epoch ?? 0) >>> 0;
+      return;
+    }
     if (name === 'QuitGame') {
       lane.quit = true;
       return;
     }
     if (name === 'PlaySound') {
-      const endFlag = data?.object?.endFlag;
-      const durationTicks = data?.buffer instanceof ArrayBuffer ? parseWavDurationTicks(data.buffer) : 1;
-      lane.soundRequest = { tick: this.logicalTick, endFlag, durationTicks };
+      const buffer = data?.buffer;
+      lane.soundRequests.push({
+        type: 'play',
+        endFlag: Number(data?.object?.endFlag ?? 0) & 0xff,
+        durationTicks: buffer instanceof ArrayBuffer ? parseWavDurationTicks(buffer) : 1,
+        wavHash: hashArrayBuffer(buffer),
+      });
       this._pairSoundRequests();
       return;
     }
     if (name === 'StopSound') {
-      lane.soundRequest = { tick: this.logicalTick, stop: true };
+      lane.soundRequests.push({ type: 'stop' });
       this._pairSoundRequests();
     }
   }
 
   _pairSoundRequests() {
-    const a = this.truth.soundRequest;
-    const b = this.edited.soundRequest;
-    if (!a || !b) return;
-    this.truth.soundRequest = null;
-    this.edited.soundRequest = null;
-    if (Boolean(a.stop) !== Boolean(b.stop) || a.endFlag !== b.endFlag || a.durationTicks !== b.durationTicks) {
-      this.pendingExternalDivergence ??= { type: 'sound-event', truth: a, edited: b };
-      return;
+    while (this.truth.soundRequests.length && this.edited.soundRequests.length && !this.pendingExternalDivergence) {
+      const truth = this.truth.soundRequests.shift();
+      const edited = this.edited.soundRequests.shift();
+      const same = truth.type === edited.type
+        && truth.endFlag === edited.endFlag
+        && truth.durationTicks === edited.durationTicks
+        && truth.wavHash === edited.wavHash;
+      if (!same) {
+        this.pendingExternalDivergence = { type: 'sound-event', truth, edited };
+        return;
+      }
+      // AGILE has one current sound. Stop or replacement cancels the old completion.
+      this.pendingSoundCompletions.length = 0;
+      if (truth.type === 'play') {
+        this.pendingSoundCompletions.push({
+          dueTick: this.logicalTick + Math.max(1, truth.durationTicks),
+          endFlag: truth.endFlag,
+        });
+      }
     }
-    // AGILE stops the currently playing sound before starting a replacement.
-    this.pendingSoundCompletions.length = 0;
-    if (a.stop) return;
-    this.pendingSoundCompletions.push({
-      dueTick: this.logicalTick + Math.max(1, a.durationTicks),
-      endFlag: a.endFlag & 0xff,
-    });
   }
 
   _flushReadyResolvers() {
@@ -327,11 +356,34 @@ export class CertificationHost {
     if ((total % 60) === 0) advanceGameClock(lane.vars);
   }
 
+  async _synchronizeBarrierSnapshot() {
+    if (!isIdle(this.truth) || !isIdle(this.edited)) throw new Error('Cannot snapshot while a certification lane is busy.');
+    const epoch = (++this.snapshotEpoch) >>> 0 || (++this.snapshotEpoch) >>> 0;
+    for (const lane of [this.truth, this.edited]) {
+      Atomics.store(lane.digest, DIGEST.SNAPSHOT_REQUEST, epoch);
+    }
+    const deadline = Date.now() + this.barrierTimeoutMs;
+    while (this.truth.snapshotAck !== epoch || this.edited.snapshotAck !== epoch) {
+      if (this.truth.error || this.edited.error) throw new Error('Certification worker failed during snapshot synchronization.');
+      if (Date.now() > deadline) throw new Error(`Timed out synchronizing certification snapshot ${epoch}.`);
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    // Each worker posts SnapshotReady only after publishing its snapshot. Messages
+    // posted earlier by that same worker (including sound events) are ordered before it.
+    this._pairSoundRequests();
+    if (this.truth.soundRequests.length || this.edited.soundRequests.length) {
+      this.pendingExternalDivergence ??= {
+        type: 'unpaired-sound-event',
+        truth: [...this.truth.soundRequests],
+        edited: [...this.edited.soundRequests],
+      };
+    }
+    return epoch;
+  }
+
   /**
-   * Advances one logical 1/60-second clock pulse. The clock advances even while an
-   * interpreter cycle is blocked, matching AgileRunner.tick(). A new interpreter
-   * cycle is released only when BOTH lanes are idle, keeping their cycle boundaries
-   * aligned without freezing timeouts or the AGI game clock.
+   * Advance one logical 1/60-second pulse. Time keeps moving while an interpreter
+   * cycle is blocked; a new cycle is released only when both lanes are idle.
    */
   async pulse() {
     if (!this.started || !this.truth.ready || !this.edited.ready) throw new Error('CertificationHost is not ready.');
@@ -353,23 +405,17 @@ export class CertificationHost {
       this.cycle += 1;
     }
 
-    // Give worker messages and short cycles a chance to settle, but never make clock
-    // progress depend on real elapsed wall time.
     await new Promise(resolve => setTimeout(resolve, 0));
-
     const truthIdle = isIdle(this.truth);
     const editedIdle = isIdle(this.edited);
     if (!truthIdle || !editedIdle) {
       return { status: 'BUSY', tick: this.logicalTick, cycle: this.cycle, truthIdle, editedIdle };
     }
-    return this.compare();
+
+    const snapshotEpoch = await this._synchronizeBarrierSnapshot();
+    return this.compare(snapshotEpoch);
   }
 
-  /**
-   * Advances logical time until the currently aligned interpreter cycle completes.
-   * This is useful for automated tests. Interactive certification can call pulse()
-   * directly so user input can be injected at exact logical ticks.
-   */
   async step(options = {}) {
     const maxPulses = options.maxPulses ?? this.maxBarrierPulses;
     const startCycle = this.cycle;
@@ -378,18 +424,18 @@ export class CertificationHost {
       if (result.status === 'DIVERGED' || result.status === 'COMPLETE') return result;
       if (result.status !== 'BUSY' && this.cycle > startCycle) return result;
     }
+    if (this.truth.soundRequests.length || this.edited.soundRequests.length) {
+      return {
+        status: 'DIVERGED', tick: this.logicalTick, reason: 'external-event',
+        detail: { type: 'sound-pair-timeout', truth: [...this.truth.soundRequests], edited: [...this.edited.soundRequests] },
+      };
+    }
     throw new Error(`Certification cycle did not reach a shared barrier after ${maxPulses} logical clock pulses.`);
   }
 
-  compare() {
+  compare(snapshotEpoch = this.snapshotEpoch) {
     if (this.pendingExternalDivergence) {
       return { status: 'DIVERGED', tick: this.logicalTick, reason: 'external-event', detail: this.pendingExternalDivergence };
-    }
-    if (Boolean(this.truth.soundRequest) !== Boolean(this.edited.soundRequest)) {
-      return {
-        status: 'DIVERGED', tick: this.logicalTick, reason: 'external-event',
-        detail: { type: 'unpaired-sound-event', truth: this.truth.soundRequest, edited: this.edited.soundRequest },
-      };
     }
     if (!isIdle(this.truth) || !isIdle(this.edited)) {
       return { status: 'BUSY', tick: this.logicalTick, cycle: this.cycle, truthIdle: isIdle(this.truth), editedIdle: isIdle(this.edited) };
@@ -403,21 +449,23 @@ export class CertificationHost {
         truth: truthTrace[traceIndex], edited: editedTrace[traceIndex], truthTrace, editedTrace,
       };
     }
-    const truthDigest = readDigest(this.truth);
-    const editedDigest = readDigest(this.edited);
-    if (truthDigest[0] !== 1 || editedDigest[0] !== 1) {
+    const truthDigest = readSemanticDigest(this.truth);
+    const editedDigest = readSemanticDigest(this.edited);
+    if (truthDigest[DIGEST.SCHEMA] !== 1 || editedDigest[DIGEST.SCHEMA] !== 1) {
       return { status: 'NOT_CERTIFIED', tick: this.logicalTick, reason: 'digest-not-ready', truthDigest, editedDigest };
     }
     const digestIndex = firstDifference(truthDigest, editedDigest);
     if (digestIndex >= 0) {
       return {
-        status: 'DIVERGED', tick: this.logicalTick, reason: digestIndex === 5 ? 'random-stream' : 'semantic-digest', index: digestIndex,
-        truth: truthDigest[digestIndex], edited: editedDigest[digestIndex], truthDigest, editedDigest,
+        status: 'DIVERGED', tick: this.logicalTick,
+        reason: digestIndex === DIGEST.RANDOM_DRAWS ? 'random-stream' : 'semantic-digest',
+        index: digestIndex, truth: truthDigest[digestIndex], edited: editedDigest[digestIndex], truthDigest, editedDigest,
       };
     }
     return {
-      status: 'MATCH', scope: 'semantic-v1', tick: this.logicalTick, cycle: this.cycle,
-      room: truthTrace[2], x: truthTrace[3], y: truthTrace[4], randomDraws: truthDigest[5], digest: truthDigest.slice(1, 5),
+      status: 'MATCH', scope: 'semantic-v1', tick: this.logicalTick, cycle: this.cycle, snapshotEpoch,
+      room: truthTrace[2], x: truthTrace[3], y: truthTrace[4],
+      randomDraws: truthDigest[DIGEST.RANDOM_DRAWS], digest: truthDigest.slice(1, 5),
     };
   }
 
@@ -426,4 +474,4 @@ export class CertificationHost {
   }
 }
 
-export const CertificationLayout = Object.freeze({ VAR, DEFAULTS });
+export const CertificationLayout = Object.freeze({ VAR, DIGEST, DEFAULTS });
