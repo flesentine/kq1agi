@@ -40,11 +40,11 @@ diagnostic = r'''    /**
      * 12 ego priority
      * 13 user-control flag
      * 14 hold-key mode
-     * 15 reserved
+     * 15 packed game clock: DAYS:HOURS:MINUTES:SECONDS
      */
     public int getDiagnosticValue(int slot) {
         switch (slot) {
-            case 0: return 1;
+            case 0: return 2;
             case 1: return state.getTotalTicks();
             case 2: return state.getVar(Defines.CURROOM);
             case 3: return state.ego.x;
@@ -59,6 +59,11 @@ diagnostic = r'''    /**
             case 12: return state.ego.priority;
             case 13: return state.userControl ? 1 : 0;
             case 14: return state.holdKey ? 1 : 0;
+            case 15:
+                return ((state.getVar(Defines.DAYS) & 0xFF) << 24)
+                        | ((state.getVar(Defines.HOURS) & 0xFF) << 16)
+                        | ((state.getVar(Defines.MINUTES) & 0xFF) << 8)
+                        | (state.getVar(Defines.SECONDS) & 0xFF);
             default: return 0;
         }
     }
@@ -88,11 +93,12 @@ init_repl = init_anchor + '''                JavaScriptObject diagnosticTraceSAB
 text = one(text, init_anchor, init_repl, 'truth trace Initialise field')
 
 construct_anchor = '''                pixelData = new GwtPixelData(pixelDataSAB);\n'''
-construct_repl = construct_anchor + '''                if (diagnosticTraceSAB != null) diagnosticTrace = new SharedArray(diagnosticTraceSAB);\n'''
+construct_repl = construct_anchor + '''                int diagnosticTraceBytes = getBufferByteLength(diagnosticTraceSAB);\n                if (diagnosticTraceBytes >= 64 && (diagnosticTraceBytes & 3) == 0)\n                    diagnosticTrace = new SharedArray(diagnosticTraceSAB);\n'''
 text = one(text, construct_anchor, construct_repl, 'truth trace construction')
 
 # Publish only after the interpreter has completed the tick. This observer does not
-# participate in any interpreter decisions.
+# participate in any interpreter decisions. A future host reads only after IN_TICK
+# returns false, so all 16 atomically stored slots belong to the completed tick.
 tick_anchor = '''            interpreter.animationTick();\n'''
 tick_repl = tick_anchor + '''            publishDiagnosticTrace();\n'''
 text = one(text, tick_anchor, tick_repl, 'truth trace tick observer')
@@ -113,8 +119,12 @@ nested_repl = nested_anchor + r'''
     private native JavaScriptObject getOptionalNestedObject(JavaScriptObject obj, String fieldName)/*-{
         return (obj && obj.object && obj.object[fieldName]) ? obj.object[fieldName] : null;
     }-*/;
+
+    private native int getBufferByteLength(JavaScriptObject obj)/*-{
+        return (obj && typeof obj.byteLength === 'number') ? obj.byteLength : 0;
+    }-*/;
 '''
 text = one(text, nested_anchor, nested_repl, 'optional truth trace SAB accessor')
 worker.write_text(text)
 
-print('Truth worker instrumented read-only: 16-slot semantic snapshot published after completed ticks')
+print('Truth worker instrumented read-only: trace v2 published after completed ticks')
