@@ -25,7 +25,7 @@ const DIGEST = Object.freeze({
   STATE3: 4,
   RANDOM_DRAWS: 5,
   ROOM: 6,
-  RESERVED: 7,
+  QUIT: 7,
   SNAPSHOT_REQUEST: 8,
   SNAPSHOT_ACK: 9,
   SEMANTIC_SLOTS: 8,
@@ -200,6 +200,10 @@ function cloneArrayBuffer(buffer) {
 
 function isIdle(lane) {
   return Atomics.load(lane.vars, VAR.IN_TICK) === 0;
+}
+
+function isQuitMarked(lane) {
+  return Atomics.load(lane.digest, DIGEST.QUIT) === 1;
 }
 
 export class CertificationHost {
@@ -395,14 +399,16 @@ export class CertificationHost {
   }
 
   async _resolveQuitIfObserved() {
-    if (!this.truth.quit && !this.edited.quit) return null;
+    const truthMarked = isQuitMarked(this.truth);
+    const editedMarked = isQuitMarked(this.edited);
+    if (!truthMarked && !editedMarked && !this.truth.quit && !this.edited.quit) return null;
 
-    // QuitGame is delivered through independent worker postMessage queues. One lane
-    // can therefore be observed a few milliseconds before the other even when both
-    // threw QuitAction in the same interpreter cycle. Freeze the logical clock and
-    // wait for the counterpart instead of reporting an asynchronous false divergence.
+    // QuitGame itself travels through independent postMessage queues, but the worker
+    // first raises a shared quit marker. Freeze the logical clock as soon as either
+    // marker is visible, then wait for the other lane to reach the same terminal
+    // state instead of comparing message-arrival timing.
     const deadline = Date.now() + this.barrierTimeoutMs;
-    while (this.truth.quit !== this.edited.quit) {
+    while (!isQuitMarked(this.truth) || !isQuitMarked(this.edited)) {
       if (this.pendingExternalDivergence) {
         return { status: 'DIVERGED', tick: this.logicalTick, reason: 'external-event', detail: this.pendingExternalDivergence };
       }
@@ -410,28 +416,30 @@ export class CertificationHost {
         return {
           status: 'DIVERGED', tick: this.logicalTick, cycle: this.cycle, reason: 'quit-state',
           truthQuit: this.truth.quit, editedQuit: this.edited.quit,
+          truthQuitMarked: isQuitMarked(this.truth), editedQuitMarked: isQuitMarked(this.edited),
         };
       }
       await new Promise(resolve => setTimeout(resolve, 0));
     }
 
-    // Each certification worker publishes its final semantic snapshot and clears
-    // IN_TICK before posting QuitGame. postMessage ordering also means all earlier
-    // sound events from that lane have arrived before its quit acknowledgement.
-    this._pairSoundRequests();
-    if (this.truth.soundRequests.length || this.edited.soundRequests.length) {
-      this.pendingExternalDivergence ??= {
-        type: 'unpaired-sound-event',
-        truth: [...this.truth.soundRequests],
-        edited: [...this.edited.soundRequests],
+    // After setting QUIT and clearing IN_TICK, certification workers remain available
+    // long enough to service one final barrier-snapshot request. This captures both
+    // semantic states at the same frozen logical tick. Each worker posts QuitGame
+    // before the SnapshotReady acknowledgement, so postMessage ordering also drains
+    // all earlier sound events before this final comparison.
+    const snapshotEpoch = await this._synchronizeBarrierSnapshot();
+    if (!this.truth.quit || !this.edited.quit) {
+      return {
+        status: 'DIVERGED', tick: this.logicalTick, cycle: this.cycle, reason: 'quit-handshake',
+        truthQuit: this.truth.quit, editedQuit: this.edited.quit,
       };
     }
-    const finalResult = this.compare();
+    const finalResult = this.compare(snapshotEpoch);
     if (finalResult.status !== 'MATCH') return finalResult;
     this.comparedCycle = this.cycle;
     return {
       status: 'COMPLETE', scope: finalResult.scope, tick: this.logicalTick, cycle: this.cycle,
-      finalMatch: finalResult,
+      snapshotEpoch, finalMatch: finalResult,
     };
   }
 
@@ -444,6 +452,11 @@ export class CertificationHost {
     const quitBefore = await this._resolveQuitIfObserved();
     if (quitBefore) return quitBefore;
     const bothIdleBefore = isIdle(this.truth) && isIdle(this.edited);
+    // A worker sets the shared QUIT marker before clearing IN_TICK. If quit happened
+    // between the first marker check and these idle loads, re-check now so a terminal
+    // cycle cannot be mistaken for an ordinary barrier snapshot.
+    const quitAtBarrier = await this._resolveQuitIfObserved();
+    if (quitAtBarrier) return quitAtBarrier;
     // If the previous interpreter cycle completed between host pulses, certify that
     // exact shared barrier before time advances or another cycle is released. Without
     // this gate, a fast between-pulse completion could be skipped entirely.
