@@ -58,7 +58,8 @@ require(interpreter, 'case 0: return 2;', 'trace v2 schema')
 require(interpreter, 'Defines.SECONDS', 'packed game-clock trace')
 require(worker, 'private SharedArray diagnosticTrace;', 'truth trace SAB')
 require(worker, 'publishDiagnosticTrace();', 'post-tick truth trace publication')
-require(worker, 'getBufferByteLength(diagnosticTraceSAB) >= 64', 'truth trace capacity guard')
+require(worker, 'diagnosticTraceBytes >= 64', 'truth trace minimum capacity guard')
+require(worker, '(diagnosticTraceBytes & 3) == 0', 'truth trace alignment guard')
 
 # Known determinism constraints discovered by the spike. These are deliberately
 # reported as blockers/constraints rather than being papered over.
@@ -89,7 +90,7 @@ report = {
         },
         'read_only_semantic_trace': {
             'status': 'PASS',
-            'evidence': 'The pristine worker compiles with a post-tick observer that publishes room/ego/flag/game-clock state without participating in interpreter decisions.',
+            'evidence': 'The pristine worker compiles with a post-tick observer that publishes room/ego/flag/game-clock state without participating in interpreter decisions; trace storage requires at least 64 bytes and 4-byte alignment.',
         },
     },
     'determinism_constraints': {
