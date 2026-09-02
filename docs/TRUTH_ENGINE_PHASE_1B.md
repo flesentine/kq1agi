@@ -49,6 +49,16 @@ For matching `PlaySound` requests, it reads the generated WAV duration and sched
 
 If the two lanes request different sounds/end flags/durations or only one lane emits a sound event at a shared barrier, certification reports `DIVERGED`.
 
+## Deterministic quit completion
+
+`QuitGame` is normally delivered from each AGILE worker to the host with `postMessage`, so two equivalent quits can reach the host a few milliseconds apart. Certification must not treat that delivery timing as a game-state difference.
+
+In certification mode, a worker that catches `QuitAction` therefore raises a shared terminal marker in semantic digest slot 7 **before** it clears `IN_TICK`. It then posts `QuitGame` and remains available for one final host-requested certification snapshot. As soon as either shared quit marker is visible, the host freezes the logical clock, waits for the other lane to raise the same marker, and requests a final common-barrier snapshot from both workers.
+
+The final `CertificationSnapshotReady` acknowledgement is posted after that worker's `QuitGame` message, so normal per-worker message ordering also guarantees that earlier sound events and the quit notification have reached the host before the terminal comparison is accepted. A genuinely one-sided quit still becomes `DIVERGED` after the bounded barrier timeout.
+
+`COMPLETE` is returned only when both lanes have raised the terminal marker, both final snapshots were acknowledged at the same frozen logical tick, and the final semantic-v1 comparison is still `MATCH`.
+
 ## Saved-game isolation
 
 Certification workers use `CertificationSavedGameStore`, a session-local in-memory store. It supports deterministic save/restore behavior inside the certification session but never touches OPFS and therefore cannot read, overwrite, or race the player's real browser saves.
@@ -64,12 +74,13 @@ Semantic digest v1 adds four deterministic state partitions:
 3. scan starts, loaded resource state, inventory objects, and script-buffer contents;
 4. AGI strings, recognised words, and controller-key mappings.
 
-The digest also publishes the PRNG draw count.
+The digest also publishes the PRNG draw count and reserves its terminal-state slot for the shared quit marker.
 
 The host compares the readable trace first, then semantic digest v1. Results are:
 
-- **`DIVERGED`** — a trace, semantic digest, PRNG stream, external event, or quit-state mismatch is observed;
+- **`DIVERGED`** — a trace, semantic digest, PRNG stream, external event, or terminal-state mismatch is observed;
 - **`MATCH` / `scope: semantic-v1`** — both lanes are at the same shared barrier and every field covered by trace v2 + semantic digest v1 + PRNG/event parity agrees;
+- **`COMPLETE` / `scope: semantic-v1`** — both lanes quit at a synchronized terminal barrier and the final semantic-v1 state still matches;
 - **`BUSY`** — one or both workers are still inside the aligned interpreter cycle while logical time continues;
 - **`NOT_CERTIFIED`** — a worker has not yet published the semantic digest.
 
