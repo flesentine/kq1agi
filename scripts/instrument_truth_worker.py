@@ -93,7 +93,7 @@ init_repl = init_anchor + '''                JavaScriptObject diagnosticTraceSAB
 text = one(text, init_anchor, init_repl, 'truth trace Initialise field')
 
 construct_anchor = '''                pixelData = new GwtPixelData(pixelDataSAB);\n'''
-construct_repl = construct_anchor + '''                if (getBufferByteLength(diagnosticTraceSAB) >= 64) diagnosticTrace = new SharedArray(diagnosticTraceSAB);\n'''
+construct_repl = construct_anchor + '''                int diagnosticTraceBytes = getBufferByteLength(diagnosticTraceSAB);\n                if (diagnosticTraceBytes >= 64 && (diagnosticTraceBytes & 3) == 0)\n                    diagnosticTrace = new SharedArray(diagnosticTraceSAB);\n'''
 text = one(text, construct_anchor, construct_repl, 'truth trace construction')
 
 # Publish only after the interpreter has completed the tick. This observer does not
