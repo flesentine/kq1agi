@@ -124,6 +124,27 @@ class MockWorker {
   assert.equal(host.truth.digest[9], result.snapshotEpoch);
   assert.equal(host.edited.digest[9], result.snapshotEpoch);
 
+  // A cycle can complete after pulse() returned BUSY but before the next host pulse.
+  // That just-completed barrier must be certified before time advances or a new
+  // interpreter cycle is released, otherwise a transient divergence can be skipped.
+  truthWorker.hold = true;
+  editedWorker.hold = true;
+  result = await host.pulse();
+  assert.equal(result.status, 'BUSY');
+  const betweenPulsesCycle = host.cycle;
+  const betweenPulsesTick = host.logicalTick;
+  const betweenPulsesEpoch = host.snapshotEpoch;
+  Atomics.store(host.truth.vars, 517, 0);
+  Atomics.store(host.edited.vars, 517, 0);
+  result = await host.pulse();
+  assert.equal(result.status, 'MATCH');
+  assert.equal(host.cycle, betweenPulsesCycle);
+  assert.equal(host.logicalTick, betweenPulsesTick);
+  assert.equal(result.cycle, betweenPulsesCycle);
+  assert.equal(result.snapshotEpoch, betweenPulsesEpoch + 1);
+  truthWorker.hold = false;
+  editedWorker.hold = false;
+
   // Time keeps AGILE's external one-second clock semantics.
   while (host.logicalTick < 60) result = await host.step();
   assert.equal(Atomics.load(host.truth.vars, 512), host.logicalTick);
