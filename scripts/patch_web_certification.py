@@ -20,8 +20,11 @@ for anchor, label in [
         raise RuntimeError(f'CERTIFY {label}: expected exactly one anchor, found {html.count(anchor)}')
 
 css = r'''
+    /* CERTIFY is the fourth normal-game launcher. Keep it below the existing
+       EXPORT BG / COPY DATA / EDIT stack rather than covering those controls. */
     #certify-button {
-      position: fixed; top: 14px; left: 14px; z-index: 10003; display: none;
+      position: fixed; top: 150px; left: 14px; z-index: 10003; display: none;
+      width: 104px; min-height: 36px; box-sizing: border-box;
       padding: 9px 13px; border: 2px solid #7fffb0; border-radius: 8px;
       background: rgba(7, 28, 18, .92); color: #b8ffd0;
       font: 800 13px system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
@@ -29,8 +32,8 @@ css = r'''
     }
     #certify-button:hover { background: rgba(17, 58, 36, .96); }
     #certify-panel {
-      position: fixed; top: 58px; left: 14px; z-index: 10004; width: min(430px, calc(100vw - 28px));
-      max-height: calc(100vh - 72px); overflow: auto; box-sizing: border-box;
+      position: fixed; top: 198px; left: 14px; z-index: 10004; width: min(430px, calc(100vw - 28px));
+      max-height: calc(100vh - 212px); overflow: auto; box-sizing: border-box;
       padding: 14px; border: 1px solid rgba(127,255,176,.65); border-radius: 10px;
       background: rgba(5, 10, 8, .96); color: #e7ffee;
       font: 13px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -54,6 +57,13 @@ css = r'''
     #certify-progress { color: #b8c9be; margin-bottom: 8px; }
     #certify-detail { margin: 0; padding: 9px; white-space: pre-wrap; overflow-wrap: anywhere; background: #070b09; border-radius: 6px; color: #d7e7dc; }
     #certify-privacy { color: #8fa99a; font: 11px/1.35 system-ui, sans-serif; margin: 8px 0 0; }
+    @media (max-width: 520px) {
+      #certify-button { top: 140px; left: 8px; width: 96px; }
+      #certify-panel {
+        top: 188px; left: 8px; width: calc(100vw - 16px);
+        max-height: calc(100vh - 196px);
+      }
+    }
 '''
 html = html.replace('</style>', css + '</style>', 1)
 
@@ -85,6 +95,8 @@ html = html.replace('</body>', '<script type="module" src="certification/certifi
 
 for marker in [
     '#certify-button {',
+    'top: 150px; left: 14px',
+    'top: 198px; left: 14px',
     'id="certify-button"',
     'id="certify-panel"',
     'certification/certification-panel.mjs',
@@ -93,4 +105,4 @@ for marker in [
         raise RuntimeError(f'CERTIFY injection failed to produce marker: {marker}')
 
 path.write_text(html)
-print('Phase -1C CERTIFY panel injected')
+print('Phase -1C CERTIFY panel injected below the normal debug launcher stack')
