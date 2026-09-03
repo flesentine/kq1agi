@@ -1,10 +1,12 @@
 import { formatCertificationResult, readImportedGame } from './certification-panel.mjs';
-import { captureEditConfigV1, createEditConfigApplicator } from './certification-edit-config.mjs';
+import { captureEditConfigV1, createEditConfigApplicator, EditConfigLayout, hashEditConfigV1 } from './certification-edit-config.mjs';
+import { minimizeDivergentPrefix } from './certification-minimizer.mjs';
 import { ReplayCertificationHost } from './certification-replay-host.mjs';
 import {
   encodeRandomReplay,
   freezePlayRecordingV1,
   getPlayRecordingStats,
+  hashArrayBufferV1,
   runCertificationReplaySession,
 } from './certification-recording.mjs';
 
@@ -19,6 +21,54 @@ function editConfigIdentity(config) {
 
 function recordingIdentity(recording) {
   return `${shortHash(recording?.hash)} · ticks 1–${recording?.finalTick ?? 0} · ${recording?.events?.length ?? 0} transport event(s) · ${recording?.random?.length ?? 0} RNG draw(s)`;
+}
+
+function minimizationFocusText(focus) {
+  if (!focus) return 'No focus data.';
+  const eventTicks = (focus.events ?? []).map(event => `${event.tick}:${event.type}`).join(', ') || 'none';
+  const randomTicks = (focus.random ?? []).map(draw => `${draw.tick}:${draw.bound}→${draw.value}`).join(', ') || 'none';
+  const releaseTicks = (focus.releaseTicks ?? []).join(', ') || 'none';
+  return [
+    `focus ticks ${focus.startTick}–${focus.endTick}`,
+    `transport: ${eventTicks}`,
+    `RNG: ${randomTicks}`,
+    `releases: ${releaseTicks}`,
+  ].join('\n');
+}
+
+/**
+ * Re-verify the immutable replay identities before Phase -1E derives candidates.
+ * The recording hash protects the declared EditConfig hash, but EditConfig's nested
+ * arrays are not deep-frozen; hashing the actual config again prevents a later
+ * in-memory mutation from being replayed under the old recording identity.
+ */
+export async function validateFrozenReplayIdentityV1(recording, gameBuffer, editConfig) {
+  if (!recording || typeof recording !== 'object') throw new TypeError('A frozen PLAY recording is required.');
+  if (!(gameBuffer instanceof ArrayBuffer)) throw new TypeError('A GAMEFILES.DAT ArrayBuffer is required.');
+
+  const expectedGameHash = String(recording.gameHash ?? '');
+  const expectedGameBytes = Number(recording.gameBytes);
+  const actualGameHash = await hashArrayBufferV1(gameBuffer);
+  if (!expectedGameHash
+      || !Number.isSafeInteger(expectedGameBytes)
+      || expectedGameBytes < 0
+      || actualGameHash !== expectedGameHash
+      || gameBuffer.byteLength !== expectedGameBytes) {
+    throw new Error(`The local GAMEFILES.DAT changed after the divergent replay (expected ${expectedGameHash || 'missing'}/${recording.gameBytes ?? 'missing'} bytes, got ${actualGameHash}/${gameBuffer.byteLength} bytes).`);
+  }
+
+  const expectedEditConfigHash = String(recording.editConfigHash ?? '');
+  const declaredEditConfigHash = String(editConfig?.hash ?? '');
+  const editConfigSchema = String(editConfig?.schema ?? '');
+  const actualEditConfigHash = await hashEditConfigV1(editConfig);
+  if (!expectedEditConfigHash
+      || editConfigSchema !== EditConfigLayout.SCHEMA
+      || declaredEditConfigHash !== expectedEditConfigHash
+      || actualEditConfigHash !== expectedEditConfigHash) {
+    throw new Error(`The frozen EditConfig changed after the divergent replay (recording ${expectedEditConfigHash || 'missing'}, declared ${declaredEditConfigHash || 'missing'}, actual ${actualEditConfigHash}).`);
+  }
+
+  return Object.freeze({ gameHash: actualGameHash, editConfigHash: actualEditConfigHash });
 }
 
 /**
@@ -42,14 +92,14 @@ export function snapshotReadyPlayJournal(options = {}) {
   try {
     vars = new Int32Array(variableSAB);
     if (vars.length <= 517) throw new Error('short shared variable buffer');
-  } catch (error) {
+  } catch {
     return { ready: false, reason: 'no-shared-state', ...base };
   }
 
   let inTick;
   try {
     inTick = Atomics.load(vars, 517) | 0;
-  } catch (error) {
+  } catch {
     return { ready: false, reason: 'no-shared-state', ...base };
   }
 
@@ -105,18 +155,36 @@ function installPhase1D() {
   const detail = document.getElementById('certify-detail');
   if (!panel || !replayButton || !recordingStatus || !runButton || !stopButton || !gameSelect || !status || !progress || !detail) return;
 
+  let minimizeButton = document.getElementById('certify-minimize-button');
+  if (!minimizeButton) {
+    minimizeButton = document.createElement('button');
+    minimizeButton.id = 'certify-minimize-button';
+    minimizeButton.type = 'button';
+    minimizeButton.textContent = 'MINIMIZE';
+    minimizeButton.title = 'Shrink the last divergent PLAY replay to the shortest reproducing prefix';
+    minimizeButton.disabled = true;
+    replayButton.insertAdjacentElement('afterend', minimizeButton);
+  }
+
   let replayHost = null;
   let replayRunning = false;
   let stopRequested = false;
+  let lastDivergenceContext = null;
 
   const setStatus = (text, state) => {
     status.textContent = text;
     status.dataset.state = state;
   };
 
+  const invalidateMinimization = () => {
+    lastDivergenceContext = null;
+    minimizeButton.disabled = true;
+  };
+
   const setReplayRunning = value => {
     replayRunning = value;
     replayButton.disabled = value;
+    minimizeButton.disabled = value || !lastDivergenceContext;
     runButton.disabled = value;
     if (refreshButton) refreshButton.disabled = value;
     gameSelect.disabled = value;
@@ -144,8 +212,35 @@ function installPhase1D() {
     recordingStatus.textContent = `PLAY journal: ticks 1–${stats.finalTick} · ${stats.eventCount} transport event(s) · ${stats.randomCount} RNG draw(s) · ${stats.releaseCount} cycle release(s)${game}${suffix}`;
   }
 
+  async function runFrozenRecording(recording, gameBuffer, editConfig, options = {}) {
+    const truthWorkerUrl = new URL('./truth-worker/worker.nocache.js', import.meta.url).href;
+    const editedWorkerUrl = new URL('./edited-worker/worker.nocache.js', import.meta.url).href;
+    replayHost?.terminate();
+    replayHost = new ReplayCertificationHost({
+      truthWorkerUrl,
+      editedWorkerUrl,
+      randomReplaySpec: encodeRandomReplay(recording),
+      recordedExternalTiming: true,
+    });
+    try {
+      await replayHost.start(gameBuffer);
+      const applyEditConfig = createEditConfigApplicator(editConfig);
+      applyEditConfig(replayHost);
+      return await runCertificationReplaySession(replayHost, recording, {
+        pulseIntervalMs: options.pulseIntervalMs ?? (1000 / 60),
+        beforePulse: () => applyEditConfig(replayHost),
+        shouldStop: () => stopRequested,
+        onUpdate: options.onUpdate ?? (() => {}),
+      });
+    } finally {
+      replayHost?.terminate();
+      replayHost = null;
+    }
+  }
+
   async function startReplay() {
     if (replayRunning || runButton.disabled) return;
+    invalidateMinimization();
     if (!window.crossOriginIsolated) {
       setStatus('NOT ISOLATED', 'ERROR');
       detail.textContent = 'REPLAY PLAY requires the same cross-origin isolation used by the AGILE SharedArrayBuffer runtime.';
@@ -157,8 +252,6 @@ function installPhase1D() {
       return;
     }
 
-    // This check and copy are synchronous. The browser cannot run the next normal
-    // 60 Hz callback between the boundary validation and the raw journal snapshot.
     const boundary = snapshotReadyPlayJournal();
     if (!boundary.ready) {
       setStatus('WAIT FOR PLAY IDLE', 'WAITING');
@@ -181,31 +274,16 @@ function installPhase1D() {
     detail.textContent = `Normal PLAY boundary confirmed for ${boundary.gameDirectory} at released cycle tick ${boundary.lastReleaseTick}. Hashing local GAMEFILES.DAT, frozen EditConfig v1, and the in-memory PLAY journal…`;
 
     try {
-      replayHost?.terminate();
-      replayHost = null;
       const gameBuffer = await readImportedGame(directoryName);
       const editConfig = await captureEditConfigV1();
       const recording = await freezePlayRecordingV1({ gameBuffer, editConfig, rawEvents, overflowed });
-      const truthWorkerUrl = new URL('./truth-worker/worker.nocache.js', import.meta.url).href;
-      const editedWorkerUrl = new URL('./edited-worker/worker.nocache.js', import.meta.url).href;
-      replayHost = new ReplayCertificationHost({
-        truthWorkerUrl,
-        editedWorkerUrl,
-        randomReplaySpec: encodeRandomReplay(recording),
-        recordedExternalTiming: true,
-      });
-      await replayHost.start(gameBuffer);
-      const applyEditConfig = createEditConfigApplicator(editConfig);
-      applyEditConfig(replayHost);
 
       setStatus('REPLAYING PLAY', 'BUSY');
       detail.textContent = `recording=${recordingIdentity(recording)}\neditConfig=${editConfigIdentity(editConfig)}\n\nORIGINAL receives the recorded PLAY transport unchanged. Frozen EditConfig applies only to EDITED.`;
-      const summary = await runCertificationReplaySession(replayHost, recording, {
+      const summary = await runFrozenRecording(recording, gameBuffer, editConfig, {
         pulseIntervalMs: 1000 / 60,
-        beforePulse: () => applyEditConfig(replayHost),
-        shouldStop: () => stopRequested,
         onUpdate: update => {
-          progress.textContent = `replay tick ${replayHost.logicalTick}/${recording.finalTick} · ${update.certifiedBarriers} certified barrier(s)`;
+          progress.textContent = `replay tick ${replayHost?.logicalTick ?? update.targetTick ?? 0}/${recording.finalTick} · ${update.certifiedBarriers} certified barrier(s)`;
           if (update.result?.status === 'MATCH' || update.result?.status === 'DIVERGED') {
             detail.textContent = `${formatCertificationResult(update.result)}\neditConfig=${editConfigIdentity(editConfig)}\nrecording=${recordingIdentity(recording)}`;
           }
@@ -216,8 +294,10 @@ function installPhase1D() {
         setStatus(`REPLAY MATCH × ${summary.certifiedBarriers}`, 'MATCH');
         detail.textContent = `recording=${recordingIdentity(recording)}\neditConfig=${editConfigIdentity(editConfig)}\n\nThe recorded PLAY window reached tick ${summary.finalTick}, settled its final in-flight cycle at that same logical tick, consumed the complete recorded RNG stream, and found no covered semantic divergence across ${summary.certifiedBarriers} shared barrier(s).`;
       } else if (summary.status === 'DIVERGED') {
+        lastDivergenceContext = Object.freeze({ directoryName, recording, editConfig, firstDivergence: summary.firstDivergence });
+        minimizeButton.disabled = false;
         setStatus(`DIVERGED @ ${summary.firstDivergence.tick}`, 'DIVERGED');
-        detail.textContent = `${formatCertificationResult(summary.firstDivergence)}\neditConfig=${editConfigIdentity(editConfig)}\nrecording=${recordingIdentity(recording)}\n\nThis is the first divergent shared barrier in the recorded PLAY window.`;
+        detail.textContent = `${formatCertificationResult(summary.firstDivergence)}\neditConfig=${editConfigIdentity(editConfig)}\nrecording=${recordingIdentity(recording)}\n\nThis is the first divergent shared barrier in the recorded PLAY window. MINIMIZE can now search for the shortest from-start prefix that reproduces this exact mismatch.`;
       } else if (summary.status === 'COMPLETE') {
         setStatus('REPLAY COMPLETE / MATCH', 'MATCH');
         detail.textContent = `${formatCertificationResult(summary.result)}\neditConfig=${editConfigIdentity(editConfig)}\nrecording=${recordingIdentity(recording)}`;
@@ -234,6 +314,7 @@ function installPhase1D() {
         detail.textContent = `${formatCertificationResult(summary.result)}\nrecording=${recordingIdentity(recording)}`;
       }
     } catch (error) {
+      invalidateMinimization();
       setStatus('REPLAY ERROR', 'ERROR');
       detail.textContent = String(error?.stack ?? error);
     } finally {
@@ -244,11 +325,91 @@ function installPhase1D() {
     }
   }
 
+  async function startMinimize() {
+    if (replayRunning || !lastDivergenceContext) return;
+    const context = lastDivergenceContext;
+    if (gameSelect.value !== context.directoryName) {
+      invalidateMinimization();
+      setStatus('MINIMIZE GAME MISMATCH', 'ERROR');
+      detail.textContent = 'The selected imported game changed after the divergent replay. Replay the intended game again before minimizing.';
+      return;
+    }
+
+    stopRequested = false;
+    setReplayRunning(true);
+    setStatus('MINIMIZING', 'BUSY');
+    progress.textContent = `target divergence tick ${context.firstDivergence.tick}`;
+    detail.textContent = `recording=${recordingIdentity(context.recording)}\neditConfig=${editConfigIdentity(context.editConfig)}\n\nSearching only hash-valid prefixes that start at logical tick 1 and reproduce the exact same first divergence.`;
+
+    let attemptNumber = 0;
+    try {
+      const gameBuffer = await readImportedGame(context.directoryName);
+      await validateFrozenReplayIdentityV1(context.recording, gameBuffer, context.editConfig);
+
+      const replayCandidate = async candidate => {
+        attemptNumber += 1;
+        return runFrozenRecording(candidate, gameBuffer, context.editConfig, {
+          pulseIntervalMs: 0,
+          onUpdate: update => {
+            progress.textContent = `minimize attempt ${attemptNumber} · candidate tick ${candidate.finalTick} · replay tick ${replayHost?.logicalTick ?? update.targetTick ?? 0}`;
+          },
+        });
+      };
+
+      const minimized = await minimizeDivergentPrefix(
+        context.recording,
+        context.firstDivergence,
+        replayCandidate,
+        {
+          focusRadius: 60,
+          shouldStop: () => stopRequested,
+          onAttempt: attempt => {
+            progress.textContent = `minimize attempt ${attemptNumber} · candidate tick ${attempt.finalTick} · ${attempt.reproduced ? 'same divergence' : attempt.status}`;
+          },
+        },
+      );
+
+      if (minimized.status === 'MINIMIZED') {
+        setStatus(`MINIMIZED TO ${minimized.minimizedFinalTick}`, 'MATCH');
+        detail.textContent = [
+          `target=${formatCertificationResult(context.firstDivergence)}`,
+          `recording=${recordingIdentity(context.recording)}`,
+          `minimized=${recordingIdentity(minimized.recording)}`,
+          `removedTicks=${minimized.removedTicks}`,
+          `attempts=${minimized.attempts.length}`,
+          '',
+          minimizationFocusText(minimized.focus),
+          '',
+          'The focused window is diagnostic context only; authoritative replay still starts at logical tick 1.',
+        ].join('\n');
+      } else if (minimized.status === 'NOT_REPRODUCED') {
+        setStatus('MINIMIZE NOT REPRODUCED', 'WAITING');
+        detail.textContent = `The frozen source no longer reproduced the exact target divergence. No reduced recording was accepted.\nrecording=${recordingIdentity(context.recording)}\nattempts=${minimized.attempts.length}`;
+      } else if (minimized.status === 'STOPPED') {
+        setStatus('STOPPED', 'IDLE');
+      } else {
+        setStatus(minimized.status, 'ERROR');
+        detail.textContent = JSON.stringify(minimized, null, 2);
+      }
+    } catch (error) {
+      setStatus('MINIMIZE ERROR', 'ERROR');
+      detail.textContent = String(error?.stack ?? error);
+    } finally {
+      replayHost?.terminate();
+      replayHost = null;
+      setReplayRunning(false);
+      refreshJournal();
+    }
+  }
+
   replayButton.addEventListener('click', startReplay);
+  minimizeButton.addEventListener('click', startMinimize);
+  gameSelect.addEventListener('change', invalidateMinimization);
+  runButton.addEventListener('click', invalidateMinimization, { capture: true });
   stopButton.addEventListener('click', () => {
     if (!replayRunning) return;
     stopRequested = true;
-    setStatus('STOPPING REPLAY…', 'BUSY');
+    setStatus('STOPPING…', 'BUSY');
   });
   window.addEventListener('beforeunload', () => replayHost?.terminate());
   setInterval(() => {
