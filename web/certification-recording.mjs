@@ -66,6 +66,7 @@ function canonicalRecording(recording) {
     gameHash: String(recording.gameHash ?? ''),
     gameBytes: Math.max(0, asInt(recording.gameBytes)),
     editConfigHash: String(recording.editConfigHash ?? ''),
+    overflowed: !!recording.overflowed,
     releaseTicks: [...(recording.releaseTicks ?? [])].map(value => Math.max(0, asInt(value))).sort((a, b) => a - b),
     events: [...(recording.events ?? [])].map(canonicalEvent).filter(Boolean).sort((a, b) => a.seq - b.seq),
     random: [...(recording.random ?? [])].map(canonicalRandom).filter(Boolean).sort((a, b) => a.seq - b.seq),
@@ -104,7 +105,6 @@ export function normalizePlayRecordingRaw(rawEvents = rawBuffer()) {
   const releaseTicks = [];
   const events = [];
   const random = [];
-  const mouseByTick = new Map();
   let startTick = 0;
   let finalTick = 0;
   let firstPulse = null;
@@ -125,14 +125,9 @@ export function normalizePlayRecordingRaw(rawEvents = rawBuffer()) {
     }
     const item = canonicalEvent(raw);
     if (!item) continue;
-    if (item.type === 'mouse') {
-      mouseByTick.set(item.tick, item);
-    } else {
-      events.push(item);
-    }
+    events.push(item);
   }
 
-  events.push(...mouseByTick.values());
   events.sort((a, b) => a.seq - b.seq);
   random.sort((a, b) => a.seq - b.seq);
   releaseTicks.sort((a, b) => a - b);
@@ -158,18 +153,22 @@ export function getPlayRecordingStats(rawEvents = rawBuffer()) {
     eventCount: normalized.events.length,
     randomCount: normalized.random.length,
     rawCount: Array.isArray(rawEvents) ? rawEvents.length : 0,
+    overflowed: !!globalThis.__kq1agiPlayRecordingOverflow,
   };
 }
 
 export function clearPlayRecording() {
   if (Array.isArray(globalThis.__kq1agiPlayRecordingRaw)) globalThis.__kq1agiPlayRecordingRaw.length = 0;
   globalThis.__kq1agiPlayRecordingSeq = 0;
+  globalThis.__kq1agiPlayRecordingOverflow = false;
 }
 
 export async function freezePlayRecordingV1(options = {}) {
   const gameBuffer = options.gameBuffer;
   if (!(gameBuffer instanceof ArrayBuffer)) throw new TypeError('freezePlayRecordingV1 requires gameBuffer.');
   const normalized = normalizePlayRecordingRaw(options.rawEvents ?? rawBuffer());
+  const overflowed = options.overflowed ?? !!globalThis.__kq1agiPlayRecordingOverflow;
+  if (overflowed) throw new Error('The PLAY journal reached its in-memory safety limit. Reload the page before reproducing the event again.');
   if (!normalized.completeFromStart) {
     throw new Error('The PLAY journal did not start at logical tick 1. Reload the page before reproducing the event so Phase -1D can replay from game start.');
   }
@@ -181,6 +180,7 @@ export async function freezePlayRecordingV1(options = {}) {
     gameHash: await hashArrayBufferV1(gameBuffer),
     gameBytes: gameBuffer.byteLength,
     editConfigHash,
+    overflowed,
   });
   return Object.freeze({ ...base, hash: await hashPlayRecordingV1(base) });
 }
