@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { hashPlayRecordingV1 } from '../web/certification-recording.mjs';
 import {
   buildRecordingPrefixV1,
   divergenceFingerprint,
@@ -7,7 +8,7 @@ import {
   sameDivergence,
 } from '../web/certification-minimizer.mjs';
 
-const recording = Object.freeze({
+const recordingBase = {
   schema: 'kq1agi-play-recording-v1',
   completeFromStart: true,
   startTick: 1,
@@ -29,8 +30,8 @@ const recording = Object.freeze({
     { tick: 46, seq: 7, bound: 6, value: 1 },
     { tick: 80, seq: 8, bound: 10, value: 2 },
   ],
-  hash: 'sha256:old',
-});
+};
+const recording = Object.freeze({ ...recordingBase, hash: await hashPlayRecordingV1(recordingBase) });
 
 const prefix = await buildRecordingPrefixV1(recording, 42);
 assert.equal(prefix.finalTick, 42);
@@ -38,10 +39,30 @@ assert.deepEqual(prefix.releaseTicks, [1, 5, 20, 42]);
 assert.deepEqual(prefix.events.map(event => event.tick), [2, 41]);
 assert.deepEqual(prefix.random.map(draw => draw.tick), [5, 42]);
 assert.notEqual(prefix.hash, recording.hash);
+assert.equal(prefix.hash, await hashPlayRecordingV1(prefix));
 assert.equal(prefix.gameHash, recording.gameHash);
 assert.equal(prefix.editConfigHash, recording.editConfigHash);
 await assert.rejects(buildRecordingPrefixV1(recording, 0), /between 1 and 100/);
 await assert.rejects(buildRecordingPrefixV1(recording, 101), /between 1 and 100/);
+
+// Phase -1E must not turn a stale/tampered Phase -1D envelope into a fresh valid
+// candidate merely by recomputing the candidate hash.
+const tampered = {
+  ...recording,
+  events: recording.events.map((event, index) => index === 0 ? { ...event, keyCode: 99 } : { ...event }),
+};
+await assert.rejects(buildRecordingPrefixV1(tampered, 42), /source recording hash mismatch/);
+let tamperedReplayCalls = 0;
+await assert.rejects(minimizeDivergentPrefix(tampered, {
+  status: 'DIVERGED', tick: 42, reason: 'semantic-digest', index: 2, truth: 100, edited: 101,
+}, async () => {
+  tamperedReplayCalls += 1;
+  return { status: 'REPLAY_MATCH' };
+}), /source recording hash mismatch/);
+assert.equal(tamperedReplayCalls, 0);
+await assert.rejects(buildRecordingPrefixV1({ ...recording, completeFromStart: false }, 42), /complete recording/);
+await assert.rejects(buildRecordingPrefixV1({ ...recording, startTick: 2 }, 42), /complete recording/);
+await assert.rejects(buildRecordingPrefixV1({ ...recording, overflowed: true }, 42), /overflowed/);
 
 const target = {
   status: 'DIVERGED', tick: 42, cycle: 9, reason: 'semantic-digest', index: 2,
@@ -51,6 +72,45 @@ assert.ok(divergenceFingerprint(target));
 assert.equal(sameDivergence({ ...target, cycle: 999 }, target), true);
 assert.equal(sameDivergence({ ...target, index: 3 }, target), false);
 assert.equal(sameDivergence({ ...target, tick: 43 }, target), false);
+
+// External-event identity includes the complete stable detail payload, not merely
+// the event category. Two different WAVs/flags must never collapse to one target.
+const externalA = {
+  status: 'DIVERGED', tick: 12, reason: 'external-event',
+  detail: {
+    type: 'sound-event',
+    truth: { type: 'play', endFlag: 7, durationTicks: 10, wavHash: 0x1111 },
+    edited: { type: 'play', endFlag: 7, durationTicks: 10, wavHash: 0x2222 },
+  },
+};
+const externalReordered = {
+  ...externalA,
+  detail: {
+    edited: { wavHash: 0x2222, durationTicks: 10, endFlag: 7, type: 'play' },
+    type: 'sound-event',
+    truth: { wavHash: 0x1111, durationTicks: 10, endFlag: 7, type: 'play' },
+  },
+};
+assert.equal(sameDivergence(externalReordered, externalA), true);
+assert.equal(sameDivergence({
+  ...externalA,
+  detail: { ...externalA.detail, edited: { ...externalA.detail.edited, wavHash: 0x3333 } },
+}, externalA), false);
+assert.equal(sameDivergence({
+  ...externalA,
+  detail: { ...externalA.detail, edited: { ...externalA.detail.edited, endFlag: 8 } },
+}, externalA), false);
+
+const quitState = {
+  status: 'DIVERGED', tick: 91, cycle: 20, reason: 'quit-state',
+  truthQuit: true, editedQuit: false, truthQuitMarked: true, editedQuitMarked: false,
+};
+assert.equal(sameDivergence({ ...quitState, cycle: 999 }, quitState), true);
+assert.equal(sameDivergence({ ...quitState, editedQuitMarked: true }, quitState), false);
+const quitHandshake = {
+  status: 'DIVERGED', tick: 92, reason: 'quit-handshake', truthQuit: true, editedQuit: false,
+};
+assert.equal(sameDivergence({ ...quitHandshake, editedQuit: true }, quitHandshake), false);
 
 const focus = focusRecordingAroundTick(recording, 42, 5);
 assert.deepEqual([focus.startTick, focus.endTick], [37, 47]);
@@ -90,7 +150,7 @@ assert.equal(fallback.minimizedFinalTick, 45);
 assert.ok(fallbackAttempts.length < 10);
 assert.equal(fallbackAttempts[0], 42);
 
-const mismatch = await minimizeDivergentPrefix(recording, target, async candidate => ({
+const mismatch = await minimizeDivergentPrefix(recording, target, async () => ({
   status: 'DIVERGED',
   firstDivergence: { ...target, index: 3 },
   result: { ...target, index: 3 },
@@ -99,7 +159,7 @@ assert.equal(mismatch.status, 'NOT_REPRODUCED');
 
 let stop = false;
 const attemptsSeen = [];
-const stopped = await minimizeDivergentPrefix(recording, target, async candidate => {
+const stopped = await minimizeDivergentPrefix(recording, target, async () => {
   stop = true;
   return { status: 'REPLAY_MATCH' };
 }, {
