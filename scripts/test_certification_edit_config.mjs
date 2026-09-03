@@ -99,7 +99,8 @@ await assert.rejects(
 );
 
 // Bridge integration: the applicator writes only the edited lane, snapshots visual
-// pins once, and switches room config before the next host pulse.
+// pins once, switches room config before the next host pulse, and never mutates
+// shared editor state while either interpreter is inside a cycle.
 const truthVars = new Int32Array(8353);
 const editedVars = new Int32Array(8353);
 editedVars[SLOT.CURROOM] = 1;
@@ -107,7 +108,13 @@ const fakeHost = { truth: { vars: truthVars }, edited: { vars: editedVars } };
 const room2 = { ...persisted.rooms[0], room: 2, enabled: false };
 const bridgeConfig = { ...persisted, rooms: [persisted.rooms[0], room2] };
 const applyConfig = createEditConfigApplicator(bridgeConfig);
+editedVars[SLOT.IN_TICK] = 1;
 let state = applyConfig(fakeHost);
+assert.deepEqual(state, { applied: false, room: 1, deferred: true });
+assert.equal(editedVars[SLOT.ENABLED], 0);
+assert.equal(editedVars[SLOT.VISUAL_OFFSET_COUNT], 0);
+editedVars[SLOT.IN_TICK] = 0;
+state = applyConfig(fakeHost);
 assert.deepEqual(state, { applied: true, room: 1, hasConfig: true });
 assert.equal(editedVars[SLOT.ENABLED], 1);
 assert.equal(editedVars[SLOT.VISUAL_OFFSET_COUNT], 2);
@@ -116,6 +123,11 @@ assert.equal(truthVars[SLOT.VISUAL_OFFSET_COUNT], 0);
 state = applyConfig(fakeHost);
 assert.equal(state.applied, false);
 editedVars[SLOT.CURROOM] = 2;
+truthVars[SLOT.IN_TICK] = 1;
+state = applyConfig(fakeHost);
+assert.deepEqual(state, { applied: false, room: 2, deferred: true });
+assert.equal(editedVars[SLOT.ROOM], 1);
+truthVars[SLOT.IN_TICK] = 0;
 state = applyConfig(fakeHost);
 assert.deepEqual(state, { applied: true, room: 2, hasConfig: true });
 assert.equal(editedVars[SLOT.ROOM], 2);
