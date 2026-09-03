@@ -45,6 +45,20 @@ assert.equal(prefix.editConfigHash, recording.editConfigHash);
 await assert.rejects(buildRecordingPrefixV1(recording, 0), /between 1 and 100/);
 await assert.rejects(buildRecordingPrefixV1(recording, 101), /between 1 and 100/);
 
+// Hash-equivalent source representation changes are canonicalized before candidate
+// derivation, matching the Phase -1D replay/hash authority.
+const reordered = {
+  ...recording,
+  releaseTicks: [...recording.releaseTicks].reverse(),
+  events: [...recording.events].reverse(),
+  random: [...recording.random].reverse(),
+};
+assert.equal(await hashPlayRecordingV1(reordered), recording.hash);
+const reorderedPrefix = await buildRecordingPrefixV1(reordered, 42);
+assert.deepEqual(reorderedPrefix.releaseTicks, [1, 5, 20, 42]);
+assert.deepEqual(reorderedPrefix.events.map(event => event.seq), [1, 2]);
+assert.deepEqual(reorderedPrefix.random.map(draw => draw.seq), [5, 6]);
+
 // Phase -1E must not turn a stale/tampered Phase -1D envelope into a fresh valid
 // candidate merely by recomputing the candidate hash.
 const tampered = {
