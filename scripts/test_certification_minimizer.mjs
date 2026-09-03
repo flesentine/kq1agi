@@ -150,6 +150,39 @@ assert.equal(fallback.minimizedFinalTick, 45);
 assert.ok(fallbackAttempts.length < 10);
 assert.equal(fallbackAttempts[0], 42);
 
+// The source envelope is only top-level frozen. A replay callback must not be
+// able to mutate nested source arrays after initial hash validation and thereby
+// influence later candidates.
+const mutableBase = {
+  ...recordingBase,
+  events: recordingBase.events.map(event => ({ ...event })),
+  random: recordingBase.random.map(draw => ({ ...draw })),
+  releaseTicks: [...recordingBase.releaseTicks],
+};
+const mutableRecording = {
+  ...mutableBase,
+  hash: await hashPlayRecordingV1(mutableBase),
+};
+let mutationAttempt = 0;
+const mutationSafe = await minimizeDivergentPrefix(mutableRecording, target, async candidate => {
+  mutationAttempt += 1;
+  if (mutationAttempt === 1) {
+    mutableRecording.events.length = 0;
+    mutableRecording.random.length = 0;
+    mutableRecording.releaseTicks.length = 0;
+    return { status: 'REPLAY_MATCH' };
+  }
+  const retainedAuthenticatedSource = candidate.events.some(event => event.tick === 44)
+    && candidate.random.some(draw => draw.tick === 42)
+    && candidate.releaseTicks.includes(45);
+  if (candidate.finalTick >= 45 && retainedAuthenticatedSource) {
+    return { status: 'DIVERGED', firstDivergence: target, result: target };
+  }
+  return { status: 'REPLAY_MATCH' };
+});
+assert.equal(mutationSafe.status, 'MINIMIZED');
+assert.equal(mutationSafe.minimizedFinalTick, 45);
+
 const mismatch = await minimizeDivergentPrefix(recording, target, async () => ({
   status: 'DIVERGED',
   firstDivergence: { ...target, index: 3 },
