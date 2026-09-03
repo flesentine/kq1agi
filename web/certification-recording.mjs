@@ -212,6 +212,14 @@ function applyEvent(host, event) {
   }
 }
 
+function replayNow() {
+  return globalThis.performance?.now?.() ?? Date.now();
+}
+
+function replaySleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 export async function runCertificationReplaySession(host, recording, options = {}) {
   if (!host || typeof host.pulse !== 'function') throw new TypeError('A CertificationHost is required.');
   if (!recording || recording.schema !== SCHEMA) throw new Error('Unknown PLAY recording schema.');
@@ -219,12 +227,15 @@ export async function runCertificationReplaySession(host, recording, options = {
   const shouldStop = options.shouldStop ?? (() => false);
   const onUpdate = options.onUpdate ?? (() => {});
   const beforePulse = options.beforePulse ?? (() => {});
+  const pulseIntervalMs = Math.max(0, Number(options.pulseIntervalMs ?? (1000 / 60)) || 0);
   const events = [...(recording.events ?? [])].sort((a, b) => a.seq - b.seq);
   const releaseSet = new Set((recording.releaseTicks ?? []).map(value => asInt(value)));
   let eventIndex = 0;
   let certifiedBarriers = 0;
   let consumedTicks = 0;
   let lastResult = null;
+  let pacedTargetTick = 0;
+  let nextPulseAt = replayNow();
 
   const applyEventsThrough = tick => {
     while (eventIndex < events.length && asInt(events[eventIndex].tick) <= tick) {
@@ -239,6 +250,15 @@ export async function runCertificationReplaySession(host, recording, options = {
     await beforePulse(host);
 
     const targetTick = host.logicalTick + 1;
+    if (targetTick !== pacedTargetTick && pulseIntervalMs > 0) {
+      if (pacedTargetTick !== 0) {
+        nextPulseAt += pulseIntervalMs;
+        const delayMs = nextPulseAt - replayNow();
+        if (delayMs > 0) await replaySleep(delayMs);
+        else nextPulseAt = replayNow();
+      }
+      pacedTargetTick = targetTick;
+    }
     const releaseExpected = releaseSet.has(targetTick);
     const beforeTick = host.logicalTick;
     const beforeCycle = host.cycle;
