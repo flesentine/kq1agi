@@ -71,7 +71,7 @@ class FakeHost {
   }
 }
 const host = new FakeHost();
-const summary = await runCertificationReplaySession(host, frozen);
+const summary = await runCertificationReplaySession(host, frozen, { pulseIntervalMs: 0 });
 assert.equal(summary.status, 'REPLAY_MATCH');
 assert.equal(summary.consumedTicks, 3);
 assert.equal(summary.certifiedBarriers, 2);
@@ -93,7 +93,7 @@ class BarrierOnlyHost extends FakeHost {
     return super.pulse({ allowCycleRelease });
   }
 }
-const barrierOnly = await runCertificationReplaySession(new BarrierOnlyHost(), frozen);
+const barrierOnly = await runCertificationReplaySession(new BarrierOnlyHost(), frozen, { pulseIntervalMs: 0 });
 assert.equal(barrierOnly.status, 'REPLAY_MATCH');
 assert.equal(barrierOnly.consumedTicks, 3);
 
@@ -103,9 +103,57 @@ class MissHost extends FakeHost {
     return { status: 'BUSY', tick: this.logicalTick, cycle: this.cycle, truthIdle: false, editedIdle: false };
   }
 }
-const miss = await runCertificationReplaySession(new MissHost(), frozen);
+const miss = await runCertificationReplaySession(new MissHost(), frozen, { pulseIntervalMs: 0 });
 assert.equal(miss.status, 'REPLAY_TIMING_MISS');
 assert.equal(miss.result.expectedRelease, true);
+
+// The final recorded pulse may release a cycle that is still busy when that pulse
+// returns. The driver must settle and compare it without inventing tick 4.
+class FinalSettleHost extends FakeHost {
+  constructor(settleResult = { status: 'MATCH', tick: 3, cycle: 2 }) {
+    super();
+    this.settleResult = settleResult;
+    this.settleCalls = 0;
+  }
+  async pulse({ allowCycleRelease }) {
+    this.logicalTick += 1;
+    if (allowCycleRelease) this.cycle += 1;
+    if (this.logicalTick === 3 && allowCycleRelease) {
+      return { status: 'BUSY', tick: 3, cycle: this.cycle, truthIdle: false, editedIdle: false };
+    }
+    return allowCycleRelease
+      ? { status: 'MATCH', tick: this.logicalTick, cycle: this.cycle }
+      : { status: 'IDLE', tick: this.logicalTick, cycle: this.cycle };
+  }
+  async settleCurrentCycle() {
+    this.settleCalls += 1;
+    return this.settleResult;
+  }
+  getReplayRandomDrawCounts() { return { truth: 1, edited: 1 }; }
+}
+const finalSettleHost = new FinalSettleHost();
+const settled = await runCertificationReplaySession(finalSettleHost, frozen, { pulseIntervalMs: 0 });
+assert.equal(settled.status, 'REPLAY_MATCH');
+assert.equal(settled.finalTick, 3);
+assert.equal(settled.certifiedBarriers, 2);
+assert.equal(finalSettleHost.settleCalls, 1);
+assert.equal(finalSettleHost.logicalTick, 3);
+
+const finalDivergence = await runCertificationReplaySession(new FinalSettleHost({
+  status: 'DIVERGED', tick: 3, cycle: 2, reason: 'semantic-digest', index: 1,
+}), frozen, { pulseIntervalMs: 0 });
+assert.equal(finalDivergence.status, 'DIVERGED');
+assert.equal(finalDivergence.firstDivergence.tick, 3);
+
+class RandomMissHost extends FinalSettleHost {
+  getReplayRandomDrawCounts() { return { truth: 0, edited: 0 }; }
+}
+const randomMiss = await runCertificationReplaySession(new RandomMissHost(), frozen, { pulseIntervalMs: 0 });
+assert.equal(randomMiss.status, 'REPLAY_CONTRACT_MISS');
+assert.equal(randomMiss.result.reason, 'random-stream-consumption');
+assert.equal(randomMiss.result.expectedRandomDraws, 1);
+assert.equal(randomMiss.result.truthRandomDraws, 0);
+assert.equal(randomMiss.result.editedRandomDraws, 0);
 
 clearPlayRecording();
 console.log('certification recording tests: PASS');
