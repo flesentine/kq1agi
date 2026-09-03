@@ -1,4 +1,5 @@
 import { CertificationHost } from './certification-host.mjs';
+import { captureEditConfigV1, createEditConfigApplicator } from './certification-edit-config.mjs';
 
 const TRACE_LABELS = Object.freeze([
   'schema', 'total-ticks', 'room', 'ego-x', 'ego-y', 'ego-direction',
@@ -26,6 +27,16 @@ function humanBytes(bytes) {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KiB`;
   return `${(size / (1024 * 1024)).toFixed(2)} MiB`;
+}
+
+function editConfigIdentity(config) {
+  const hash = String(config?.hash ?? 'none');
+  const shortHash = hash.startsWith('sha256:') ? `sha256:${hash.slice(7, 19)}` : hash;
+  return `${shortHash} · ${config?.rooms?.length ?? 0} room(s) · ${config?.visualPins?.length ?? 0} visual pin(s)`;
+}
+
+function formatResultWithEditConfig(result, config) {
+  return `${formatCertificationResult(result)}\neditConfig=${editConfigIdentity(config)}`;
 }
 
 function monotonicNow() {
@@ -123,6 +134,7 @@ export async function runCertificationSession(host, options = {}) {
   const pulseIntervalMs = Math.max(0, Number(options.pulseIntervalMs ?? (1000 / 60)) || 0);
   const shouldStop = options.shouldStop ?? (() => false);
   const onUpdate = options.onUpdate ?? (() => {});
+  const beforePulse = options.beforePulse ?? (() => {});
   let barriers = 0;
   let busyPulses = 0;
   let pulses = 0;
@@ -144,6 +156,7 @@ export async function runCertificationSession(host, options = {}) {
       }
     }
 
+    await beforePulse(host);
     const result = await host.pulse();
     lastResult = result;
     pulses += 1;
@@ -282,41 +295,46 @@ function installCertificationPanel() {
       host?.terminate();
       host = null;
       const gameBuffer = await readImportedGame(directoryName);
+      const editConfig = await captureEditConfigV1();
       const truthWorkerUrl = new URL('./truth-worker/worker.nocache.js', import.meta.url).href;
       const editedWorkerUrl = new URL('./edited-worker/worker.nocache.js', import.meta.url).href;
       host = new CertificationHost({ truthWorkerUrl, editedWorkerUrl });
       await host.start(gameBuffer);
+      const applyEditConfig = createEditConfigApplicator(editConfig);
+      applyEditConfig(host);
 
       setStatus('CERTIFYING', 'BUSY');
+      detail.textContent = `Frozen EditConfig v1: ${editConfigIdentity(editConfig)}\nTruth lane remains pristine; this config is applied only to the edited lane.`;
       const targetBarriers = Math.max(1, Number(barrierInput.value || 60));
       const summary = await runCertificationSession(host, {
         targetBarriers,
         maxBusyPulses: 900,
         pulseIntervalMs: 1000 / 60,
+        beforePulse: () => applyEditConfig(host),
         shouldStop: () => stopRequested,
         onUpdate: update => {
-          progress.textContent = `${update.barriers}/${targetBarriers} certified barriers · tick ${update.result?.tick ?? host.logicalTick}`;
-          if (update.result?.status !== 'BUSY') detail.textContent = formatCertificationResult(update.result);
+          progress.textContent = `${update.barriers}/${targetBarriers} certified barriers · tick ${update.result?.tick ?? host.logicalTick} · ${editConfigIdentity(editConfig)}`;
+          if (update.result?.status !== 'BUSY') detail.textContent = formatResultWithEditConfig(update.result, editConfig);
         },
       });
 
       if (summary.status === 'MATCH_LIMIT') {
         setStatus(`MATCH × ${summary.barriers}`, 'MATCH');
-        detail.textContent = `${formatCertificationResult(summary.result)}\n\nNo divergence was observed across the requested ${summary.barriers} shared barriers.`;
+        detail.textContent = `${formatResultWithEditConfig(summary.result, editConfig)}\n\nNo divergence was observed across the requested ${summary.barriers} shared barriers.`;
       } else if (summary.status === 'DIVERGED') {
         setStatus(`DIVERGED @ ${summary.firstDivergence.tick}`, 'DIVERGED');
-        detail.textContent = `${formatCertificationResult(summary.firstDivergence)}\n\nThis is the first divergent shared barrier observed by this run.`;
+        detail.textContent = `${formatResultWithEditConfig(summary.firstDivergence, editConfig)}\n\nThis is the first divergent shared barrier observed by this run.`;
       } else if (summary.status === 'COMPLETE') {
         setStatus('COMPLETE / MATCH', 'MATCH');
-        detail.textContent = formatCertificationResult(summary.result);
+        detail.textContent = formatResultWithEditConfig(summary.result, editConfig);
       } else if (summary.status === 'WAITING') {
         setStatus('WAITING FOR INPUT', 'WAITING');
-        detail.textContent = `${formatCertificationResult(summary.result)}\n\nThe no-input Phase -1C smoke run reached a long blocking interpreter wait. Input record/replay is intentionally a later phase.`;
+        detail.textContent = `${formatResultWithEditConfig(summary.result, editConfig)}\n\nThe no-input Phase -1C smoke run reached a long blocking interpreter wait. Input record/replay is intentionally a later phase.`;
       } else if (summary.status === 'STOPPED') {
         setStatus('STOPPED', 'IDLE');
       } else {
         setStatus(summary.status, 'ERROR');
-        detail.textContent = formatCertificationResult(summary.result);
+        detail.textContent = formatResultWithEditConfig(summary.result, editConfig);
       }
     } catch (error) {
       setStatus('CERTIFICATION ERROR', 'ERROR');
