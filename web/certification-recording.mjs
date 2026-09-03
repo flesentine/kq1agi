@@ -233,7 +233,47 @@ function terminalReplaySummary(result, certifiedBarriers, consumedTicks) {
   if (result?.status === 'REPLAY_TIMING_MISS') {
     return { status: 'REPLAY_TIMING_MISS', certifiedBarriers, consumedTicks, result };
   }
+  if (result?.status === 'REPLAY_CONTRACT_MISS') {
+    return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result };
+  }
   return null;
+}
+
+function buildTransportSchedule(events) {
+  const byTick = new Map();
+  let previousTick = -1;
+  for (const event of events) {
+    const tick = Math.max(0, asInt(event.tick));
+    if (tick < previousTick) {
+      return { error: { reason: 'transport-tick-order', previousTick, tick, seq: asInt(event.seq) } };
+    }
+    previousTick = tick;
+    let bucket = byTick.get(tick);
+    if (!bucket) {
+      bucket = { busy: [], idle: [], sawIdle: false };
+      byTick.set(tick, bucket);
+    }
+    if (event.phase === 'busy') {
+      if (bucket.sawIdle) {
+        return { error: { reason: 'transport-phase-order', tick, seq: asInt(event.seq) } };
+      }
+      bucket.busy.push(event);
+    } else {
+      bucket.sawIdle = true;
+      bucket.idle.push(event);
+    }
+  }
+  return { byTick };
+}
+
+function replayContractMiss(host, reason, extra = {}) {
+  return {
+    status: 'REPLAY_CONTRACT_MISS',
+    reason,
+    tick: host.logicalTick,
+    cycle: host.cycle,
+    ...extra,
+  };
 }
 
 export async function runCertificationReplaySession(host, recording, options = {}) {
@@ -246,23 +286,70 @@ export async function runCertificationReplaySession(host, recording, options = {
   const pulseIntervalMs = Math.max(0, Number(options.pulseIntervalMs ?? (1000 / 60)) || 0);
   const events = [...(recording.events ?? [])].sort((a, b) => a.seq - b.seq);
   const releaseSet = new Set((recording.releaseTicks ?? []).map(value => asInt(value)));
-  let eventIndex = 0;
+  const transport = buildTransportSchedule(events);
   let certifiedBarriers = 0;
   let consumedTicks = 0;
   let lastResult = null;
   let pacedTargetTick = 0;
   let nextPulseAt = replayNow();
 
-  const applyEventsThrough = tick => {
-    while (eventIndex < events.length && asInt(events[eventIndex].tick) <= tick) {
-      applyEvent(host, events[eventIndex]);
-      eventIndex += 1;
+  if (transport.error) {
+    const miss = replayContractMiss(host, transport.error.reason, transport.error);
+    return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+  }
+  const eventsByTick = transport.byTick;
+
+  const applyIdleEventsAt = async tick => {
+    const bucket = eventsByTick.get(tick);
+    if (!bucket?.idle.length) return null;
+    if (typeof host.prepareTransportPhase !== 'function') {
+      const miss = replayContractMiss(host, 'transport-phase-host', { expectedPhase: 'idle', eventTick: tick });
+      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
     }
+    const phaseResult = await host.prepareTransportPhase('idle');
+    lastResult = phaseResult;
+    if (phaseResult?.status === 'MATCH') certifiedBarriers += 1;
+    const terminal = terminalReplaySummary(phaseResult, certifiedBarriers, consumedTicks);
+    if (terminal) {
+      onUpdate({ certifiedBarriers, consumedTicks, targetTick: tick, result: phaseResult, transportPhase: 'idle' });
+      return terminal;
+    }
+    if (phaseResult?.status !== 'IDLE' && phaseResult?.status !== 'MATCH') {
+      const miss = replayContractMiss(host, 'transport-phase-host', {
+        expectedPhase: 'idle', eventTick: tick, observedStatus: phaseResult?.status ?? 'unknown',
+      });
+      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+    }
+    for (const event of bucket.idle) applyEvent(host, event);
+    bucket.idle.length = 0;
+    onUpdate({ certifiedBarriers, consumedTicks, targetTick: tick, result: phaseResult, transportPhase: 'idle', transportApplied: true });
+    return null;
   };
+
+  const initial = eventsByTick.get(host.logicalTick);
+  if (initial?.busy.length) {
+    const miss = replayContractMiss(host, 'transport-phase', {
+      expectedPhase: 'busy', eventTick: host.logicalTick,
+      detail: 'Busy transport cannot precede the first released interpreter cycle.',
+    });
+    return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+  }
+  const initialIdle = await applyIdleEventsAt(host.logicalTick);
+  if (initialIdle) return initialIdle;
 
   while (host.logicalTick < recording.finalTick) {
     if (shouldStop()) return { status: 'STOPPED', certifiedBarriers, consumedTicks, result: lastResult };
-    applyEventsThrough(host.logicalTick);
+
+    const staleBucket = eventsByTick.get(host.logicalTick);
+    if (staleBucket?.busy.length) {
+      const miss = replayContractMiss(host, 'transport-phase-unconsumed', {
+        expectedPhase: 'busy', eventTick: host.logicalTick, remainingEvents: staleBucket.busy.length,
+      });
+      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+    }
+
+    const idleSummary = await applyIdleEventsAt(host.logicalTick);
+    if (idleSummary) return idleSummary;
     await beforePulse(host);
 
     const targetTick = host.logicalTick + 1;
@@ -275,10 +362,33 @@ export async function runCertificationReplaySession(host, recording, options = {
       }
       pacedTargetTick = targetTick;
     }
+
     const releaseExpected = releaseSet.has(targetTick);
     const beforeTick = host.logicalTick;
     const beforeCycle = host.cycle;
-    const result = await host.pulse({ allowCycleRelease: releaseExpected });
+    const bucket = eventsByTick.get(targetTick);
+    const busyEvents = bucket?.busy ?? [];
+    let busyInjected = busyEvents.length === 0;
+
+    const afterClockAdvance = busyEvents.length ? phaseState => {
+      if (phaseState.truthIdle || phaseState.editedIdle) {
+        return {
+          status: 'REPLAY_TIMING_MISS',
+          reason: 'transport-phase',
+          expectedPhase: 'busy',
+          tick: phaseState.tick,
+          cycle: phaseState.cycle,
+          truthIdle: !!phaseState.truthIdle,
+          editedIdle: !!phaseState.editedIdle,
+        };
+      }
+      for (const event of busyEvents) applyEvent(host, event);
+      busyEvents.length = 0;
+      busyInjected = true;
+      return null;
+    } : null;
+
+    const result = await host.pulse({ allowCycleRelease: releaseExpected, afterClockAdvance });
     lastResult = result;
 
     const terminal = terminalReplaySummary(result, certifiedBarriers, consumedTicks);
@@ -292,6 +402,14 @@ export async function runCertificationReplaySession(host, recording, options = {
     if (host.logicalTick === beforeTick) {
       onUpdate({ certifiedBarriers, consumedTicks, targetTick, releaseExpected, result, barrierOnly: true });
       continue;
+    }
+
+    if (!busyInjected) {
+      const miss = replayContractMiss(host, 'transport-phase-host', {
+        expectedPhase: 'busy', eventTick: targetTick, remainingEvents: busyEvents.length,
+      });
+      onUpdate({ certifiedBarriers, consumedTicks, targetTick, releaseExpected, result: miss });
+      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
     }
 
     consumedTicks += 1;
@@ -312,11 +430,19 @@ export async function runCertificationReplaySession(host, recording, options = {
     }
 
     onUpdate({ certifiedBarriers, consumedTicks, targetTick, releaseExpected, result });
+    const idleAfterPulse = await applyIdleEventsAt(targetTick);
+    if (idleAfterPulse) return idleAfterPulse;
   }
 
-  // Events stamped with the final logical tick happened after that pulse in normal
-  // PLAY. Apply them before settling any cycle that the final pulse released.
-  applyEventsThrough(recording.finalTick);
+  const finalIdle = await applyIdleEventsAt(recording.finalTick);
+  if (finalIdle) return finalIdle;
+  const finalBucket = eventsByTick.get(recording.finalTick);
+  if (finalBucket?.busy.length) {
+    const miss = replayContractMiss(host, 'transport-phase-unconsumed', {
+      expectedPhase: 'busy', eventTick: recording.finalTick, remainingEvents: finalBucket.busy.length,
+    });
+    return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+  }
 
   // A recording is allowed to end while its final interpreter cycle is still busy.
   // Settle and compare that cycle at the same logical tick; never advance a made-up
