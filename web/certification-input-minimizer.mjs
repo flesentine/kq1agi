@@ -21,7 +21,16 @@ function eventTick(event) {
 }
 
 function sortedEvents(recording) {
-  return [...(recording?.events ?? [])].sort((a, b) => eventSeq(a) - eventSeq(b));
+  const events = [...(recording?.events ?? [])].sort((a, b) => eventSeq(a) - eventSeq(b));
+  const seen = new Set();
+  for (const event of events) {
+    const seq = eventSeq(event);
+    if (seq < 1 || seen.has(seq)) {
+      throw new Error(`Phase -1F requires unique positive canonical event seq values; found ${seq}.`);
+    }
+    seen.add(seq);
+  }
+  return events;
 }
 
 function makeGroup(kind, members) {
