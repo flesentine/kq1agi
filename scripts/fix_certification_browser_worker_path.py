@@ -10,11 +10,16 @@ worker = root / 'html/src/main/java/com/agifans/agile/worker/AgileWebWorker.java
 text = worker.read_text()
 old = 'this.importScript("/opfs-saved-games.js");'
 new = 'this.importScript("../opfs-saved-games.js");'
+old_count = text.count(old)
+new_count = text.count(new)
 
-if new in text:
+if old_count == 0 and new_count == 1:
     print('Certification browser worker path already relative')
-elif text.count(old) == 1:
+elif old_count == 1 and new_count == 0:
     worker.write_text(text.replace(old, new, 1))
     print('Certification browser worker bootstrap path made relative')
 else:
-    raise RuntimeError('Could not find exactly one certification worker OPFS bootstrap import')
+    raise RuntimeError(
+        'Expected exactly one certification worker OPFS bootstrap import in either '
+        f'root-relative or relative form; found old={old_count}, new={new_count}'
+    )
