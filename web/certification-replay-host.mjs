@@ -97,8 +97,13 @@ export class ReplayCertificationHost extends CertificationHost {
    * before an idle-phase transport write is replayed. Busy-phase writes use the
    * synchronous afterClockAdvance hook in pulse(), before either worker gets an
    * event-loop turn after that logical pulse.
+   *
+   * An idle transport write stamped at logical tick T proves that normal PLAY's
+   * worker became idle before tick T+1. Phase -1D therefore accepts a per-tick wait
+   * budget from the replay driver instead of silently pausing logical time for the
+   * much larger barrier timeout.
    */
-  async prepareTransportPhase(phase) {
+  async prepareTransportPhase(phase, options = {}) {
     if (!this.started || !this.truth.ready || !this.edited.ready) {
       throw new Error('ReplayCertificationHost is not ready.');
     }
@@ -130,7 +135,7 @@ export class ReplayCertificationHost extends CertificationHost {
         truthIdle: true, editedIdle: true, transportPhase: 'idle',
       };
     }
-    return this.settleCurrentCycle('transport-idle');
+    return this.settleCurrentCycle('transport-idle', options.maxWaitMs);
   }
 
   /**
@@ -139,7 +144,7 @@ export class ReplayCertificationHost extends CertificationHost {
    * boundary. REPLAY MATCH is not authoritative until every released cycle in the
    * frozen window reaches the same common-barrier comparison used by Phase -1B.
    */
-  async settleCurrentCycle(reason = 'final-cycle') {
+  async settleCurrentCycle(reason = 'final-cycle', maxWaitMs = this.barrierTimeoutMs) {
     if (!this.started || !this.truth.ready || !this.edited.ready) {
       throw new Error('ReplayCertificationHost is not ready.');
     }
@@ -147,14 +152,17 @@ export class ReplayCertificationHost extends CertificationHost {
     const quitBefore = await this._resolveQuitIfObserved();
     if (quitBefore) return quitBefore;
 
+    const waitBudget = Number.isFinite(Number(maxWaitMs))
+      ? Math.max(0, Number(maxWaitMs)) : this.barrierTimeoutMs;
     const startedAt = Date.now();
     while (!isIdle(this.truth) || !isIdle(this.edited)) {
-      if ((Date.now() - startedAt) >= this.barrierTimeoutMs) {
+      if ((Date.now() - startedAt) >= waitBudget) {
         return {
           status: 'REPLAY_TIMING_MISS',
           reason: `${reason}-timeout`,
           tick: this.logicalTick,
           cycle: this.cycle,
+          maxWaitMs: waitBudget,
           truthIdle: isIdle(this.truth),
           editedIdle: isIdle(this.edited),
         };
