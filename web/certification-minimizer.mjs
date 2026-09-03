@@ -155,7 +155,11 @@ export function focusRecordingAroundTick(recording, tick, radius = 60) {
 }
 
 function divergenceFromSummary(summary) {
-  return summary?.firstDivergence ?? (summary?.result?.status === 'DIVERGED' ? summary.result : null);
+  // Only an authoritative DIVERGED replay may satisfy minimization. Do not accept
+  // stale diagnostic fields such as firstDivergence attached to a MATCH/STOPPED
+  // summary by a caller or future wrapper.
+  if (summary?.status !== 'DIVERGED') return null;
+  return summary.firstDivergence ?? (summary?.result?.status === 'DIVERGED' ? summary.result : null);
 }
 
 /**
