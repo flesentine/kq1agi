@@ -299,30 +299,39 @@ export async function runCertificationReplaySession(host, recording, options = {
   }
   const eventsByTick = transport.byTick;
 
+  const processSettledResult = (result, targetTick, meta = {}) => {
+    lastResult = result;
+    if (result?.status === 'MATCH') certifiedBarriers += 1;
+    const terminal = terminalReplaySummary(result, certifiedBarriers, consumedTicks);
+    onUpdate({ certifiedBarriers, consumedTicks, targetTick, result, ...meta });
+    return terminal;
+  };
+
+  const settleAtCurrentTick = async (reason, targetTick, meta = {}) => {
+    if (typeof host.settleCurrentCycle !== 'function') {
+      const miss = replayContractMiss(host, 'recorded-barrier-host', { reason, targetTick });
+      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+    }
+    const result = await host.settleCurrentCycle(reason);
+    return processSettledResult(result, targetTick, { recordedBarrier: reason, ...meta });
+  };
+
   const applyIdleEventsAt = async tick => {
     const bucket = eventsByTick.get(tick);
     if (!bucket?.idle.length) return null;
-    if (typeof host.prepareTransportPhase !== 'function') {
-      const miss = replayContractMiss(host, 'transport-phase-host', { expectedPhase: 'idle', eventTick: tick });
-      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
-    }
-    const phaseResult = await host.prepareTransportPhase('idle');
-    lastResult = phaseResult;
-    if (phaseResult?.status === 'MATCH') certifiedBarriers += 1;
-    const terminal = terminalReplaySummary(phaseResult, certifiedBarriers, consumedTicks);
-    if (terminal) {
-      onUpdate({ certifiedBarriers, consumedTicks, targetTick: tick, result: phaseResult, transportPhase: 'idle' });
-      return terminal;
-    }
-    if (phaseResult?.status !== 'IDLE' && phaseResult?.status !== 'MATCH') {
-      const miss = replayContractMiss(host, 'transport-phase-host', {
-        expectedPhase: 'idle', eventTick: tick, observedStatus: phaseResult?.status ?? 'unknown',
-      });
-      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
-    }
+
+    // An idle-phase event proves normal PLAY's worker had completed at this logical
+    // tick. Reproduce that semantic boundary by waiting at the same logical tick,
+    // however long wall-clock execution takes, then apply the recorded transport.
+    // Wall-clock speed is not allowed to turn into simulated game time.
+    const settled = await settleAtCurrentTick('recorded-idle-event', tick, { transportPhase: 'idle' });
+    if (settled) return settled;
     for (const event of bucket.idle) applyEvent(host, event);
     bucket.idle.length = 0;
-    onUpdate({ certifiedBarriers, consumedTicks, targetTick: tick, result: phaseResult, transportPhase: 'idle', transportApplied: true });
+    onUpdate({
+      certifiedBarriers, consumedTicks, targetTick: tick, result: lastResult,
+      transportPhase: 'idle', transportApplied: true,
+    });
     return null;
   };
 
@@ -340,19 +349,20 @@ export async function runCertificationReplaySession(host, recording, options = {
   while (host.logicalTick < recording.finalTick) {
     if (shouldStop()) return { status: 'STOPPED', certifiedBarriers, consumedTicks, result: lastResult };
 
-    const staleBucket = eventsByTick.get(host.logicalTick);
-    if (staleBucket?.busy.length) {
-      const miss = replayContractMiss(host, 'transport-phase-unconsumed', {
-        expectedPhase: 'busy', eventTick: host.logicalTick, remainingEvents: staleBucket.busy.length,
-      });
-      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+    const targetTick = host.logicalTick + 1;
+    const releaseExpected = releaseSet.has(targetTick);
+
+    // A recorded release at T means normal PLAY had observed the previous cycle as
+    // complete before the T callback released the next one. If certification is
+    // slower, wait here at T-1 and certify the completed cycle. Never advance the
+    // logical clock merely because wall-clock time passed.
+    if (releaseExpected) {
+      const releaseBarrier = await settleAtCurrentTick('recorded-release', targetTick, { releaseExpected: true });
+      if (releaseBarrier) return releaseBarrier;
     }
 
-    const idleSummary = await applyIdleEventsAt(host.logicalTick);
-    if (idleSummary) return idleSummary;
     await beforePulse(host);
 
-    const targetTick = host.logicalTick + 1;
     if (targetTick !== pacedTargetTick && pulseIntervalMs > 0) {
       if (pacedTargetTick !== 0) {
         nextPulseAt += pulseIntervalMs;
@@ -363,25 +373,18 @@ export async function runCertificationReplaySession(host, recording, options = {
       pacedTargetTick = targetTick;
     }
 
-    const releaseExpected = releaseSet.has(targetTick);
     const beforeTick = host.logicalTick;
     const beforeCycle = host.cycle;
     const bucket = eventsByTick.get(targetTick);
     const busyEvents = bucket?.busy ?? [];
     let busyInjected = busyEvents.length === 0;
 
+    // Busy is retained as provenance, but it is not treated as a wall-clock
+    // deadline. We know only that the event happened while normal PLAY's worker was
+    // in flight at logical tick T, not its exact Java instruction position. Inject
+    // it at the deterministic T boundary before either replay worker gets another
+    // event-loop turn, regardless of how quickly this machine executes the cycle.
     const afterClockAdvance = busyEvents.length ? phaseState => {
-      if (phaseState.truthIdle || phaseState.editedIdle) {
-        return {
-          status: 'REPLAY_TIMING_MISS',
-          reason: 'transport-phase',
-          expectedPhase: 'busy',
-          tick: phaseState.tick,
-          cycle: phaseState.cycle,
-          truthIdle: !!phaseState.truthIdle,
-          editedIdle: !!phaseState.editedIdle,
-        };
-      }
       for (const event of busyEvents) applyEvent(host, event);
       busyEvents.length = 0;
       busyInjected = true;
@@ -397,16 +400,17 @@ export async function runCertificationReplaySession(host, recording, options = {
       return terminal;
     }
 
-    if (result.status === 'MATCH') certifiedBarriers += 1;
-
     if (host.logicalTick === beforeTick) {
+      // A replay host may still expose a defensive barrier-only result. It consumes
+      // no recorded tick, so retry the same schedule entry.
+      if (result?.status === 'MATCH') certifiedBarriers += 1;
       onUpdate({ certifiedBarriers, consumedTicks, targetTick, releaseExpected, result, barrierOnly: true });
       continue;
     }
 
     if (!busyInjected) {
-      const miss = replayContractMiss(host, 'transport-phase-host', {
-        expectedPhase: 'busy', eventTick: targetTick, remainingEvents: busyEvents.length,
+      const miss = replayContractMiss(host, 'transport-boundary-host', {
+        eventTick: targetTick, remainingEvents: busyEvents.length,
       });
       onUpdate({ certifiedBarriers, consumedTicks, targetTick, releaseExpected, result: miss });
       return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
@@ -434,29 +438,23 @@ export async function runCertificationReplaySession(host, recording, options = {
     if (idleAfterPulse) return idleAfterPulse;
   }
 
-  const finalIdle = await applyIdleEventsAt(recording.finalTick);
-  if (finalIdle) return finalIdle;
   const finalBucket = eventsByTick.get(recording.finalTick);
-  if (finalBucket?.busy.length) {
+  if (finalBucket?.busy.length || finalBucket?.idle.length) {
     const miss = replayContractMiss(host, 'transport-phase-unconsumed', {
-      expectedPhase: 'busy', eventTick: recording.finalTick, remainingEvents: finalBucket.busy.length,
+      eventTick: recording.finalTick,
+      remainingBusyEvents: finalBucket?.busy.length ?? 0,
+      remainingIdleEvents: finalBucket?.idle.length ?? 0,
     });
     return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
   }
 
-  // A recording is allowed to end while its final interpreter cycle is still busy.
-  // Settle and compare that cycle at the same logical tick; never advance a made-up
-  // extra pulse just to obtain a convenient barrier.
+  // The frozen normal-PLAY boundary is idle. Settle and compare the final released
+  // replay cycle at the same logical tick; wall-clock execution may be slower, but
+  // no made-up logical pulse is permitted just to obtain a convenient barrier.
   if (typeof host.settleCurrentCycle === 'function') {
-    const settleResult = await host.settleCurrentCycle();
-    lastResult = settleResult;
-    if (settleResult?.status === 'MATCH') certifiedBarriers += 1;
-    const terminal = terminalReplaySummary(settleResult, certifiedBarriers, consumedTicks);
-    if (terminal) {
-      onUpdate({ certifiedBarriers, consumedTicks, targetTick: recording.finalTick, result: settleResult, finalSettle: true });
-      return terminal;
-    }
-    onUpdate({ certifiedBarriers, consumedTicks, targetTick: recording.finalTick, result: settleResult, finalSettle: true });
+    const settleResult = await host.settleCurrentCycle('final-cycle');
+    const terminal = processSettledResult(settleResult, recording.finalTick, { finalSettle: true });
+    if (terminal) return terminal;
   }
 
   // Both replay workers can agree with each other yet still have consumed only a
