@@ -73,6 +73,18 @@ assert.deepEqual(groups[2].eventSeqs, [9]);
 assert.deepEqual(groups[3].eventSeqs, [10, 11, 12, 13, 14, 15, 16, 17, 18]);
 assert.deepEqual(groups[4].eventSeqs, [19, 20, 21]);
 
+assert.throws(() => groupReplayInputEventsV1({
+  ...recording,
+  events: [
+    { tick: 1, seq: 1, phase: 'idle', type: 'key-queue', encodedKey: 1 },
+    { tick: 1, seq: 1, phase: 'idle', type: 'sound-end', endFlag: 7 },
+  ],
+}), /unique positive canonical event seq/);
+assert.throws(() => groupReplayInputEventsV1({
+  ...recording,
+  events: [{ tick: 1, seq: 0, phase: 'idle', type: 'key-queue', encodedKey: 1 }],
+}), /unique positive canonical event seq/);
+
 // Incomplete key-state fragments are intentionally locked: no synthetic one-sided
 // key gesture is offered to delta debugging when the matching release is absent.
 const incompleteBase = {
