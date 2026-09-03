@@ -120,4 +120,58 @@ assert.equal(result.reason, 'semantic-digest');
 assert.equal(host.logicalTick, divergenceTick);
 
 host.terminate();
+
+// Phase-aware transport must be injected after the logical clock/release writes but
+// before the workers receive an event-loop turn. Idle-phase preparation must then
+// settle and certify that exact cycle without advancing logical time.
+MockWorker.instances.length = 0;
+const phaseHost = new ReplayCertificationHost({
+  WorkerCtor: MockWorker,
+  truthWorkerUrl: 'truth.js',
+  editedWorkerUrl: 'edited.js',
+  randomReplaySpec: 'v1|',
+  barrierTimeoutMs: 500,
+});
+await phaseHost.start(new ArrayBuffer(16));
+const [phaseTruth, phaseEdited] = MockWorker.instances;
+phaseTruth.hold = true;
+phaseEdited.hold = true;
+let hookCalled = false;
+result = await phaseHost.pulse({
+  allowCycleRelease: true,
+  afterClockAdvance: state => {
+    hookCalled = true;
+    assert.equal(state.tick, 1);
+    assert.equal(state.cycle, 1);
+    assert.equal(state.truthIdle, false);
+    assert.equal(state.editedIdle, false);
+    phaseHost.setKey(42, true);
+    return null;
+  },
+});
+assert.equal(hookCalled, true);
+assert.equal(result.status, 'BUSY');
+assert.equal(Atomics.load(phaseHost.truth.keys, 42), 1);
+assert.equal(Atomics.load(phaseHost.edited.keys, 42), 1);
+const phaseTick = phaseHost.logicalTick;
+
+result = await phaseHost.prepareTransportPhase('busy');
+assert.equal(result.status, 'BUSY');
+assert.equal(result.transportPhase, 'busy');
+assert.equal(phaseHost.logicalTick, phaseTick);
+
+phaseTruth.hold = false;
+phaseEdited.hold = false;
+result = await phaseHost.prepareTransportPhase('idle');
+assert.equal(result.status, 'MATCH');
+assert.equal(result.replaySettled, true);
+assert.equal(result.settleReason, 'transport-idle');
+assert.equal(phaseHost.logicalTick, phaseTick);
+
+result = await phaseHost.prepareTransportPhase('idle');
+assert.equal(result.status, 'IDLE');
+assert.equal(result.transportPhase, 'idle');
+assert.equal(phaseHost.logicalTick, phaseTick);
+phaseHost.terminate();
+
 console.log('certification replay host tests: PASS');
