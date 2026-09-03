@@ -100,6 +100,9 @@ assert.deepEqual(groupReplayInputEventsV1(incomplete), []);
 
 const reduced = await buildRecordingWithoutInputGroupsV1(recording, ['input-1', 'input-4']);
 assert.equal(reduced.finalTick, recording.finalTick);
+assert.equal(reduced.gameHash, recording.gameHash);
+assert.equal(reduced.gameBytes, recording.gameBytes);
+assert.equal(reduced.editConfigHash, recording.editConfigHash);
 assert.deepEqual(reduced.releaseTicks, recording.releaseTicks);
 assert.deepEqual(reduced.random, recording.random);
 assert.ok(reduced.events.some(event => event.type === 'sound-end' && event.seq === 22));
@@ -150,6 +153,28 @@ assert.ok(minimized.recording.events.some(event => event.type === 'sound-end'));
 assert.equal(minimized.recording.hash, await hashPlayRecordingV1(minimized.recording));
 assert.equal(minimized.attempts[0].phase, 'baseline');
 assert.equal(minimized.attempts[0].reproduced, true);
+
+// One required group with no removable complement is correctly reported as already
+// minimal rather than as a successful reduction.
+const oneGroupBase = {
+  ...base,
+  events: [
+    { tick: 1, seq: 1, phase: 'idle', type: 'key-state', keyCode: 29, pressed: true },
+    { tick: 1, seq: 2, phase: 'idle', type: 'key-queue', encodedKey: 0x80042 },
+    { tick: 2, seq: 3, phase: 'idle', type: 'key-state', keyCode: 29, pressed: false },
+    { tick: 3, seq: 4, phase: 'idle', type: 'sound-end', endFlag: 7 },
+  ],
+};
+const oneGroup = Object.freeze({ ...oneGroupBase, hash: await hashPlayRecordingV1(oneGroupBase) });
+const alreadyMinimal = await minimizeInputGroupsV1(oneGroup, target, async candidate => {
+  const required = candidate.events.some(event => event.type === 'key-queue' && event.encodedKey === 0x80042);
+  return required
+    ? { status: 'DIVERGED', firstDivergence: target, result: target }
+    : { status: 'REPLAY_MATCH' };
+});
+assert.equal(alreadyMinimal.status, 'INPUTS_ALREADY_MINIMAL');
+assert.equal(alreadyMinimal.totalGroups, 1);
+assert.equal(alreadyMinimal.keptGroups.length, 1);
 
 // If the exact source no longer reproduces the target, reduction must not begin.
 const notReproduced = await minimizeInputGroupsV1(recording, target, async () => ({
