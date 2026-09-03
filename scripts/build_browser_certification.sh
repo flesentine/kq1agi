@@ -14,6 +14,11 @@ fi
 
 rm -rf "$TRUTH_TREE" "$EDITED_TREE" "$OUT"
 
+# Phase -1D instruments the exact production source tree before it is copied into
+# the edited certification lane and before the normal Pages app is compiled.
+python3 scripts/instrument_phase1d_play_recording.py "$PRODUCTION_TREE"
+git -C "$PRODUCTION_TREE" diff --check
+
 node scripts/test_certification_host.mjs
 node scripts/test_certification_panel.mjs
 node scripts/test_certification_edit_config.mjs
