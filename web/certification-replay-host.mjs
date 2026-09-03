@@ -11,6 +11,10 @@ function cloneArrayBuffer(buffer) {
   return buffer.slice(0);
 }
 
+function waitTurn() {
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
 /**
  * Phase -1D replay host. Phase -1B remains frozen: this subclass adds only the
  * recorded random stream, recorded sound-end timing, and recorded cycle-release
@@ -81,6 +85,61 @@ export class ReplayCertificationHost extends CertificationHost {
     }
   }
 
+  getReplayRandomDrawCounts() {
+    return {
+      truth: Atomics.load(this.truth.digest, DIGEST.RANDOM_DRAWS) >>> 0,
+      edited: Atomics.load(this.edited.digest, DIGEST.RANDOM_DRAWS) >>> 0,
+    };
+  }
+
+  /**
+   * Finish an in-flight final interpreter cycle without advancing logical time.
+   * A recording can end on a pulse that released work; REPLAY MATCH is not
+   * authoritative until that cycle reaches the same common-barrier comparison
+   * used everywhere else by Phase -1B.
+   */
+  async settleCurrentCycle() {
+    if (!this.started || !this.truth.ready || !this.edited.ready) {
+      throw new Error('ReplayCertificationHost is not ready.');
+    }
+
+    const quitBefore = await this._resolveQuitIfObserved();
+    if (quitBefore) return quitBefore;
+
+    const startedAt = Date.now();
+    while (!isIdle(this.truth) || !isIdle(this.edited)) {
+      if ((Date.now() - startedAt) >= this.barrierTimeoutMs) {
+        return {
+          status: 'REPLAY_TIMING_MISS',
+          reason: 'final-cycle-timeout',
+          tick: this.logicalTick,
+          cycle: this.cycle,
+          truthIdle: isIdle(this.truth),
+          editedIdle: isIdle(this.edited),
+        };
+      }
+      await waitTurn();
+      const quit = await this._resolveQuitIfObserved();
+      if (quit) return quit;
+    }
+
+    if (this.cycle > this.comparedCycle) {
+      const snapshotEpoch = await this._synchronizeBarrierSnapshot();
+      const result = this.compare(snapshotEpoch);
+      this.comparedCycle = this.cycle;
+      return { ...result, replaySettled: true };
+    }
+
+    return {
+      status: 'IDLE',
+      tick: this.logicalTick,
+      cycle: this.cycle,
+      truthIdle: true,
+      editedIdle: true,
+      replaySettled: true,
+    };
+  }
+
   /**
    * Consume one recorded logical pulse. allowCycleRelease is the release decision
    * observed in normal PLAY for this exact total-tick value.
@@ -117,7 +176,7 @@ export class ReplayCertificationHost extends CertificationHost {
       releasedCycle = true;
     }
 
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await waitTurn();
     const quitAfter = await this._resolveQuitIfObserved();
     if (quitAfter) return { ...quitAfter, releaseRequested: allowCycleRelease, releasedCycle };
     const truthIdle = isIdle(this.truth);
