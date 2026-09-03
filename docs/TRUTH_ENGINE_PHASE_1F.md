@@ -33,7 +33,7 @@ Examples:
 - \`A down → queue A → A up\` is one group.
 - \`SHIFT down → B down → queue B → B up → SHIFT up\` is one group.
 - A queue-only action with no matching state interval is independently removable.
-- An unmatched state fragment at the recording boundary is grouped only with its immediate same-tick/same-phase consecutive keyboard transport, rather than inventing a dependency across the rest of the replay.
+- An unmatched key-state fragment at the recording boundary is **locked**, because the frozen prefix does not contain a dependency-safe closing boundary.
 
 This is intentionally conservative. A later phase may record explicit browser-input transaction IDs if finer physical-key attribution becomes valuable.
 
@@ -94,7 +94,7 @@ It also does not rewrite release timing after input deletion. The recorded logic
 - Input grouping is derived from the authenticated canonical recording representation.
 - Keyboard down/up dependencies are atomic; overlapping modifier/chord intervals merge.
 - Mouse button gestures and their three-write state batches are atomic.
-- Queue-only keyboard actions and button-up mouse moves can be independently removable.
+- Queue-only keyboard actions and button-up mouse moves can be independently removable; unmatched keyboard state fragments stay locked.
 - Sound completions, RNG draws, release ticks, game identity, EditConfig identity, and final tick are never removed.
 - Every candidate has a fresh canonical recording hash.
 - The unchanged source must reproduce the exact target immediately before reduction starts.
