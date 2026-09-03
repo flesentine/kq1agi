@@ -73,6 +73,19 @@ assert.deepEqual(groups[2].eventSeqs, [9]);
 assert.deepEqual(groups[3].eventSeqs, [10, 11, 12, 13, 14, 15, 16, 17, 18]);
 assert.deepEqual(groups[4].eventSeqs, [19, 20, 21]);
 
+// Incomplete key-state fragments are intentionally locked: no synthetic one-sided
+// key gesture is offered to delta debugging when the matching release is absent.
+const incompleteBase = {
+  ...base,
+  events: [
+    { tick: 1, seq: 1, phase: 'idle', type: 'key-state', keyCode: 29, pressed: true },
+    { tick: 1, seq: 2, phase: 'idle', type: 'key-queue', encodedKey: 0x80041 },
+    { tick: 2, seq: 3, phase: 'idle', type: 'sound-end', endFlag: 7 },
+  ],
+};
+const incomplete = Object.freeze({ ...incompleteBase, hash: await hashPlayRecordingV1(incompleteBase) });
+assert.deepEqual(groupReplayInputEventsV1(incomplete), []);
+
 const reduced = await buildRecordingWithoutInputGroupsV1(recording, ['input-1', 'input-4']);
 assert.equal(reduced.finalTick, recording.finalTick);
 assert.deepEqual(reduced.releaseTicks, recording.releaseTicks);
