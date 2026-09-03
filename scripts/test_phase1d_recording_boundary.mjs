@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { snapshotReadyPlayJournal } from '../web/certification-phase1d.mjs';
+import { hashEditConfigV1 } from '../web/certification-edit-config.mjs';
+import { hashArrayBufferV1 } from '../web/certification-recording.mjs';
+import { snapshotReadyPlayJournal, validateFrozenReplayIdentityV1 } from '../web/certification-phase1d.mjs';
 
 function makeShared({ totalTicks = 0, inTick = 0 } = {}) {
   const sab = new SharedArrayBuffer(8353 * 4);
@@ -122,6 +124,47 @@ const released = [
   });
   assert.equal(result.ready, false);
   assert.equal(result.reason, 'no-shared-state');
+}
+
+// Phase -1E reuses the exact frozen EditConfig from the divergent replay. The
+// top-level object is frozen, but nested arrays are not necessarily deep-frozen, so
+// minimization must re-hash the actual config rather than trusting its declared hash.
+{
+  const gameBuffer = new Uint8Array([1, 2, 3, 4]).buffer;
+  const editConfigBase = { schema: 'kq1agi-edit-config-v1', rooms: [], visualPins: [] };
+  const editConfig = {
+    ...editConfigBase,
+    hash: await hashEditConfigV1(editConfigBase),
+  };
+  const recording = {
+    gameHash: await hashArrayBufferV1(gameBuffer),
+    gameBytes: gameBuffer.byteLength,
+    editConfigHash: editConfig.hash,
+  };
+
+  const identity = await validateFrozenReplayIdentityV1(recording, gameBuffer, editConfig);
+  assert.equal(identity.gameHash, recording.gameHash);
+  assert.equal(identity.editConfigHash, recording.editConfigHash);
+
+  await assert.rejects(
+    validateFrozenReplayIdentityV1(recording, new Uint8Array([1, 2, 3, 5]).buffer, editConfig),
+    /GAMEFILES\.DAT changed/,
+  );
+
+  const mutatedNestedConfig = {
+    ...editConfig,
+    visualPins: [[1, 2, 3, 4, 5]],
+  };
+  await assert.rejects(
+    validateFrozenReplayIdentityV1(recording, gameBuffer, mutatedNestedConfig),
+    /frozen EditConfig changed/,
+  );
+
+  const wrongDeclaredHash = { ...editConfig, hash: 'sha256:stale' };
+  await assert.rejects(
+    validateFrozenReplayIdentityV1(recording, gameBuffer, wrongDeclaredHash),
+    /frozen EditConfig changed/,
+  );
 }
 
 console.log('Phase -1D recording boundary tests: PASS');
