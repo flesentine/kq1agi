@@ -8,6 +8,9 @@ class MockWorker {
     this.onmessage = null;
     this.onerror = null;
     this.init = null;
+    this.hold = false;
+    this.randomDraws = 0;
+    this.digestXor = 0;
     MockWorker.instances.push(this);
   }
   publishSnapshot() {
@@ -15,10 +18,10 @@ class MockWorker {
     this.trace[1] = this.vars[512];
     this.digest[0] = 1;
     this.digest[1] = this.vars[512] ^ 0x1111;
-    this.digest[2] = 0x2222;
+    this.digest[2] = 0x2222 ^ this.digestXor;
     this.digest[3] = 0x3333;
     this.digest[4] = 0x4444;
-    this.digest[5] = 0;
+    this.digest[5] = this.randomDraws;
     this.digest[6] = 0;
   }
   postMessage(message) {
@@ -30,7 +33,7 @@ class MockWorker {
     } else if (message.name === 'Start') {
       queueMicrotask(() => this.onmessage?.({ data: { name: 'CertificationReady', object: {} } }));
       this.timer = setInterval(() => {
-        if (Atomics.load(this.vars, 517) === 1) Atomics.store(this.vars, 517, 0);
+        if (!this.hold && Atomics.load(this.vars, 517) === 1) Atomics.store(this.vars, 517, 0);
         if (Atomics.load(this.vars, 517) === 0) {
           const req = Atomics.load(this.digest, 8) >>> 0;
           const ack = Atomics.load(this.digest, 9) >>> 0;
@@ -79,6 +82,42 @@ host._handleLaneMessage(host.truth, { name: 'PlaySound', object: { endFlag: 9 },
 host._handleLaneMessage(host.edited, { name: 'PlaySound', object: { endFlag: 9 }, buffer: wav.slice(0) });
 assert.equal(host.pendingExternalDivergence, null);
 assert.equal(host.pendingSoundCompletions.length, 0);
+
+// End a recording on a release whose interpreter cycle is still in flight.
+// settleCurrentCycle must wait without incrementing logical time, then publish the
+// common final barrier and expose the replay RNG draw counts from that snapshot.
+const [truthWorker, editedWorker] = MockWorker.instances;
+truthWorker.hold = true;
+editedWorker.hold = true;
+result = await host.pulse({ allowCycleRelease: true });
+assert.equal(result.status, 'BUSY');
+assert.equal(host.logicalTick, 3);
+assert.equal(host.cycle, 2);
+const finalTick = host.logicalTick;
+truthWorker.randomDraws = 2;
+editedWorker.randomDraws = 2;
+truthWorker.hold = false;
+editedWorker.hold = false;
+result = await host.settleCurrentCycle();
+assert.equal(result.status, 'MATCH');
+assert.equal(result.replaySettled, true);
+assert.equal(host.logicalTick, finalTick);
+assert.deepEqual(host.getReplayRandomDrawCounts(), { truth: 2, edited: 2 });
+
+// A semantic difference that becomes visible only when the final busy cycle ends
+// must still be caught at the same final logical tick.
+truthWorker.hold = true;
+editedWorker.hold = true;
+editedWorker.digestXor = 1;
+result = await host.pulse({ allowCycleRelease: true });
+assert.equal(result.status, 'BUSY');
+const divergenceTick = host.logicalTick;
+truthWorker.hold = false;
+editedWorker.hold = false;
+result = await host.settleCurrentCycle();
+assert.equal(result.status, 'DIVERGED');
+assert.equal(result.reason, 'semantic-digest');
+assert.equal(host.logicalTick, divergenceTick);
 
 host.terminate();
 console.log('certification replay host tests: PASS');
