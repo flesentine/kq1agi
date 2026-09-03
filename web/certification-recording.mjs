@@ -187,7 +187,11 @@ export async function freezePlayRecordingV1(options = {}) {
 
 export function encodeRandomReplay(recording) {
   if (!recording || recording.schema !== SCHEMA) throw new Error('Unknown PLAY recording schema.');
-  const body = (recording.random ?? []).map(draw => `${asInt(draw.bound)}:${asInt(draw.value)}`).join(';');
+  // The recording hash is defined over canonical data. Replay must consume that
+  // same canonical view so hash-equivalent representation changes (for example,
+  // reordered-by-seq arrays or ignored malformed entries) cannot alter RNG behavior.
+  const canonical = canonicalRecording(recording);
+  const body = canonical.random.map(draw => `${draw.bound}:${draw.value}`).join(';');
   return `v1|${body}`;
 }
 
@@ -289,12 +293,17 @@ export async function runCertificationReplaySession(host, recording, options = {
     });
     return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers: 0, consumedTicks: 0, result: miss };
   }
+
+  // Execute exactly the same canonical representation that the hash authenticates.
+  // This closes a subtle integrity gap where raw array ordering or malformed entries
+  // could previously be hash-equivalent yet influence replay transport/RNG behavior.
+  const replayRecording = canonicalRecording(recording);
   const shouldStop = options.shouldStop ?? (() => false);
   const onUpdate = options.onUpdate ?? (() => {});
   const beforePulse = options.beforePulse ?? (() => {});
   const pulseIntervalMs = Math.max(0, Number(options.pulseIntervalMs ?? (1000 / 60)) || 0);
-  const events = [...(recording.events ?? [])].sort((a, b) => a.seq - b.seq);
-  const releaseSet = new Set((recording.releaseTicks ?? []).map(value => asInt(value)));
+  const events = [...replayRecording.events];
+  const releaseSet = new Set(replayRecording.releaseTicks);
   const transport = buildTransportSchedule(events);
   let certifiedBarriers = 0;
   let consumedTicks = 0;
@@ -356,7 +365,7 @@ export async function runCertificationReplaySession(host, recording, options = {
   const initialIdle = await applyIdleEventsAt(host.logicalTick);
   if (initialIdle) return initialIdle;
 
-  while (host.logicalTick < recording.finalTick) {
+  while (host.logicalTick < replayRecording.finalTick) {
     if (shouldStop()) return { status: 'STOPPED', certifiedBarriers, consumedTicks, result: lastResult };
 
     const targetTick = host.logicalTick + 1;
@@ -447,12 +456,12 @@ export async function runCertificationReplaySession(host, recording, options = {
     if (idleAfterPulse) return idleAfterPulse;
   }
 
-  const finalIdle = await applyIdleEventsAt(recording.finalTick);
+  const finalIdle = await applyIdleEventsAt(replayRecording.finalTick);
   if (finalIdle) return finalIdle;
-  const finalBucket = eventsByTick.get(recording.finalTick);
+  const finalBucket = eventsByTick.get(replayRecording.finalTick);
   if (finalBucket?.busy.length) {
     const miss = replayContractMiss(host, 'transport-phase-unconsumed', {
-      expectedPhase: 'busy', eventTick: recording.finalTick, remainingEvents: finalBucket.busy.length,
+      expectedPhase: 'busy', eventTick: replayRecording.finalTick, remainingEvents: finalBucket.busy.length,
     });
     return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
   }
@@ -466,10 +475,10 @@ export async function runCertificationReplaySession(host, recording, options = {
     if (settleResult?.status === 'MATCH') certifiedBarriers += 1;
     const terminal = terminalReplaySummary(settleResult, certifiedBarriers, consumedTicks);
     if (terminal) {
-      onUpdate({ certifiedBarriers, consumedTicks, targetTick: recording.finalTick, result: settleResult, finalSettle: true });
+      onUpdate({ certifiedBarriers, consumedTicks, targetTick: replayRecording.finalTick, result: settleResult, finalSettle: true });
       return terminal;
     }
-    onUpdate({ certifiedBarriers, consumedTicks, targetTick: recording.finalTick, result: settleResult, finalSettle: true });
+    onUpdate({ certifiedBarriers, consumedTicks, targetTick: replayRecording.finalTick, result: settleResult, finalSettle: true });
   }
 
   // Both replay workers can agree with each other yet still have consumed only a
@@ -477,7 +486,7 @@ export async function runCertificationReplaySession(host, recording, options = {
   // not an ORIGINAL-vs-EDITED semantic divergence.
   if (typeof host.getReplayRandomDrawCounts === 'function') {
     const counts = host.getReplayRandomDrawCounts();
-    const expectedRandomDraws = (recording.random ?? []).length;
+    const expectedRandomDraws = replayRecording.random.length;
     if ((counts.truth >>> 0) !== expectedRandomDraws || (counts.edited >>> 0) !== expectedRandomDraws) {
       const miss = {
         status: 'REPLAY_CONTRACT_MISS',
@@ -488,7 +497,7 @@ export async function runCertificationReplaySession(host, recording, options = {
         truthRandomDraws: counts.truth >>> 0,
         editedRandomDraws: counts.edited >>> 0,
       };
-      onUpdate({ certifiedBarriers, consumedTicks, targetTick: recording.finalTick, result: miss, finalSettle: true });
+      onUpdate({ certifiedBarriers, consumedTicks, targetTick: replayRecording.finalTick, result: miss, finalSettle: true });
       return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
     }
   }
