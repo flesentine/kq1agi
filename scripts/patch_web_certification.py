@@ -130,7 +130,7 @@ panel = r'''<button id="certify-button" type="button" title="Open deterministic 
 </aside>
 '''
 html = html.replace('<div id="boot-message">', recording_bootstrap + panel + '<div id="boot-message">', 1)
-html = html.replace('</body>', '<script type="module" src="certification/certification-panel.mjs"></script>\n</body>', 1)
+html = html.replace('</body>', '<script type="module" src="certification/certification-panel.mjs"></script>\n<script type="module" src="certification/certification-phase1d.mjs"></script>\n</body>', 1)
 
 for marker in [
     '#certify-button {',
@@ -143,6 +143,7 @@ for marker in [
     'id="certify-replay-button"',
     'id="certify-recording"',
     'certification/certification-panel.mjs',
+    'certification/certification-phase1d.mjs',
 ]:
     if marker not in html:
         raise RuntimeError(f'CERTIFY injection failed to produce marker: {marker}')
