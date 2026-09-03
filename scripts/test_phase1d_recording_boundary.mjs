@@ -165,6 +165,15 @@ const released = [
     validateFrozenReplayIdentityV1(recording, gameBuffer, wrongDeclaredHash),
     /frozen EditConfig changed/,
   );
+
+  // hashEditConfigV1 intentionally canonicalizes to the v1 schema, so the replay
+  // identity guard must also reject a raw schema mutation explicitly; otherwise the
+  // applicator would skip the config while the hash still appeared unchanged.
+  const wrongSchema = { ...editConfig, schema: 'kq1agi-edit-config-v0' };
+  await assert.rejects(
+    validateFrozenReplayIdentityV1(recording, gameBuffer, wrongSchema),
+    /frozen EditConfig changed/,
+  );
 }
 
 console.log('Phase -1D recording boundary tests: PASS');
