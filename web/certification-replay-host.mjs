@@ -17,8 +17,8 @@ function waitTurn() {
 
 /**
  * Phase -1D replay host. Phase -1B remains frozen: this subclass adds only the
- * recorded random stream, recorded sound-end timing, and recorded cycle-release
- * schedule needed to reproduce a normal PLAY session.
+ * recorded random stream, recorded sound-end timing, recorded transport phase,
+ * and recorded cycle-release schedule needed to reproduce a normal PLAY session.
  */
 export class ReplayCertificationHost extends CertificationHost {
   constructor(options = {}) {
@@ -93,12 +93,54 @@ export class ReplayCertificationHost extends CertificationHost {
   }
 
   /**
-   * Finish an in-flight final interpreter cycle without advancing logical time.
-   * A recording can end on a pulse that released work; REPLAY MATCH is not
-   * authoritative until that cycle reaches the same common-barrier comparison
-   * used everywhere else by Phase -1B.
+   * Put the two certification lanes at the transport phase recorded by normal PLAY
+   * before a transport write is replayed. Idle events may wait for the current
+   * cycle and certify its barrier. Busy events are accepted only while BOTH lanes
+   * are still inside the aligned cycle; otherwise the recording cannot be replayed
+   * without making worker scheduling part of the semantic result.
    */
-  async settleCurrentCycle() {
+  async prepareTransportPhase(phase) {
+    if (!this.started || !this.truth.ready || !this.edited.ready) {
+      throw new Error('ReplayCertificationHost is not ready.');
+    }
+    const expected = phase === 'busy' ? 'busy' : 'idle';
+    const truthIdle = isIdle(this.truth);
+    const editedIdle = isIdle(this.edited);
+
+    if (expected === 'busy') {
+      if (!truthIdle && !editedIdle) {
+        return {
+          status: 'BUSY', tick: this.logicalTick, cycle: this.cycle,
+          truthIdle: false, editedIdle: false, transportPhase: 'busy',
+        };
+      }
+      return {
+        status: 'REPLAY_TIMING_MISS',
+        reason: 'transport-phase',
+        expectedPhase: 'busy',
+        tick: this.logicalTick,
+        cycle: this.cycle,
+        truthIdle,
+        editedIdle,
+      };
+    }
+
+    if (truthIdle && editedIdle && this.cycle <= this.comparedCycle) {
+      return {
+        status: 'IDLE', tick: this.logicalTick, cycle: this.cycle,
+        truthIdle: true, editedIdle: true, transportPhase: 'idle',
+      };
+    }
+    return this.settleCurrentCycle('transport-idle');
+  }
+
+  /**
+   * Finish an in-flight interpreter cycle without advancing logical time. This is
+   * used both for recorded idle-phase transport writes and for the final recording
+   * boundary. REPLAY MATCH is not authoritative until every released cycle in the
+   * frozen window reaches the same common-barrier comparison used by Phase -1B.
+   */
+  async settleCurrentCycle(reason = 'final-cycle') {
     if (!this.started || !this.truth.ready || !this.edited.ready) {
       throw new Error('ReplayCertificationHost is not ready.');
     }
@@ -111,7 +153,7 @@ export class ReplayCertificationHost extends CertificationHost {
       if ((Date.now() - startedAt) >= this.barrierTimeoutMs) {
         return {
           status: 'REPLAY_TIMING_MISS',
-          reason: 'final-cycle-timeout',
+          reason: `${reason}-timeout`,
           tick: this.logicalTick,
           cycle: this.cycle,
           truthIdle: isIdle(this.truth),
@@ -127,7 +169,7 @@ export class ReplayCertificationHost extends CertificationHost {
       const snapshotEpoch = await this._synchronizeBarrierSnapshot();
       const result = this.compare(snapshotEpoch);
       this.comparedCycle = this.cycle;
-      return { ...result, replaySettled: true };
+      return { ...result, replaySettled: true, settleReason: reason };
     }
 
     return {
@@ -137,6 +179,7 @@ export class ReplayCertificationHost extends CertificationHost {
       truthIdle: true,
       editedIdle: true,
       replaySettled: true,
+      settleReason: reason,
     };
   }
 
