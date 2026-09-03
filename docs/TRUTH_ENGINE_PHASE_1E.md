@@ -25,6 +25,8 @@ Phase -1E derives candidates only from an intact frozen Phase -1D recording. Bef
 
 A stale or mutated source recording is rejected before any candidate replay. Phase -1E must never "repair" an altered source merely by recomputing a fresh candidate hash, because that would weaken the Phase -1D recording-integrity contract.
 
+Before browser minimization begins, the selected local `GAMEFILES.DAT` is re-hashed and byte-count checked against the divergent recording. The actual frozen EditConfig object is also re-hashed and must match both its declared hash and the recording's `editConfigHash`. This matters because the EditConfig envelope is top-level frozen but contains nested arrays/objects; a later in-memory mutation must not be replayed under the old identity.
+
 ## Exact divergence target
 
 A candidate is accepted only when it reproduces the same first divergence fingerprint. The fingerprint deliberately excludes worker `cycle` and snapshot timing, but preserves the reason-specific semantic identity:
@@ -89,6 +91,7 @@ Phase -1E also does not claim framebuffer identity, JVM object-graph identity, o
 - A mutated, stale, incomplete, or overflowed source is rejected rather than rehashed into a new authoritative candidate.
 - Prefix candidates always start at logical tick 1.
 - Game and EditConfig identity are preserved exactly.
+- The selected local `GAMEFILES.DAT` and the actual frozen EditConfig object are re-verified before minimization starts.
 - Data after the candidate final tick is removed and the recording hash is recomputed.
 - A reduction is accepted only for the exact same first divergence fingerprint.
 - External-event and terminal mismatch payload identity is preserved, not merely their broad reason/type.
@@ -100,6 +103,12 @@ Phase -1E also does not claim framebuffer identity, JVM object-graph identity, o
 - The result includes an event/RNG/release focus view around the divergence, including original post-divergence context when available.
 - Phase -1D replay and hash validation remain unchanged and authoritative.
 
-## Next implementation step
+## Browser integration status
 
-Wire the minimizer into the CERTIFY browser panel after a `DIVERGED` replay, show the original versus minimized tick span and focused events, then run the minimization path against an exact compiled Chromium artifact with both a positive divergence fixture and a changed-divergence negative control.
+The CERTIFY panel now enables **MINIMIZE** only after an authoritative divergent `REPLAY PLAY` result. Each candidate runs in fresh ORIGINAL/EDITED replay workers using the frozen game and EditConfig identities. The panel reports the original and minimized span plus the focused transport/RNG/release context.
+
+Exact compiled Chromium coverage includes a positive divergence fixture and a changed-divergence negative control. The negative control must return `NOT_REPRODUCED`, proving that a different mismatch is not accepted as the original target.
+
+## Next step
+
+After final review and merge, the next useful reduction layer is event-group minimization with explicit dependency-safe grouping rules. Arbitrary-start window replay should remain deferred until a real interpreter checkpoint/restore contract exists.
