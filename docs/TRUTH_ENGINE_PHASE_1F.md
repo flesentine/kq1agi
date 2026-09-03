@@ -53,7 +53,7 @@ This prevents minimization from keeping a press while deleting its release or fr
 
 Every candidate must still reproduce the exact Phase -1E divergence fingerprint. A different \`DIVERGED\` result does not count.
 
-The source recording is re-verified with the Phase -1E authenticated snapshot contract before grouping. Every accepted candidate receives a fresh canonical Phase -1D recording hash.
+The source recording is re-verified with the Phase -1E authenticated snapshot contract before grouping. Phase -1F also requires unique positive canonical event sequence IDs so a removable input group can never alias a locked event. Every accepted candidate receives a fresh canonical Phase -1D recording hash.
 
 Only an authoritative replay summary with status \`DIVERGED\` can satisfy a candidate.
 
@@ -92,6 +92,7 @@ It also does not rewrite release timing after input deletion. The recorded logic
 
 - Phase -1E remains the authority for the minimized final tick and exact divergence fingerprint.
 - Input grouping is derived from the authenticated canonical recording representation.
+- Canonical event sequence IDs must be positive and unique before any group can be removed.
 - Keyboard down/up dependencies are atomic; overlapping modifier/chord intervals merge.
 - Mouse button gestures and their three-write state batches are atomic.
 - Queue-only keyboard actions and button-up mouse moves can be independently removable; unmatched keyboard state fragments stay locked.
