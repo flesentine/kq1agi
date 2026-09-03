@@ -220,6 +220,22 @@ function replaySleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function terminalReplaySummary(result, certifiedBarriers, consumedTicks) {
+  if (result?.status === 'DIVERGED') {
+    return {
+      status: 'DIVERGED', certifiedBarriers, consumedTicks,
+      result, firstDivergence: result,
+    };
+  }
+  if (result?.status === 'COMPLETE') {
+    return { status: 'COMPLETE', certifiedBarriers, consumedTicks, result };
+  }
+  if (result?.status === 'REPLAY_TIMING_MISS') {
+    return { status: 'REPLAY_TIMING_MISS', certifiedBarriers, consumedTicks, result };
+  }
+  return null;
+}
+
 export async function runCertificationReplaySession(host, recording, options = {}) {
   if (!host || typeof host.pulse !== 'function') throw new TypeError('A CertificationHost is required.');
   if (!recording || recording.schema !== SCHEMA) throw new Error('Unknown PLAY recording schema.');
@@ -265,9 +281,10 @@ export async function runCertificationReplaySession(host, recording, options = {
     const result = await host.pulse({ allowCycleRelease: releaseExpected });
     lastResult = result;
 
-    if (result.status === 'DIVERGED' || result.status === 'COMPLETE') {
+    const terminal = terminalReplaySummary(result, certifiedBarriers, consumedTicks);
+    if (terminal) {
       onUpdate({ certifiedBarriers, consumedTicks, targetTick, releaseExpected, result });
-      return { status: result.status, certifiedBarriers, consumedTicks, result, firstDivergence: result.status === 'DIVERGED' ? result : null };
+      return terminal;
     }
 
     if (result.status === 'MATCH') certifiedBarriers += 1;
@@ -282,6 +299,7 @@ export async function runCertificationReplaySession(host, recording, options = {
     if (releaseExpected !== released) {
       const miss = {
         status: 'REPLAY_TIMING_MISS',
+        reason: 'cycle-release',
         tick: host.logicalTick,
         cycle: host.cycle,
         expectedRelease: releaseExpected,
@@ -296,7 +314,46 @@ export async function runCertificationReplaySession(host, recording, options = {
     onUpdate({ certifiedBarriers, consumedTicks, targetTick, releaseExpected, result });
   }
 
+  // Events stamped with the final logical tick happened after that pulse in normal
+  // PLAY. Apply them before settling any cycle that the final pulse released.
   applyEventsThrough(recording.finalTick);
+
+  // A recording is allowed to end while its final interpreter cycle is still busy.
+  // Settle and compare that cycle at the same logical tick; never advance a made-up
+  // extra pulse just to obtain a convenient barrier.
+  if (typeof host.settleCurrentCycle === 'function') {
+    const settleResult = await host.settleCurrentCycle();
+    lastResult = settleResult;
+    if (settleResult?.status === 'MATCH') certifiedBarriers += 1;
+    const terminal = terminalReplaySummary(settleResult, certifiedBarriers, consumedTicks);
+    if (terminal) {
+      onUpdate({ certifiedBarriers, consumedTicks, targetTick: recording.finalTick, result: settleResult, finalSettle: true });
+      return terminal;
+    }
+    onUpdate({ certifiedBarriers, consumedTicks, targetTick: recording.finalTick, result: settleResult, finalSettle: true });
+  }
+
+  // Both replay workers can agree with each other yet still have consumed only a
+  // prefix of the recorded RNG stream. That is a reproduction-contract failure,
+  // not an ORIGINAL-vs-EDITED semantic divergence.
+  if (typeof host.getReplayRandomDrawCounts === 'function') {
+    const counts = host.getReplayRandomDrawCounts();
+    const expectedRandomDraws = (recording.random ?? []).length;
+    if ((counts.truth >>> 0) !== expectedRandomDraws || (counts.edited >>> 0) !== expectedRandomDraws) {
+      const miss = {
+        status: 'REPLAY_CONTRACT_MISS',
+        reason: 'random-stream-consumption',
+        tick: host.logicalTick,
+        cycle: host.cycle,
+        expectedRandomDraws,
+        truthRandomDraws: counts.truth >>> 0,
+        editedRandomDraws: counts.edited >>> 0,
+      };
+      onUpdate({ certifiedBarriers, consumedTicks, targetTick: recording.finalTick, result: miss, finalSettle: true });
+      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+    }
+  }
+
   return {
     status: 'REPLAY_MATCH',
     certifiedBarriers,
