@@ -18,6 +18,7 @@ node scripts/test_certification_host.mjs
 node scripts/test_certification_panel.mjs
 node scripts/test_certification_edit_config.mjs
 node scripts/test_certification_recording.mjs
+node scripts/test_certification_recording_hash.mjs
 node scripts/test_certification_replay_host.mjs
 node scripts/test_phase1d_recording_boundary.mjs
 
