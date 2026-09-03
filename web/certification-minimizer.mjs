@@ -1,5 +1,7 @@
 import { hashPlayRecordingV1 } from './certification-recording.mjs';
 
+const RECORDING_SCHEMA = 'kq1agi-play-recording-v1';
+
 function asInt(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? (n | 0) : fallback;
@@ -13,21 +15,56 @@ function stableValue(value) {
   return out;
 }
 
+function optionalBoolean(object, key) {
+  return object && key in object ? !!object[key] : null;
+}
+
+function optionalValue(object, key) {
+  return object && key in object ? stableValue(object[key]) : null;
+}
+
 /**
  * Phase -1E deliberately preserves the exact first semantic mismatch rather than
- * accepting any later/nearby divergence as a successful reduction.
+ * accepting any later/nearby divergence as a successful reduction. Cycle number is
+ * intentionally excluded: the semantic authority is the logical tick plus the
+ * reason-specific mismatch identity, not worker completion timing.
  */
 export function divergenceFingerprint(result) {
   if (!result || result.status !== 'DIVERGED') return null;
-  return JSON.stringify(stableValue({
+  const reason = String(result.reason ?? 'unknown');
+  const identity = {
     status: 'DIVERGED',
     tick: asInt(result.tick, -1),
-    reason: String(result.reason ?? 'unknown'),
-    index: Number.isFinite(Number(result.index)) ? asInt(result.index) : null,
-    truth: 'truth' in result ? result.truth : null,
-    edited: 'edited' in result ? result.edited : null,
-    detailType: result.detail?.type ?? null,
-  }));
+    reason,
+  };
+
+  if (reason === 'trace' || reason === 'semantic-digest' || reason === 'random-stream') {
+    identity.index = Number.isFinite(Number(result.index)) ? asInt(result.index) : null;
+    identity.truth = optionalValue(result, 'truth');
+    identity.edited = optionalValue(result, 'edited');
+  } else if (reason === 'external-event') {
+    // Sound mismatches, unpaired sound queues, and worker failures all carry their
+    // semantic identity in detail. Matching only detail.type would allow a different
+    // sound/hash/flag or worker failure to be mistaken for the original divergence.
+    identity.detail = stableValue(result.detail ?? null);
+  } else if (reason === 'quit-state') {
+    identity.truthQuit = optionalBoolean(result, 'truthQuit');
+    identity.editedQuit = optionalBoolean(result, 'editedQuit');
+    identity.truthQuitMarked = optionalBoolean(result, 'truthQuitMarked');
+    identity.editedQuitMarked = optionalBoolean(result, 'editedQuitMarked');
+  } else if (reason === 'quit-handshake') {
+    identity.truthQuit = optionalBoolean(result, 'truthQuit');
+    identity.editedQuit = optionalBoolean(result, 'editedQuit');
+  } else {
+    // Preserve all commonly-used mismatch payload fields for future categories
+    // without accidentally binding to non-authoritative cycle/snapshot telemetry.
+    identity.index = Number.isFinite(Number(result.index)) ? asInt(result.index) : null;
+    identity.truth = optionalValue(result, 'truth');
+    identity.edited = optionalValue(result, 'edited');
+    identity.detail = stableValue(result.detail ?? null);
+  }
+
+  return JSON.stringify(stableValue(identity));
 }
 
 export function sameDivergence(result, target) {
@@ -35,15 +72,31 @@ export function sameDivergence(result, target) {
   return !!targetFingerprint && divergenceFingerprint(result) === targetFingerprint;
 }
 
-/**
- * Build a replay-valid prefix without inventing a checkpoint. All identity fields
- * remain bound to the same game/EditConfig, while schedule, transport, and RNG data
- * after finalTick are removed and the recording hash is recomputed.
- */
-export async function buildRecordingPrefixV1(recording, finalTick) {
-  if (!recording || recording.schema !== 'kq1agi-play-recording-v1') {
-    throw new Error('Phase -1E requires a kq1agi-play-recording-v1 recording.');
+async function validateSourceRecordingV1(recording) {
+  if (!recording || recording.schema !== RECORDING_SCHEMA) {
+    throw new Error(`Phase -1E requires a ${RECORDING_SCHEMA} recording.`);
   }
+  if (!recording.completeFromStart || asInt(recording.startTick) !== 1) {
+    throw new Error('Phase -1E requires a complete recording starting at logical tick 1.');
+  }
+  if (recording.overflowed) {
+    throw new Error('Phase -1E refuses to minimize an overflowed PLAY recording.');
+  }
+  if (asInt(recording.finalTick) < 1) {
+    throw new Error('Phase -1E requires a recording with at least one logical tick.');
+  }
+  const expectedHash = String(recording.hash ?? '');
+  if (!expectedHash) {
+    throw new Error('Phase -1E requires the frozen Phase -1D recording hash.');
+  }
+  const actualHash = await hashPlayRecordingV1(recording);
+  if (actualHash !== expectedHash) {
+    throw new Error(`Phase -1E source recording hash mismatch: expected ${expectedHash}, got ${actualHash}.`);
+  }
+  return actualHash;
+}
+
+async function buildRecordingPrefixUnchecked(recording, finalTick) {
   const tick = asInt(finalTick);
   if (tick < 1 || tick > asInt(recording.finalTick)) {
     throw new RangeError(`Prefix finalTick must be between 1 and ${recording.finalTick}.`);
@@ -51,13 +104,13 @@ export async function buildRecordingPrefixV1(recording, finalTick) {
 
   const prefix = {
     schema: recording.schema,
-    completeFromStart: !!recording.completeFromStart,
-    startTick: asInt(recording.startTick),
+    completeFromStart: true,
+    startTick: 1,
     finalTick: tick,
     gameHash: String(recording.gameHash ?? ''),
     gameBytes: Math.max(0, asInt(recording.gameBytes)),
     editConfigHash: String(recording.editConfigHash ?? ''),
-    overflowed: !!recording.overflowed,
+    overflowed: false,
     releaseTicks: [...(recording.releaseTicks ?? [])]
       .map(value => asInt(value))
       .filter(value => value <= tick),
@@ -70,6 +123,16 @@ export async function buildRecordingPrefixV1(recording, finalTick) {
   };
   const hash = await hashPlayRecordingV1(prefix);
   return Object.freeze({ ...prefix, hash });
+}
+
+/**
+ * Build a replay-valid prefix without inventing a checkpoint. The frozen Phase -1D
+ * source hash is verified before any candidate is derived, so minimization cannot
+ * silently launder a mutated/stale recording into a new hash-valid prefix.
+ */
+export async function buildRecordingPrefixV1(recording, finalTick) {
+  await validateSourceRecordingV1(recording);
+  return buildRecordingPrefixUnchecked(recording, finalTick);
 }
 
 export function focusRecordingAroundTick(recording, tick, radius = 60) {
@@ -103,10 +166,12 @@ function divergenceFromSummary(summary) {
  */
 export async function minimizeDivergentPrefix(recording, targetResult, replayCandidate, options = {}) {
   if (typeof replayCandidate !== 'function') throw new TypeError('replayCandidate must be a function.');
+  await validateSourceRecordingV1(recording);
+
   const targetFingerprint = divergenceFingerprint(targetResult);
   if (!targetFingerprint) throw new Error('Phase -1E minimization requires a DIVERGED target result.');
   const targetTick = asInt(targetResult.tick);
-  const originalFinalTick = asInt(recording?.finalTick);
+  const originalFinalTick = asInt(recording.finalTick);
   if (targetTick < 1 || targetTick > originalFinalTick) {
     throw new Error('Target divergence tick is outside the recording.');
   }
@@ -120,7 +185,9 @@ export async function minimizeDivergentPrefix(recording, targetResult, replayCan
   });
   const tryTick = async finalTick => {
     if (shouldStop()) return { stopped: true };
-    const candidate = await buildRecordingPrefixV1(recording, finalTick);
+    // The immutable source was verified once at minimization start. Candidate hashes
+    // remain freshly computed by the same Phase -1D canonical hash function.
+    const candidate = await buildRecordingPrefixUnchecked(recording, finalTick);
     const summary = await replayCandidate(candidate);
     const divergence = divergenceFromSummary(summary);
     const reproduced = sameDivergence(divergence, targetFingerprint);
