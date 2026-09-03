@@ -19,7 +19,7 @@ PLAY recording v1 contains:
 - actual bounded AGI random results as `(bound, value)` pairs in draw order; and
 - actual sound end-flag completion events at the logical tick observed by normal PLAY.
 
-Each transport event also retains whether normal PLAY observed the worker as **idle** or **busy** when the write occurred. Replay honors that phase: idle writes are not moved into a busy cycle, and busy writes are not silently moved to an idle boundary. The authoritative replay clock is still the logical 60 Hz tick; Phase -1D does not claim an exact Java instruction position for a browser write that happened part-way through a busy interpreter cycle.
+Each transport event also retains whether normal PLAY observed the worker as **idle** or **busy** when the write occurred. That phase is provenance, not a wall-clock deadline. Idle writes are replayed only after the corresponding cycle has settled at that same logical tick. Busy writes are injected at a deterministic logical-tick boundary before the replay workers get their next event-loop turn, but replay does not require a worker to still be busy on the current CPU. The authoritative replay clock is the logical 60 Hz tick; Phase -1D does not claim an exact Java instruction position for a browser write that happened part-way through a busy interpreter cycle.
 
 The journal is kept only in browser memory. It is not written to OPFS, localStorage, CI, the repository, or a network endpoint. A safety cap prevents an unbounded browser-memory journal; if that cap is reached, replay is refused rather than silently truncating the recording.
 
@@ -42,14 +42,16 @@ The certification replay host is a Phase -1D subclass of the frozen Phase -1B ho
 
 For each recorded logical tick, replay:
 
-1. applies recorded idle/busy transport values at their recorded logical tick and transport phase;
+1. applies recorded transport at its logical tick, settling idle-phase writes at that tick and injecting busy-phase writes at the deterministic tick boundary;
 2. applies the frozen EditConfig only to EDITED, and only while both certification lanes are idle;
 3. advances the shared AGI clock at a paced logical 60 Hz;
 4. releases a new interpreter cycle only when normal PLAY recorded a release at that tick;
 5. feeds both certification workers the exact recorded bounded RNG stream; and
 6. injects recorded sound completion flags rather than deriving completion timing from WAV duration.
 
-Busy-phase transport is injected synchronously after the replay clock/release writes and before either certification worker receives its next event-loop turn. An idle-phase transport write stamped at logical tick `T` proves normal PLAY became idle before tick `T+1`; replay therefore gives that idle boundary at most one 60 Hz interval to occur. If it cannot reproduce the phase in that window, it reports a timing miss instead of pausing logical time for seconds until the worker catches up.
+Busy-phase transport is injected synchronously after the replay clock/release writes and before either certification worker receives its next event-loop turn. Phase -1D does **not** fail merely because a faster replay worker has already completed by that boundary; the recorded busy flag cannot identify an exact Java instruction position.
+
+A recorded release at logical tick `T` is authoritative: before advancing from `T-1` to `T`, replay holds logical time at `T-1` until both lanes finish the preceding cycle and that shared barrier is compared. Likewise, an idle-phase transport event stamped at `T` holds logical time at `T` until the in-flight cycle settles, then applies the event. Wall-clock playback may therefore be slower than 60 Hz while the simulated AGI clock remains exactly on the recorded tick schedule. Faster or slower worker execution by itself is not `REPLAY_TIMING_MISS`.
 
 ORIGINAL receives the same recorded gameplay transport but never receives EditConfig. EDITED receives the same gameplay transport plus the frozen EditConfig.
 
@@ -67,11 +69,11 @@ After that final barrier, Phase -1D also verifies that ORIGINAL and EDITED both 
 
 ## Replay timing and contract misses
 
-Worker scheduling is not silently converted into a gameplay mismatch. If the certification workers cannot reproduce a recorded cycle-release decision, a recorded idle/busy transport phase, or a required in-flight completion at its allowed logical boundary, Phase -1D reports:
+Worker scheduling is not silently converted into a gameplay mismatch. A normal cycle taking longer than one browser frame is allowed: replay waits at the recorded logical boundary without advancing simulated time. If a worker does not settle within the certification safety timeout, or the host cannot perform a release after the preceding recorded barrier has been settled, Phase -1D reports:
 
 `REPLAY_TIMING_MISS`
 
-This means the recorded browser execution schedule was not reproduced closely enough to make the next semantic comparison authoritative. It is **not** reported as an ORIGINAL-vs-EDITED divergence.
+This means replay could not reach a required recorded logical boundary safely. It is **not** a penalty for ordinary CPU-speed variation and is **not** reported as an ORIGINAL-vs-EDITED divergence.
 
 If the frozen recording itself cannot be honored — for example, its transport phase ordering is impossible, the replay host does not provide a required phase hook, or both lanes do not consume the complete recorded RNG stream — Phase -1D reports:
 
@@ -114,11 +116,11 @@ For a clean reproduction, finish editing first, start/reload the intended local 
 - The journal records the exact local game directory used by normal PLAY, and REPLAY PLAY refuses a different selected directory.
 - The frozen recording binds `GAMEFILES.DAT`, EditConfig v1, and the canonical recording hash.
 - Exact encoded AGI key queue values are replayed; DOM keyboard mapping is not reimplemented by certification.
-- Recorded transport writes are replayed at their captured logical tick and idle/busy phase; impossible or unreproducible phase timing is not silently normalized.
+- Recorded transport writes are replayed at their captured logical tick; idle writes require a settled same-tick boundary, while busy provenance is injected at a deterministic tick boundary without requiring the replay worker to remain busy in wall-clock time.
 - All five pinned bounded AGI runtime RNG call sites are wrapped and build-time verified; exact captured values are supplied to both certification lanes with bound validation.
 - Recorded sound completion flags are replayed at recorded logical ticks.
-- Recorded interpreter cycle-release decisions are followed at paced logical 60 Hz.
-- A recorded idle-phase event must reproduce its idle boundary within one logical 60 Hz interval rather than freezing the replay clock until an arbitrary barrier timeout.
+- Recorded interpreter cycle-release decisions are the authoritative logical schedule; before release tick `T`, the preceding cycle is settled and compared at `T-1` without advancing logical time.
+- A recorded idle-phase event may wait in wall-clock time while logical time stays fixed at that recorded tick; ordinary worker-speed variation does not create a timing miss.
 - The final released interpreter cycle is settled and compared without advancing past the recording's final logical tick.
 - Both replay lanes must consume exactly the complete recorded RNG stream before `REPLAY MATCH`.
 - A reproduction schedule failure is `REPLAY_TIMING_MISS`, not `DIVERGED`.
