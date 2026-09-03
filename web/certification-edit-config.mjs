@@ -7,6 +7,7 @@ const MASK_HEX_LENGTH = HEIGHT * (WIDTH / 4); // 6720
 
 const SLOT = Object.freeze({
   CURROOM: 0,
+  IN_TICK: 517,
   ENABLED: 519,
   ROOM: 520,
   OCCLUDER_ACTIVE: 521,
@@ -299,12 +300,18 @@ export function createEditConfigApplicator(config) {
   let appliedRoom = null;
   return host => {
     const vars = host?.edited?.vars;
+    const truthVars = host?.truth?.vars;
     if (!vars || !config || config.schema !== SCHEMA) return { applied: false, room: null };
+    const room = readWord(vars, SLOT.CURROOM) & 0xff;
+    // Never mutate the edited lane's shared editor state while either interpreter
+    // is inside a cycle. Room/config changes are staged only at a common idle barrier.
+    if (readWord(vars, SLOT.IN_TICK) !== 0 || (truthVars && readWord(truthVars, SLOT.IN_TICK) !== 0)) {
+      return { applied: false, room, deferred: true };
+    }
     if (!visualPinsApplied) {
       applyEditConfigVisualPins(config, vars);
       visualPinsApplied = true;
     }
-    const room = readWord(vars, SLOT.CURROOM) & 0xff;
     if (room !== appliedRoom) {
       const hasConfig = applyEditConfigRoom(config, vars, room);
       appliedRoom = room;
