@@ -87,18 +87,20 @@ class FakeHost {
   }
 }
 
+const fast = { pulseIntervalMs: 0 };
+
 let summary = await runCertificationSession(new FakeHost([
   { status: 'BUSY', tick: 1 },
   { status: 'MATCH', tick: 2 },
   { status: 'MATCH', tick: 3 },
-]), { targetBarriers: 2, maxBusyPulses: 5 });
+]), { ...fast, targetBarriers: 2, maxBusyPulses: 5 });
 assert.equal(summary.status, 'MATCH_LIMIT');
 assert.equal(summary.barriers, 2);
 
 summary = await runCertificationSession(new FakeHost([
   { status: 'MATCH', tick: 1 },
   { status: 'DIVERGED', tick: 2, reason: 'semantic-digest', index: 1, truth: 3, edited: 4 },
-]), { targetBarriers: 5 });
+]), { ...fast, targetBarriers: 5 });
 assert.equal(summary.status, 'DIVERGED');
 assert.equal(summary.firstDivergence.tick, 2);
 
@@ -106,16 +108,17 @@ summary = await runCertificationSession(new FakeHost([
   { status: 'BUSY', tick: 1 },
   { status: 'BUSY', tick: 2 },
   { status: 'BUSY', tick: 3 },
-]), { targetBarriers: 5, maxBusyPulses: 3 });
+]), { ...fast, targetBarriers: 5, maxBusyPulses: 3 });
 assert.equal(summary.status, 'WAITING');
 assert.equal(summary.busyPulses, 3);
 
 summary = await runCertificationSession(new FakeHost([
   { status: 'COMPLETE', tick: 9, scope: 'semantic-v1' },
-]), { targetBarriers: 5 });
+]), { ...fast, targetBarriers: 5 });
 assert.equal(summary.status, 'COMPLETE');
 
 summary = await runCertificationSession(new FakeHost([]), {
+  ...fast,
   shouldStop: () => true,
 });
 assert.equal(summary.status, 'STOPPED');
