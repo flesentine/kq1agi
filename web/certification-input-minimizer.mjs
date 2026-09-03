@@ -84,16 +84,19 @@ function keyboardGroups(events) {
     if (group) groups.push(group);
   }
 
-  // Unpaired downs, stray releases, and queue-only events are still removable, but
-  // only as their original synchronous-looking batch. This avoids inventing a broad
-  // dependency interval when the matching release lies beyond the frozen prefix.
+  // Queue-only events outside matched gestures are still removable as their original
+  // synchronous-looking batch. Unmatched state fragments remain locked because the
+  // frozen prefix does not contain enough information to prove a safe pair.
   let batch = [];
   const flush = () => {
     if (!batch.length) return;
-    const kind = batch.some(event => event.type === 'key-state')
-      ? 'keyboard-fragment' : 'keyboard-queue';
-    const group = makeGroup(kind, batch);
-    if (group) groups.push(group);
+    // An unmatched key-state fragment has no dependency-safe closing boundary in
+    // this frozen prefix. Keep that fragment locked rather than pretending we can
+    // remove only one side of an incomplete physical key gesture.
+    if (!batch.some(event => event.type === 'key-state')) {
+      const group = makeGroup('keyboard-queue', batch);
+      if (group) groups.push(group);
+    }
     batch = [];
   };
   for (const event of keyboard) {
