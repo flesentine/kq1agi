@@ -34,6 +34,7 @@ cp -a "$PRODUCTION_TREE" "$EDITED_TREE"
 # after the edited certification source has been frozen so the Phase -1B worker
 # instrumentation sees its original, stable source anchors in both cert lanes.
 python3 scripts/instrument_phase1d_play_recording.py "$PRODUCTION_TREE"
+python3 scripts/fix_phase1d_random_coverage.py "$PRODUCTION_TREE"
 git -C "$PRODUCTION_TREE" diff --check
 
 for dir in "$TRUTH_TREE" "$EDITED_TREE"; do
@@ -42,6 +43,7 @@ for dir in "$TRUTH_TREE" "$EDITED_TREE"; do
   python3 scripts/fix_certification_gwt_compat.py "$dir"
   python3 scripts/fix_certification_snapshot_barrier.py "$dir"
   python3 scripts/instrument_phase1d_certification_replay.py "$dir"
+  python3 scripts/fix_phase1d_random_coverage.py "$dir"
   python3 scripts/fix_certification_browser_worker_path.py "$dir"
   git -C "$dir" diff --check
   chmod +x "$dir/gradlew"
@@ -86,7 +88,7 @@ cp docs/TRUTH_ENGINE_PHASE_1D.md "$OUT/README.md"
 printf '%s\n' \
   'Phase -1D browser bundle. No AGI game resources are included.' \
   'EditConfig v1 freezes browser editor state and applies it only to the edited lane.' \
-  'PLAY recording v1 stays in browser memory and binds the local GAMEFILES.DAT hash, EditConfig hash, input transport, random stream, sound completion timing, and 60 Hz cycle-release schedule.' \
+  'PLAY recording v1 stays in browser memory and binds the local GAMEFILES.DAT hash, EditConfig hash, input transport, complete bounded RNG stream, sound completion timing, and 60 Hz cycle-release schedule.' \
   > "$OUT/ARTIFACT.txt"
 
 find "$OUT" -maxdepth 2 -type f | sort
