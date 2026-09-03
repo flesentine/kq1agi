@@ -28,6 +28,14 @@ function humanBytes(bytes) {
   return `${(size / (1024 * 1024)).toFixed(2)} MiB`;
 }
 
+function monotonicNow() {
+  return globalThis.performance?.now?.() ?? Date.now();
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function getGameFilesDirectory(storageRoot) {
   try {
     return await storageRoot.getDirectoryHandle('Game Files', { create: false });
@@ -112,14 +120,30 @@ export function formatCertificationResult(result) {
 export async function runCertificationSession(host, options = {}) {
   const targetBarriers = Math.max(1, Number(options.targetBarriers ?? 60) | 0);
   const maxBusyPulses = Math.max(1, Number(options.maxBusyPulses ?? 900) | 0);
+  const pulseIntervalMs = Math.max(0, Number(options.pulseIntervalMs ?? (1000 / 60)) || 0);
   const shouldStop = options.shouldStop ?? (() => false);
   const onUpdate = options.onUpdate ?? (() => {});
   let barriers = 0;
   let busyPulses = 0;
   let pulses = 0;
   let lastResult = null;
+  let nextPulseAt = monotonicNow();
 
   while (!shouldStop()) {
+    // CertificationHost.pulse() represents exactly one logical 1/60-second pulse.
+    // Do not spin pulses as fast as the browser can schedule them: doing so turns
+    // worker CPU scheduling into simulated game time. A missed deadline is not
+    // "caught up" with a burst of immediate pulses; the next pulse is re-anchored.
+    if (pulses > 0 && pulseIntervalMs > 0) {
+      nextPulseAt += pulseIntervalMs;
+      const delayMs = nextPulseAt - monotonicNow();
+      if (delayMs > 0) {
+        await sleep(delayMs);
+      } else {
+        nextPulseAt = monotonicNow();
+      }
+    }
+
     const result = await host.pulse();
     lastResult = result;
     pulses += 1;
@@ -268,6 +292,7 @@ function installCertificationPanel() {
       const summary = await runCertificationSession(host, {
         targetBarriers,
         maxBusyPulses: 900,
+        pulseIntervalMs: 1000 / 60,
         shouldStop: () => stopRequested,
         onUpdate: update => {
           progress.textContent = `${update.barriers}/${targetBarriers} certified barriers · tick ${update.result?.tick ?? host.logicalTick}`;
