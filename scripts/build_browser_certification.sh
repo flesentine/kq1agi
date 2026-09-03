@@ -31,9 +31,11 @@ test "$(git -C "$TRUTH_TREE" rev-parse HEAD)" = "$PINNED_AGILE_SHA"
 # installs its own bounded-RNG replay hook in both lanes after Phase -1B setup.
 cp -a "$PRODUCTION_TREE" "$EDITED_TREE"
 
-# The normal Pages app does need the page-start PLAY observer. Instrument it only
-# after the edited certification source has been frozen so the Phase -1B worker
-# instrumentation sees its original, stable source anchors in both cert lanes.
+# The normal Pages app needs the PLAY observer. Instrument it only after the edited
+# certification source has been frozen so the Phase -1B worker instrumentation sees
+# its original, stable source anchors in both cert lanes. The journal bootstrap exists
+# at page load, but each PLAY start resets and binds a fresh one-game journal before
+# that game's first worker tick.
 python3 scripts/instrument_phase1d_play_recording.py "$PRODUCTION_TREE"
 python3 scripts/fix_phase1d_random_coverage.py "$PRODUCTION_TREE"
 python3 scripts/instrument_phase1d_recording_boundary.py "$PRODUCTION_TREE"
@@ -41,6 +43,8 @@ git -C "$PRODUCTION_TREE" diff --check
 
 grep -q 'RecordingCycleComplete' "$PRODUCTION_TREE/html/src/main/java/com/agifans/agile/worker/AgileWebWorker.java"
 grep -q 'RecordingCycleComplete' "$PRODUCTION_TREE/html/src/main/java/com/agifans/agile/gwt/GwtAgileRunner.java"
+grep -q 'recordPlayGameDirectory(appConfigItem.getFilePath())' "$PRODUCTION_TREE/html/src/main/java/com/agifans/agile/gwt/GwtAgileRunner.java"
+grep -q '__kq1agiPlayGameDirectory' "$PRODUCTION_TREE/html/src/main/java/com/agifans/agile/gwt/GwtAgileRunner.java"
 
 for dir in "$TRUTH_TREE" "$EDITED_TREE"; do
   python3 scripts/instrument_truth_worker.py "$dir"
@@ -93,7 +97,7 @@ cp docs/TRUTH_ENGINE_PHASE_1D.md "$OUT/README.md"
 printf '%s\n' \
   'Phase -1D browser bundle. No AGI game resources are included.' \
   'EditConfig v1 freezes browser editor state and applies it only to the edited lane.' \
-  'PLAY recording v1 stays in browser memory and binds the local GAMEFILES.DAT hash, EditConfig hash, input transport, complete bounded RNG stream, sound completion timing, complete-worker freeze boundary, and 60 Hz cycle-release schedule.' \
+  'PLAY recording v1 stays in browser memory and binds one local game directory, the local GAMEFILES.DAT hash, EditConfig hash, logical tick plus idle/busy input transport phase, complete bounded RNG stream, sound completion timing, complete-worker freeze boundary, and 60 Hz cycle-release schedule.' \
   > "$OUT/ARTIFACT.txt"
 
 find "$OUT" -maxdepth 2 -type f | sort
