@@ -94,10 +94,9 @@ export class ReplayCertificationHost extends CertificationHost {
 
   /**
    * Put the two certification lanes at the transport phase recorded by normal PLAY
-   * before a transport write is replayed. Idle events may wait for the current
-   * cycle and certify its barrier. Busy events are accepted only while BOTH lanes
-   * are still inside the aligned cycle; otherwise the recording cannot be replayed
-   * without making worker scheduling part of the semantic result.
+   * before an idle-phase transport write is replayed. Busy-phase writes use the
+   * synchronous afterClockAdvance hook in pulse(), before either worker gets an
+   * event-loop turn after that logical pulse.
    */
   async prepareTransportPhase(phase) {
     if (!this.started || !this.truth.ready || !this.edited.ready) {
@@ -185,11 +184,15 @@ export class ReplayCertificationHost extends CertificationHost {
 
   /**
    * Consume one recorded logical pulse. allowCycleRelease is the release decision
-   * observed in normal PLAY for this exact total-tick value.
+   * observed in normal PLAY for this exact total-tick value. afterClockAdvance is
+   * a synchronous Phase -1D injection point: it runs after the clock/release writes
+   * but before yielding to either worker, so busy-phase transport reaches both
+   * aligned lanes at the same deterministic boundary.
    */
   async pulse(options = {}) {
     if (!this.started || !this.truth.ready || !this.edited.ready) throw new Error('ReplayCertificationHost is not ready.');
     const allowCycleRelease = options.allowCycleRelease !== false;
+    const afterClockAdvance = typeof options.afterClockAdvance === 'function' ? options.afterClockAdvance : null;
     const quitBefore = await this._resolveQuitIfObserved();
     if (quitBefore) return quitBefore;
     const bothIdleBefore = isIdle(this.truth) && isIdle(this.edited);
@@ -217,6 +220,19 @@ export class ReplayCertificationHost extends CertificationHost {
       Atomics.store(this.edited.vars, VAR.IN_TICK, 1);
       this.cycle += 1;
       releasedCycle = true;
+    }
+
+    if (afterClockAdvance) {
+      const injected = afterClockAdvance({
+        tick: this.logicalTick,
+        cycle: this.cycle,
+        truthIdle: isIdle(this.truth),
+        editedIdle: isIdle(this.edited),
+        releasedCycle,
+      });
+      if (injected?.status) {
+        return { ...injected, releaseRequested: allowCycleRelease, releasedCycle };
+      }
     }
 
     await waitTurn();
