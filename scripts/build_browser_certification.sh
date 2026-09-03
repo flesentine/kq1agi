@@ -16,6 +16,7 @@ rm -rf "$TRUTH_TREE" "$EDITED_TREE" "$OUT"
 
 node scripts/test_certification_host.mjs
 node scripts/test_certification_panel.mjs
+node scripts/test_certification_edit_config.mjs
 
 git clone --quiet https://github.com/lanceewing/agile-gdx.git "$TRUTH_TREE"
 git -C "$TRUTH_TREE" checkout --quiet "$PINNED_AGILE_SHA"
@@ -64,10 +65,12 @@ cp -R "$EDITED_TREE/html/build/dist/worker/." "$OUT/edited-worker/"
 cp "$TRUTH_TREE/html/build/dist/opfs-saved-games.js" "$OUT/opfs-saved-games.js"
 cp web/certification-host.mjs "$OUT/certification-host.mjs"
 cp web/certification-panel.mjs "$OUT/certification-panel.mjs"
+cp web/certification-edit-config.mjs "$OUT/certification-edit-config.mjs"
 cp docs/TRUTH_ENGINE_PHASE_1C.md "$OUT/README.md"
 
 printf '%s\n' \
   'Phase -1C browser bundle. No AGI game resources are included.' \
+  'EditConfig v1 freezes persisted editor state plus the live current-room snapshot and applies it only to the edited lane.' \
   'The user-selected GAMEFILES.DAT is read later from same-origin OPFS in the browser.' \
   > "$OUT/ARTIFACT.txt"
 
