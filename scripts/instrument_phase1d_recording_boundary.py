@@ -62,6 +62,36 @@ if 'private native void recordCycleComplete' not in t:
         $wnd.__kq1agiPlayLastCompletedTick = tick | 0;
     }-*/;
 ''', 'runner cycle-complete recorder')
+
+# AppConfigItem.filePath is the exact directory name passed to OPFSGameFiles for
+# imported games. Capture it at PLAY start so REPLAY PLAY cannot accidentally bind
+# one game's journal to a different GAMEFILES.DAT selected in the CERTIFY panel.
+if 'recordPlayGameDirectory(appConfigItem.getFilePath());' not in t:
+    t = one(t,
+'''    @Override
+    public void start(AppConfigItem appConfigItem) {
+        String newURL = "";
+''',
+'''    @Override
+    public void start(AppConfigItem appConfigItem) {
+        recordPlayGameDirectory(appConfigItem.getFilePath());
+        String newURL = "";
+''', 'runner PLAY game identity')
+
+if 'private native void recordPlayGameDirectory' not in t:
+    t = one(t,
+'''    private native void recordCycleComplete(int tick) /*-{
+        $wnd.__kq1agiPlayLastCompletedTick = tick | 0;
+    }-*/;
+''',
+'''    private native void recordCycleComplete(int tick) /*-{
+        $wnd.__kq1agiPlayLastCompletedTick = tick | 0;
+    }-*/;
+
+    private native void recordPlayGameDirectory(String gameDirectory) /*-{
+        $wnd.__kq1agiPlayGameDirectory = gameDirectory || '';
+    }-*/;
+''', 'runner PLAY game identity helper')
 runner.write_text(t)
 
 
@@ -96,4 +126,4 @@ if 'private native JavaScriptObject createRecordingCycleComplete' not in t:
 ''', 'worker cycle-complete object helper')
 worker.write_text(t)
 
-print('Phase -1D normal PLAY completion boundary marker installed')
+print('Phase -1D PLAY completion boundary and local-game identity installed')
