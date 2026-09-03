@@ -69,16 +69,11 @@ if 'private native void recordCycleComplete' not in t:
 # Reset the in-memory journal at the same point so switching games in one page
 # cannot merge two independent PLAY sessions into one apparently valid recording.
 if 'recordPlayGameDirectory(appConfigItem.getFilePath());' not in t:
+    start_signature = '    public void start(AppConfigItem appConfigItem) {\n'
     t = one(t,
-'''    @Override
-    public void start(AppConfigItem appConfigItem) {
-        String newURL = "";
-''',
-'''    @Override
-    public void start(AppConfigItem appConfigItem) {
-        recordPlayGameDirectory(appConfigItem.getFilePath());
-        String newURL = "";
-''', 'runner PLAY game identity')
+            start_signature,
+            start_signature + '        recordPlayGameDirectory(appConfigItem.getFilePath());\n',
+            'runner PLAY game identity')
 
 if 'private native void recordPlayGameDirectory' not in t:
     t = one(t,
