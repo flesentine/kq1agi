@@ -101,6 +101,10 @@ cp docs/TRUTH_ENGINE_PHASE_1D.md "$OUT/README.md"
 cp docs/TRUTH_ENGINE_PHASE_1E.md "$OUT/PHASE_1E.md"
 cp docs/TRUTH_ENGINE_PHASE_1F.md "$OUT/PHASE_1F.md"
 
+test -f "$OUT/certification-input-minimizer.mjs"
+grep -q 'certify-reduce-inputs-button' "$OUT/certification-phase1d.mjs"
+grep -q 'minimizeInputGroupsV1' "$OUT/certification-phase1d.mjs"
+
 printf '%s\n' \
   'Phase -1D browser bundle with Phase -1E minimizer. No AGI game resources are included.' \
   'EditConfig v1 freezes browser editor state and applies it only to the edited lane.' \
