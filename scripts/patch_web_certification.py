@@ -76,6 +76,7 @@ recording_bootstrap = r'''<script id="phase1d-recording-bootstrap">
   window.__kq1agiPlayRecordingRaw = [];
   window.__kq1agiPlayRecordingSeq = 0;
   window.__kq1agiPlayRecordingOverflow = false;
+  window.__kq1agiPlayLastCompletedTick = 0;
   window.__kq1agiRecordTransportEvent = function (event) {
     if (!event || typeof event !== 'object') return;
     const journal = window.__kq1agiPlayRecordingRaw;
@@ -138,6 +139,7 @@ for marker in [
     'top: 198px; left: 14px',
     'id="phase1d-recording-bootstrap"',
     '__kq1agiRecordTransportEvent',
+    '__kq1agiPlayLastCompletedTick',
     'id="certify-button"',
     'id="certify-panel"',
     'id="certify-replay-button"',
