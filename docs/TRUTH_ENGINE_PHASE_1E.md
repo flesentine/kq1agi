@@ -25,6 +25,8 @@ Phase -1E derives candidates only from an intact frozen Phase -1D recording. Bef
 
 A stale or mutated source recording is rejected before any candidate replay. Phase -1E must never "repair" an altered source merely by recomputing a fresh candidate hash, because that would weaken the Phase -1D recording-integrity contract.
 
+The replay-authoritative source fields are synchronously snapshotted before the asynchronous hash check. All later candidates are derived from that private snapshot, not from the caller's nested arrays. This prevents a mutation during or between candidate runs from changing the minimization source after it has been authenticated.
+
 Before browser minimization begins, the selected local `GAMEFILES.DAT` is re-hashed and byte-count checked against the divergent recording. The actual frozen EditConfig object is also re-hashed and must match both its declared hash and the recording's `editConfigHash`. This matters because the EditConfig envelope is top-level frozen but contains nested arrays/objects; a later in-memory mutation must not be replayed under the old identity.
 
 ## Exact divergence target
@@ -89,6 +91,7 @@ Phase -1E also does not claim framebuffer identity, JVM object-graph identity, o
 
 - The source Phase -1D recording hash is verified before any candidate is derived.
 - A mutated, stale, incomplete, or overflowed source is rejected rather than rehashed into a new authoritative candidate.
+- Candidate derivation uses a private pre-hash snapshot so later nested source mutations cannot influence the search.
 - Prefix candidates always start at logical tick 1.
 - Game and EditConfig identity are preserved exactly.
 - The selected local `GAMEFILES.DAT` and the actual frozen EditConfig object are re-verified before minimization starts.
