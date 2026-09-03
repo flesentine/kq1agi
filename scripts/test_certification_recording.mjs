@@ -57,14 +57,29 @@ class FakeHost {
     this.queue = [];
     this.mouse = [];
     this.soundEnds = [];
+    this.phasePreparations = [];
   }
   setKey(code, pressed) { this.keys.push([this.logicalTick, code, pressed]); }
   enqueueKey(value) { this.queue.push([this.logicalTick, value]); }
   setMouse(x, y, button) { this.mouse.push([this.logicalTick, x, y, button]); }
   injectSoundCompletion(flag) { this.soundEnds.push([this.logicalTick, flag]); }
-  async pulse({ allowCycleRelease }) {
+  async prepareTransportPhase(phase) {
+    this.phasePreparations.push([this.logicalTick, phase]);
+    return { status: 'IDLE', tick: this.logicalTick, cycle: this.cycle, truthIdle: true, editedIdle: true };
+  }
+  async pulse({ allowCycleRelease, afterClockAdvance } = {}) {
     this.logicalTick += 1;
     if (allowCycleRelease) this.cycle += 1;
+    if (afterClockAdvance) {
+      const injected = afterClockAdvance({
+        tick: this.logicalTick,
+        cycle: this.cycle,
+        truthIdle: false,
+        editedIdle: false,
+        releasedCycle: !!allowCycleRelease,
+      });
+      if (injected?.status) return injected;
+    }
     return allowCycleRelease
       ? { status: 'MATCH', tick: this.logicalTick, cycle: this.cycle }
       : { status: 'IDLE', tick: this.logicalTick, cycle: this.cycle };
@@ -79,33 +94,86 @@ assert.deepEqual(host.keys, [[1, 19, true]]);
 assert.deepEqual(host.queue, [[1, 0x80041]]);
 assert.deepEqual(host.mouse, [[1, 10, 20, 0], [1, 11, 21, 1]]);
 assert.deepEqual(host.soundEnds, [[2, 7]]);
+assert.deepEqual(host.phasePreparations, [[2, 'idle']]);
 
 class BarrierOnlyHost extends FakeHost {
   constructor() {
     super();
     this.first = true;
   }
-  async pulse({ allowCycleRelease }) {
+  async pulse(options = {}) {
     if (this.first) {
       this.first = false;
       return { status: 'MATCH', tick: 0, cycle: 0, replayBarrierOnly: true };
     }
-    return super.pulse({ allowCycleRelease });
+    return super.pulse(options);
   }
 }
 const barrierOnly = await runCertificationReplaySession(new BarrierOnlyHost(), frozen, { pulseIntervalMs: 0 });
 assert.equal(barrierOnly.status, 'REPLAY_MATCH');
 assert.equal(barrierOnly.consumedTicks, 3);
 
-class MissHost extends FakeHost {
-  async pulse() {
+// A recorded busy-phase write must not be silently moved to an idle phase.
+class BusyPhaseMissHost extends FakeHost {
+  async pulse({ allowCycleRelease, afterClockAdvance } = {}) {
     this.logicalTick += 1;
+    if (allowCycleRelease) this.cycle += 1;
+    if (afterClockAdvance) {
+      const injected = afterClockAdvance({
+        tick: this.logicalTick,
+        cycle: this.cycle,
+        truthIdle: true,
+        editedIdle: true,
+        releasedCycle: !!allowCycleRelease,
+      });
+      if (injected?.status) return injected;
+    }
+    return { status: 'IDLE', tick: this.logicalTick, cycle: this.cycle, truthIdle: true, editedIdle: true };
+  }
+}
+const phaseMiss = await runCertificationReplaySession(new BusyPhaseMissHost(), frozen, { pulseIntervalMs: 0 });
+assert.equal(phaseMiss.status, 'REPLAY_TIMING_MISS');
+assert.equal(phaseMiss.result.reason, 'transport-phase');
+assert.equal(phaseMiss.result.expectedPhase, 'busy');
+
+// If the recorded release decision cannot be reproduced, that remains a timing
+// failure rather than an ORIGINAL-vs-EDITED semantic divergence.
+class ReleaseMissHost extends FakeHost {
+  async pulse({ afterClockAdvance } = {}) {
+    this.logicalTick += 1;
+    if (afterClockAdvance) {
+      const injected = afterClockAdvance({
+        tick: this.logicalTick,
+        cycle: this.cycle,
+        truthIdle: false,
+        editedIdle: false,
+        releasedCycle: false,
+      });
+      if (injected?.status) return injected;
+    }
     return { status: 'BUSY', tick: this.logicalTick, cycle: this.cycle, truthIdle: false, editedIdle: false };
   }
 }
-const miss = await runCertificationReplaySession(new MissHost(), frozen, { pulseIntervalMs: 0 });
+const miss = await runCertificationReplaySession(new ReleaseMissHost(), frozen, { pulseIntervalMs: 0 });
 assert.equal(miss.status, 'REPLAY_TIMING_MISS');
+assert.equal(miss.result.reason, 'cycle-release');
 assert.equal(miss.result.expectedRelease, true);
+
+// Within one logical tick normal PLAY cannot transition from an idle transport
+// write back to a busy transport write without another pulse. Refuse such a journal.
+const badPhaseRaw = [
+  { type: 'pulse', tick: 1, seq: 1, released: true },
+  { type: 'sound-end', tick: 1, seq: 2, phase: 'idle', endFlag: 7 },
+  { type: 'key-state', tick: 1, seq: 3, phase: 'busy', keyCode: 19, pressed: true },
+];
+const badPhase = await freezePlayRecordingV1({
+  gameBuffer: new Uint8Array([1]).buffer,
+  editConfigHash: 'sha256:edit',
+  rawEvents: badPhaseRaw,
+});
+const badPhaseSummary = await runCertificationReplaySession(new FakeHost(), badPhase, { pulseIntervalMs: 0 });
+assert.equal(badPhaseSummary.status, 'REPLAY_CONTRACT_MISS');
+assert.equal(badPhaseSummary.result.reason, 'transport-phase-order');
 
 // The final recorded pulse may release a cycle that is still busy when that pulse
 // returns. The driver must settle and compare it without inventing tick 4.
@@ -115,9 +183,20 @@ class FinalSettleHost extends FakeHost {
     this.settleResult = settleResult;
     this.settleCalls = 0;
   }
-  async pulse({ allowCycleRelease }) {
+  async pulse(options = {}) {
+    const { allowCycleRelease, afterClockAdvance } = options;
     this.logicalTick += 1;
     if (allowCycleRelease) this.cycle += 1;
+    if (afterClockAdvance) {
+      const injected = afterClockAdvance({
+        tick: this.logicalTick,
+        cycle: this.cycle,
+        truthIdle: false,
+        editedIdle: false,
+        releasedCycle: !!allowCycleRelease,
+      });
+      if (injected?.status) return injected;
+    }
     if (this.logicalTick === 3 && allowCycleRelease) {
       return { status: 'BUSY', tick: 3, cycle: this.cycle, truthIdle: false, editedIdle: false };
     }
