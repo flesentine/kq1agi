@@ -1,6 +1,7 @@
 import { formatCertificationResult, readImportedGame } from './certification-panel.mjs';
 import { captureEditConfigV1, createEditConfigApplicator, EditConfigLayout, hashEditConfigV1 } from './certification-edit-config.mjs';
 import { minimizeDivergentPrefix } from './certification-minimizer.mjs';
+import { groupReplayInputEventsV1, minimizeInputGroupsV1 } from './certification-input-minimizer.mjs';
 import { ReplayCertificationHost } from './certification-replay-host.mjs';
 import {
   encodeRandomReplay,
@@ -34,6 +35,14 @@ function minimizationFocusText(focus) {
     `RNG: ${randomTicks}`,
     `releases: ${releaseTicks}`,
   ].join('\n');
+}
+
+function inputGroupsText(groups, limit = 12) {
+  if (!groups?.length) return 'remaining groups: none';
+  const shown = groups.slice(0, limit).map(group =>
+    `${group.id} ${group.kind} ticks ${group.startTick}–${group.endTick} seq ${group.startSeq}–${group.endSeq}`);
+  if (groups.length > limit) shown.push(`… ${groups.length - limit} more group(s)`);
+  return ['remaining groups:', ...shown].join('\n');
 }
 
 /**
@@ -166,10 +175,22 @@ function installPhase1D() {
     replayButton.insertAdjacentElement('afterend', minimizeButton);
   }
 
+  let reduceInputsButton = document.getElementById('certify-reduce-inputs-button');
+  if (!reduceInputsButton) {
+    reduceInputsButton = document.createElement('button');
+    reduceInputsButton.id = 'certify-reduce-inputs-button';
+    reduceInputsButton.type = 'button';
+    reduceInputsButton.textContent = 'REDUCE INPUTS';
+    reduceInputsButton.title = 'Remove dependency-safe keyboard/mouse groups while preserving the exact divergence';
+    reduceInputsButton.disabled = true;
+    minimizeButton.insertAdjacentElement('afterend', reduceInputsButton);
+  }
+
   let replayHost = null;
   let replayRunning = false;
   let stopRequested = false;
   let lastDivergenceContext = null;
+  let lastMinimizedContext = null;
 
   const setStatus = (text, state) => {
     status.textContent = text;
@@ -178,13 +199,16 @@ function installPhase1D() {
 
   const invalidateMinimization = () => {
     lastDivergenceContext = null;
+    lastMinimizedContext = null;
     minimizeButton.disabled = true;
+    reduceInputsButton.disabled = true;
   };
 
   const setReplayRunning = value => {
     replayRunning = value;
     replayButton.disabled = value;
     minimizeButton.disabled = value || !lastDivergenceContext;
+    reduceInputsButton.disabled = value || !lastMinimizedContext;
     runButton.disabled = value;
     if (refreshButton) refreshButton.disabled = value;
     gameSelect.disabled = value;
@@ -327,6 +351,8 @@ function installPhase1D() {
 
   async function startMinimize() {
     if (replayRunning || !lastDivergenceContext) return;
+    lastMinimizedContext = null;
+    reduceInputsButton.disabled = true;
     const context = lastDivergenceContext;
     if (gameSelect.value !== context.directoryName) {
       invalidateMinimization();
@@ -370,6 +396,13 @@ function installPhase1D() {
       );
 
       if (minimized.status === 'MINIMIZED') {
+        lastMinimizedContext = Object.freeze({
+          directoryName: context.directoryName,
+          recording: minimized.recording,
+          editConfig: context.editConfig,
+          firstDivergence: context.firstDivergence,
+        });
+        reduceInputsButton.disabled = false;
         setStatus(`MINIMIZED TO ${minimized.minimizedFinalTick}`, 'MATCH');
         detail.textContent = [
           `target=${formatCertificationResult(context.firstDivergence)}`,
@@ -402,8 +435,108 @@ function installPhase1D() {
     }
   }
 
+  async function startReduceInputs() {
+    if (replayRunning || !lastMinimizedContext) return;
+    const context = lastMinimizedContext;
+    if (gameSelect.value !== context.directoryName) {
+      invalidateMinimization();
+      setStatus('INPUT GAME MISMATCH', 'ERROR');
+      detail.textContent = 'The selected imported game changed after prefix minimization. Replay and minimize the intended game again before reducing inputs.';
+      return;
+    }
+
+    stopRequested = false;
+    setReplayRunning(true);
+    const groups = groupReplayInputEventsV1(context.recording);
+    setStatus('REDUCING INPUTS', 'BUSY');
+    progress.textContent = `${groups.length} dependency-safe input group(s) · target tick ${context.firstDivergence.tick}`;
+    detail.textContent = [
+      `recording=${recordingIdentity(context.recording)}`,
+      `editConfig=${editConfigIdentity(context.editConfig)}`,
+      '',
+      'Keeping release timing, RNG draws, sound completions, game identity, EditConfig identity, and final tick frozen while delta-debugging keyboard/mouse groups.',
+    ].join('\n');
+
+    let attemptNumber = 0;
+    try {
+      const gameBuffer = await readImportedGame(context.directoryName);
+      await validateFrozenReplayIdentityV1(context.recording, gameBuffer, context.editConfig);
+
+      const replayCandidate = async candidate => {
+        attemptNumber += 1;
+        return runFrozenRecording(candidate, gameBuffer, context.editConfig, {
+          pulseIntervalMs: 0,
+          onUpdate: update => {
+            progress.textContent = `input attempt ${attemptNumber} · replay tick ${replayHost?.logicalTick ?? update.targetTick ?? 0}/${candidate.finalTick}`;
+          },
+        });
+      };
+
+      const reduced = await minimizeInputGroupsV1(
+        context.recording,
+        context.firstDivergence,
+        replayCandidate,
+        {
+          maxAttempts: 256,
+          shouldStop: () => stopRequested,
+          onAttempt: attempt => {
+            progress.textContent = `input attempt ${attempt.number} · kept ${attempt.keptGroups}/${groups.length} group(s) · ${attempt.reproduced ? 'same divergence' : attempt.status}`;
+          },
+        },
+      );
+
+      if (reduced.status === 'INPUTS_MINIMIZED' || reduced.status === 'INPUTS_ALREADY_MINIMAL') {
+        const label = reduced.status === 'INPUTS_MINIMIZED'
+          ? `INPUTS ${reduced.keptGroups.length}/${reduced.totalGroups}`
+          : 'INPUTS ALREADY MINIMAL';
+        setStatus(label, 'MATCH');
+        detail.textContent = [
+          `target=${formatCertificationResult(context.firstDivergence)}`,
+          `source=${recordingIdentity(context.recording)}`,
+          `reduced=${recordingIdentity(reduced.recording)}`,
+          `groups=${reduced.totalGroups} → ${reduced.keptGroups.length}`,
+          `input events=${reduced.totalInputEvents} → ${reduced.keptInputEvents}`,
+          `locked events retained=${reduced.lockedEvents}`,
+          `attempts=${reduced.attempts.length}`,
+          '',
+          inputGroupsText(reduced.keptGroups),
+        ].join('\n');
+      } else if (reduced.status === 'NO_REMOVABLE_INPUTS') {
+        setStatus('NO REMOVABLE INPUTS', 'MATCH');
+        detail.textContent = `The minimized prefix contains no dependency-safe keyboard/mouse groups. ${reduced.lockedEvents} locked reproduction event(s) remain.`;
+      } else if (reduced.status === 'NOT_REPRODUCED') {
+        setStatus('INPUT TARGET NOT REPRODUCED', 'WAITING');
+        detail.textContent = `The Phase -1E source no longer reproduced the exact target divergence. No input reduction was accepted.\nattempts=${reduced.attempts.length}`;
+      } else if (reduced.status === 'PARTIAL') {
+        setStatus(`INPUTS PARTIAL ${reduced.keptGroups.length}/${reduced.totalGroups}`, 'WAITING');
+        detail.textContent = [
+          'The input attempt budget ended before 1-minimality was proven.',
+          `groups=${reduced.totalGroups} → ${reduced.keptGroups.length}`,
+          `input events=${reduced.totalInputEvents} → ${reduced.keptInputEvents}`,
+          `attempts=${reduced.attempts.length}`,
+          '',
+          inputGroupsText(reduced.keptGroups),
+        ].join('\n');
+      } else if (reduced.status === 'STOPPED') {
+        setStatus('STOPPED', 'IDLE');
+      } else {
+        setStatus(reduced.status, 'ERROR');
+        detail.textContent = JSON.stringify(reduced, null, 2);
+      }
+    } catch (error) {
+      setStatus('INPUT REDUCTION ERROR', 'ERROR');
+      detail.textContent = String(error?.stack ?? error);
+    } finally {
+      replayHost?.terminate();
+      replayHost = null;
+      setReplayRunning(false);
+      refreshJournal();
+    }
+  }
+
   replayButton.addEventListener('click', startReplay);
   minimizeButton.addEventListener('click', startMinimize);
+  reduceInputsButton.addEventListener('click', startReduceInputs);
   gameSelect.addEventListener('change', invalidateMinimization);
   runButton.addEventListener('click', invalidateMinimization, { capture: true });
   stopButton.addEventListener('click', () => {
