@@ -99,9 +99,9 @@ export class ReplayCertificationHost extends CertificationHost {
    * event-loop turn after that logical pulse.
    *
    * An idle transport write stamped at logical tick T proves that normal PLAY's
-   * worker became idle before tick T+1. Phase -1D therefore accepts a per-tick wait
-   * budget from the replay driver instead of silently pausing logical time for the
-   * much larger barrier timeout.
+   * worker became idle before tick T+1. Phase -1D therefore permits at most one
+   * logical 60 Hz interval to reproduce that idle boundary instead of silently
+   * pausing logical time for the much larger certification barrier timeout.
    */
   async prepareTransportPhase(phase, options = {}) {
     if (!this.started || !this.truth.ready || !this.edited.ready) {
@@ -135,7 +135,8 @@ export class ReplayCertificationHost extends CertificationHost {
         truthIdle: true, editedIdle: true, transportPhase: 'idle',
       };
     }
-    return this.settleCurrentCycle('transport-idle', options.maxWaitMs);
+    const maxWaitMs = options.maxWaitMs ?? (1000 / 60);
+    return this.settleCurrentCycle('transport-idle', maxWaitMs);
   }
 
   /**
