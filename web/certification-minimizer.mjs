@@ -94,14 +94,18 @@ function snapshotSourceRecordingV1(recording) {
       draw && typeof draw === 'object' ? { ...draw } : draw),
   };
   const canonical = canonicalizePlayRecordingV1(rawSnapshot);
-  return Object.freeze({ ...canonical, hash: recording.hash });
+  return Object.freeze({
+    source: Object.freeze({ ...canonical, hash: recording.hash }),
+    sourceSchema: rawSnapshot.schema,
+  });
 }
 
 export async function snapshotVerifiedRecordingV1(recording) {
-  const source = snapshotSourceRecordingV1(recording);
-  if (!source || source.schema !== RECORDING_SCHEMA) {
+  const snapshot = snapshotSourceRecordingV1(recording);
+  if (!snapshot || snapshot.sourceSchema !== RECORDING_SCHEMA) {
     throw new Error(`Phase -1E requires a ${RECORDING_SCHEMA} recording.`);
   }
+  const source = snapshot.source;
   if (!source.completeFromStart || asInt(source.startTick) !== 1) {
     throw new Error('Phase -1E requires a complete recording starting at logical tick 1.');
   }
