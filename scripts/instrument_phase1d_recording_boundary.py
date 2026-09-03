@@ -66,6 +66,8 @@ if 'private native void recordCycleComplete' not in t:
 # AppConfigItem.filePath is the exact directory name passed to OPFSGameFiles for
 # imported games. Capture it at PLAY start so REPLAY PLAY cannot accidentally bind
 # one game's journal to a different GAMEFILES.DAT selected in the CERTIFY panel.
+# Reset the in-memory journal at the same point so switching games in one page
+# cannot merge two independent PLAY sessions into one apparently valid recording.
 if 'recordPlayGameDirectory(appConfigItem.getFilePath());' not in t:
     t = one(t,
 '''    @Override
@@ -89,6 +91,12 @@ if 'private native void recordPlayGameDirectory' not in t:
     }-*/;
 
     private native void recordPlayGameDirectory(String gameDirectory) /*-{
+        var journal = $wnd.__kq1agiPlayRecordingRaw;
+        if (Array.isArray(journal)) journal.length = 0;
+        else $wnd.__kq1agiPlayRecordingRaw = [];
+        $wnd.__kq1agiPlayRecordingSeq = 0;
+        $wnd.__kq1agiPlayRecordingOverflow = false;
+        $wnd.__kq1agiPlayLastCompletedTick = 0;
         $wnd.__kq1agiPlayGameDirectory = gameDirectory || '';
     }-*/;
 ''', 'runner PLAY game identity helper')
@@ -126,4 +134,4 @@ if 'private native JavaScriptObject createRecordingCycleComplete' not in t:
 ''', 'worker cycle-complete object helper')
 worker.write_text(t)
 
-print('Phase -1D PLAY completion boundary and local-game identity installed')
+print('Phase -1D PLAY completion boundary, session reset, and local-game identity installed')
