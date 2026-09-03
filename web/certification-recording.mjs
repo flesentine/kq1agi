@@ -425,8 +425,8 @@ export async function runCertificationReplaySession(host, recording, options = {
     const released = host.cycle > beforeCycle;
     if (releaseExpected !== released) {
       const miss = {
-        status: 'REPLAY_CONTRACT_MISS',
-        reason: 'cycle-release-contract',
+        status: 'REPLAY_TIMING_MISS',
+        reason: 'cycle-release',
         tick: host.logicalTick,
         cycle: host.cycle,
         expectedRelease: releaseExpected,
@@ -435,7 +435,7 @@ export async function runCertificationReplaySession(host, recording, options = {
         editedIdle: result.editedIdle,
       };
       onUpdate({ certifiedBarriers, consumedTicks, targetTick, releaseExpected, result: miss });
-      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+      return { status: 'REPLAY_TIMING_MISS', certifiedBarriers, consumedTicks, result: miss };
     }
 
     // Do not opportunistically count a barrier merely because a fast worker happened
