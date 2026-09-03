@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import {
+  encodeRandomReplay,
   freezePlayRecordingV1,
+  hashPlayRecordingV1,
   runCertificationReplaySession,
 } from '../web/certification-recording.mjs';
 
@@ -10,8 +12,22 @@ const recording = await freezePlayRecordingV1({
   rawEvents: [
     { type: 'pulse', tick: 1, seq: 1, released: true },
     { type: 'random', tick: 1, seq: 2, bound: 255, value: 17 },
+    { type: 'random', tick: 1, seq: 3, bound: 9, value: 4 },
   ],
 });
+
+// Hash-equivalent representation changes must also be replay-equivalent. The
+// canonical recording hash sorts RNG by seq and ignores malformed draws, so the RNG
+// replay encoder must consume that same canonical view rather than raw array order.
+const originalHash = recording.hash;
+recording.random.reverse();
+recording.random.push({ tick: 1, seq: 999, bound: 0, value: 999 });
+assert.equal(await hashPlayRecordingV1(recording), originalHash);
+assert.equal(encodeRandomReplay(recording), 'v1|255:17;9:4');
+recording.random.splice(0, recording.random.length,
+  { tick: 1, seq: 2, bound: 255, value: 17 },
+  { tick: 1, seq: 3, bound: 9, value: 4 },
+);
 
 // Object.freeze() intentionally protects only the recording envelope. Verify that
 // an accidental or malicious nested mutation cannot retain the old identity and
