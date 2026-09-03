@@ -17,8 +17,8 @@ function waitTurn() {
 
 /**
  * Phase -1D replay host. Phase -1B remains frozen: this subclass adds only the
- * recorded random stream, recorded sound-end timing, recorded transport phase,
- * and recorded cycle-release schedule needed to reproduce a normal PLAY session.
+ * recorded random stream, recorded sound-end timing, recorded transport provenance,
+ * and recorded logical cycle-release schedule needed to reproduce a normal PLAY session.
  */
 export class ReplayCertificationHost extends CertificationHost {
   constructor(options = {}) {
@@ -98,10 +98,9 @@ export class ReplayCertificationHost extends CertificationHost {
    * synchronous afterClockAdvance hook in pulse(), before either worker gets an
    * event-loop turn after that logical pulse.
    *
-   * An idle transport write stamped at logical tick T proves that normal PLAY's
-   * worker became idle before tick T+1. Phase -1D therefore permits at most one
-   * logical 60 Hz interval to reproduce that idle boundary instead of silently
-   * pausing logical time for the much larger certification barrier timeout.
+   * An idle transport write stamped at logical tick T proves normal PLAY's worker
+   * completed at T. Replay may take longer in wall-clock time, so this helper waits
+   * at the same logical tick rather than converting CPU speed into simulated time.
    */
   async prepareTransportPhase(phase, options = {}) {
     if (!this.started || !this.truth.ready || !this.edited.ready) {
@@ -135,7 +134,7 @@ export class ReplayCertificationHost extends CertificationHost {
         truthIdle: true, editedIdle: true, transportPhase: 'idle',
       };
     }
-    const maxWaitMs = options.maxWaitMs ?? (1000 / 60);
+    const maxWaitMs = options.maxWaitMs ?? this.barrierTimeoutMs;
     return this.settleCurrentCycle('transport-idle', maxWaitMs);
   }
 
@@ -208,9 +207,13 @@ export class ReplayCertificationHost extends CertificationHost {
     const quitAtBarrier = await this._resolveQuitIfObserved();
     if (quitAtBarrier) return quitAtBarrier;
 
-    // Preserve Phase -1B's no-skipped-barrier rule. This comparison consumes no
-    // recorded logical pulse; the replay driver will retry the same schedule tick.
-    if (bothIdleBefore && this.cycle > this.comparedCycle) {
+    // Recorded replay owns the logical release schedule. If a cycle finishes earlier
+    // on this machine than it did during normal PLAY, do not publish a barrier merely
+    // because wall-clock execution was faster. Defer comparison until a recorded
+    // release, an idle-phase event, or the final frozen boundary. The defensive
+    // barrier-only path remains only for callers requesting a release without first
+    // settling an already-completed prior cycle.
+    if (allowCycleRelease && bothIdleBefore && this.cycle > this.comparedCycle) {
       const snapshotEpoch = await this._synchronizeBarrierSnapshot();
       const result = this.compare(snapshotEpoch);
       this.comparedCycle = this.cycle;
@@ -250,13 +253,6 @@ export class ReplayCertificationHost extends CertificationHost {
     const truthIdle = isIdle(this.truth);
     const editedIdle = isIdle(this.edited);
 
-    if (!releasedCycle && bothIdleBefore) {
-      return {
-        status: 'IDLE', tick: this.logicalTick, cycle: this.cycle,
-        truthIdle, editedIdle, releaseRequested: allowCycleRelease, releasedCycle,
-      };
-    }
-
     if (!truthIdle || !editedIdle) {
       return {
         status: 'BUSY', tick: this.logicalTick, cycle: this.cycle,
@@ -264,10 +260,13 @@ export class ReplayCertificationHost extends CertificationHost {
       };
     }
 
-    const snapshotEpoch = await this._synchronizeBarrierSnapshot();
-    const result = this.compare(snapshotEpoch);
-    this.comparedCycle = this.cycle;
-    return { ...result, releaseRequested: allowCycleRelease, releasedCycle };
+    // A cycle completing quickly is not itself a recorded semantic barrier. Leave it
+    // idle and un-compared until the replay driver reaches the next recorded boundary.
+    return {
+      status: 'IDLE', tick: this.logicalTick, cycle: this.cycle,
+      truthIdle: true, editedIdle: true, releaseRequested: allowCycleRelease,
+      releasedCycle, comparisonDeferred: this.cycle > this.comparedCycle,
+    };
   }
 }
 
