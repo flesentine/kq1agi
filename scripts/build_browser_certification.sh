@@ -17,20 +17,43 @@ rm -rf "$TRUTH_TREE" "$EDITED_TREE" "$OUT"
 node scripts/test_certification_host.mjs
 node scripts/test_certification_panel.mjs
 node scripts/test_certification_edit_config.mjs
+node scripts/test_certification_recording.mjs
+node scripts/test_certification_recording_hash.mjs
+node scripts/test_certification_replay_host.mjs
+node scripts/test_phase1d_recording_boundary.mjs
 
 git clone --quiet https://github.com/lanceewing/agile-gdx.git "$TRUTH_TREE"
 git -C "$TRUTH_TREE" checkout --quiet "$PINNED_AGILE_SHA"
 test "$(git -C "$TRUTH_TREE" rev-parse HEAD)" = "$PINNED_AGILE_SHA"
 
-# The edited certification lane starts from the exact already-patched source tree
-# used by this Pages build, before certification-only instrumentation is applied.
+# Freeze the edited certification source before adding the normal-PLAY observer.
+# Phase -1D's recording hooks are observational UI/worker transport plumbing, not
+# part of the edited game semantics. The certification replay instrumentation below
+# installs its own bounded-RNG replay hook in both lanes after Phase -1B setup.
 cp -a "$PRODUCTION_TREE" "$EDITED_TREE"
+
+# The normal Pages app needs the PLAY observer. Instrument it only after the edited
+# certification source has been frozen so the Phase -1B worker instrumentation sees
+# its original, stable source anchors in both cert lanes. The journal bootstrap exists
+# at page load, but each PLAY start resets and binds a fresh one-game journal before
+# that game's first worker tick.
+python3 scripts/instrument_phase1d_play_recording.py "$PRODUCTION_TREE"
+python3 scripts/fix_phase1d_random_coverage.py "$PRODUCTION_TREE"
+python3 scripts/instrument_phase1d_recording_boundary.py "$PRODUCTION_TREE"
+git -C "$PRODUCTION_TREE" diff --check
+
+grep -q 'RecordingCycleComplete' "$PRODUCTION_TREE/html/src/main/java/com/agifans/agile/worker/AgileWebWorker.java"
+grep -q 'RecordingCycleComplete' "$PRODUCTION_TREE/html/src/main/java/com/agifans/agile/gwt/GwtAgileRunner.java"
+grep -q 'recordPlayGameDirectory(appConfigItem.getFilePath())' "$PRODUCTION_TREE/html/src/main/java/com/agifans/agile/gwt/GwtAgileRunner.java"
+grep -q '__kq1agiPlayGameDirectory' "$PRODUCTION_TREE/html/src/main/java/com/agifans/agile/gwt/GwtAgileRunner.java"
 
 for dir in "$TRUTH_TREE" "$EDITED_TREE"; do
   python3 scripts/instrument_truth_worker.py "$dir"
   python3 scripts/instrument_certification_runtime.py "$dir"
   python3 scripts/fix_certification_gwt_compat.py "$dir"
   python3 scripts/fix_certification_snapshot_barrier.py "$dir"
+  python3 scripts/instrument_phase1d_certification_replay.py "$dir"
+  python3 scripts/fix_phase1d_random_coverage.py "$dir"
   python3 scripts/fix_certification_browser_worker_path.py "$dir"
   git -C "$dir" diff --check
   chmod +x "$dir/gradlew"
@@ -55,6 +78,7 @@ for dir in "$TRUTH_TREE" "$EDITED_TREE"; do
   grep -R -q 'certificationDigestSAB' "$dir/html/build/dist/worker"
   grep -R -q 'CertificationReady' "$dir/html/build/dist/worker"
   grep -R -q 'CertificationSnapshotReady' "$dir/html/build/dist/worker"
+  grep -R -q 'certificationRandomReplay' "$dir/html/build/dist/worker"
   grep -R -q "importScripts(\['../opfs-saved-games.js'\])" "$dir/html/build/dist/worker"
 done
 cmp "$TRUTH_TREE/html/build/dist/opfs-saved-games.js" "$EDITED_TREE/html/build/dist/opfs-saved-games.js"
@@ -66,12 +90,15 @@ cp "$TRUTH_TREE/html/build/dist/opfs-saved-games.js" "$OUT/opfs-saved-games.js"
 cp web/certification-host.mjs "$OUT/certification-host.mjs"
 cp web/certification-panel.mjs "$OUT/certification-panel.mjs"
 cp web/certification-edit-config.mjs "$OUT/certification-edit-config.mjs"
-cp docs/TRUTH_ENGINE_PHASE_1C.md "$OUT/README.md"
+cp web/certification-recording.mjs "$OUT/certification-recording.mjs"
+cp web/certification-replay-host.mjs "$OUT/certification-replay-host.mjs"
+cp web/certification-phase1d.mjs "$OUT/certification-phase1d.mjs"
+cp docs/TRUTH_ENGINE_PHASE_1D.md "$OUT/README.md"
 
 printf '%s\n' \
-  'Phase -1C browser bundle. No AGI game resources are included.' \
-  'EditConfig v1 freezes persisted editor state plus the live current-room snapshot and applies it only to the edited lane.' \
-  'The user-selected GAMEFILES.DAT is read later from same-origin OPFS in the browser.' \
+  'Phase -1D browser bundle. No AGI game resources are included.' \
+  'EditConfig v1 freezes browser editor state and applies it only to the edited lane.' \
+  'PLAY recording v1 stays in browser memory and binds one local game directory, the local GAMEFILES.DAT hash, EditConfig hash, logical tick plus idle/busy input transport phase, complete bounded RNG stream, sound completion timing, complete-worker freeze boundary, and 60 Hz cycle-release schedule.' \
   > "$OUT/ARTIFACT.txt"
 
 find "$OUT" -maxdepth 2 -type f | sort
