@@ -3,6 +3,7 @@ import {
   discoverImportedGames,
   divergenceCategory,
   formatCertificationResult,
+  readImportedGame,
   runCertificationSession,
 } from '../web/certification-panel.mjs';
 
@@ -30,12 +31,21 @@ function fakeDirectory(files = {}) {
   };
 }
 
+const alphaGame = fakeDirectory({ 'GAMEFILES.DAT': 2000 });
+const zetaGame = fakeDirectory({ 'GAMEFILES.DAT': 5000 });
+const emptyGame = fakeDirectory({ 'GAMEFILES.DAT': 0 });
 const gameFiles = {
   async *entries() {
-    yield ['zeta-game', fakeDirectory({ 'GAMEFILES.DAT': 5000 })];
-    yield ['empty-game', fakeDirectory({ 'GAMEFILES.DAT': 0 })];
+    yield ['zeta-game', zetaGame];
+    yield ['empty-game', emptyGame];
     yield ['not-a-dir', { kind: 'file' }];
-    yield ['alpha-game', fakeDirectory({ 'GAMEFILES.DAT': 2000 })];
+    yield ['alpha-game', alphaGame];
+  },
+  async getDirectoryHandle(name) {
+    if (name === 'alpha-game') return alphaGame;
+    if (name === 'zeta-game') return zetaGame;
+    if (name === 'empty-game') return emptyGame;
+    throw notFound();
   },
 };
 const root = {
@@ -44,14 +54,22 @@ const root = {
     return gameFiles;
   },
 };
+
 assert.deepEqual(await discoverImportedGames(root), [
   { directoryName: 'alpha-game', size: 2000 },
   { directoryName: 'zeta-game', size: 5000 },
 ]);
+assert.equal((await readImportedGame('alpha-game', root)).byteLength, 2000);
+await assert.rejects(readImportedGame('empty-game', root), /empty GAMEFILES\.DAT/);
+await assert.rejects(readImportedGame('', root), /Choose an imported game/);
+assert.deepEqual(await discoverImportedGames({
+  async getDirectoryHandle() { throw notFound(); },
+}), []);
 
 assert.equal(divergenceCategory({ status: 'DIVERGED', reason: 'trace', index: 4 }), 'trace:ego-y');
 assert.equal(divergenceCategory({ status: 'DIVERGED', reason: 'semantic-digest', index: 2 }), 'digest:animated-objects');
 assert.equal(divergenceCategory({ status: 'DIVERGED', reason: 'random-stream', index: 5 }), 'digest:random-stream');
+assert.equal(divergenceCategory({ status: 'DIVERGED', reason: 'quit-state' }), 'terminal-state');
 
 const formatted = formatCertificationResult({
   status: 'MATCH', scope: 'semantic-v1', tick: 7, cycle: 1,
@@ -91,5 +109,16 @@ summary = await runCertificationSession(new FakeHost([
 ]), { targetBarriers: 5, maxBusyPulses: 3 });
 assert.equal(summary.status, 'WAITING');
 assert.equal(summary.busyPulses, 3);
+
+summary = await runCertificationSession(new FakeHost([
+  { status: 'COMPLETE', tick: 9, scope: 'semantic-v1' },
+]), { targetBarriers: 5 });
+assert.equal(summary.status, 'COMPLETE');
+
+summary = await runCertificationSession(new FakeHost([]), {
+  shouldStop: () => true,
+});
+assert.equal(summary.status, 'STOPPED');
+assert.equal(summary.pulses, 0);
 
 console.log('certification panel tests: PASS');
