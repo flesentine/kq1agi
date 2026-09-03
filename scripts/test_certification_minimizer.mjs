@@ -60,6 +60,7 @@ await assert.rejects(minimizeDivergentPrefix(tampered, {
   return { status: 'REPLAY_MATCH' };
 }), /source recording hash mismatch/);
 assert.equal(tamperedReplayCalls, 0);
+await assert.rejects(buildRecordingPrefixV1({ ...recording, schema: 'kq1agi-play-recording-v0' }, 42), /kq1agi-play-recording-v1/);
 await assert.rejects(buildRecordingPrefixV1({ ...recording, completeFromStart: false }, 42), /complete recording/);
 await assert.rejects(buildRecordingPrefixV1({ ...recording, startTick: 2 }, 42), /complete recording/);
 await assert.rejects(buildRecordingPrefixV1({ ...recording, overflowed: true }, 42), /overflowed/);
