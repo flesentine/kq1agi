@@ -1,5 +1,5 @@
 import { formatCertificationResult, readImportedGame } from './certification-panel.mjs';
-import { captureEditConfigV1, createEditConfigApplicator } from './certification-edit-config.mjs';
+import { captureEditConfigV1, createEditConfigApplicator, hashEditConfigV1 } from './certification-edit-config.mjs';
 import { minimizeDivergentPrefix } from './certification-minimizer.mjs';
 import { ReplayCertificationHost } from './certification-replay-host.mjs';
 import {
@@ -34,6 +34,39 @@ function minimizationFocusText(focus) {
     `RNG: ${randomTicks}`,
     `releases: ${releaseTicks}`,
   ].join('\n');
+}
+
+/**
+ * Re-verify the immutable replay identities before Phase -1E derives candidates.
+ * The recording hash protects the declared EditConfig hash, but EditConfig's nested
+ * arrays are not deep-frozen; hashing the actual config again prevents a later
+ * in-memory mutation from being replayed under the old recording identity.
+ */
+export async function validateFrozenReplayIdentityV1(recording, gameBuffer, editConfig) {
+  if (!recording || typeof recording !== 'object') throw new TypeError('A frozen PLAY recording is required.');
+  if (!(gameBuffer instanceof ArrayBuffer)) throw new TypeError('A GAMEFILES.DAT ArrayBuffer is required.');
+
+  const expectedGameHash = String(recording.gameHash ?? '');
+  const expectedGameBytes = Number(recording.gameBytes);
+  const actualGameHash = await hashArrayBufferV1(gameBuffer);
+  if (!expectedGameHash
+      || !Number.isSafeInteger(expectedGameBytes)
+      || expectedGameBytes < 0
+      || actualGameHash !== expectedGameHash
+      || gameBuffer.byteLength !== expectedGameBytes) {
+    throw new Error(`The local GAMEFILES.DAT changed after the divergent replay (expected ${expectedGameHash || 'missing'}/${recording.gameBytes ?? 'missing'} bytes, got ${actualGameHash}/${gameBuffer.byteLength} bytes).`);
+  }
+
+  const expectedEditConfigHash = String(recording.editConfigHash ?? '');
+  const declaredEditConfigHash = String(editConfig?.hash ?? '');
+  const actualEditConfigHash = await hashEditConfigV1(editConfig);
+  if (!expectedEditConfigHash
+      || declaredEditConfigHash !== expectedEditConfigHash
+      || actualEditConfigHash !== expectedEditConfigHash) {
+    throw new Error(`The frozen EditConfig changed after the divergent replay (recording ${expectedEditConfigHash || 'missing'}, declared ${declaredEditConfigHash || 'missing'}, actual ${actualEditConfigHash}).`);
+  }
+
+  return Object.freeze({ gameHash: actualGameHash, editConfigHash: actualEditConfigHash });
 }
 
 /**
@@ -309,10 +342,7 @@ function installPhase1D() {
     let attemptNumber = 0;
     try {
       const gameBuffer = await readImportedGame(context.directoryName);
-      const currentGameHash = await hashArrayBufferV1(gameBuffer);
-      if (currentGameHash !== context.recording.gameHash || gameBuffer.byteLength !== context.recording.gameBytes) {
-        throw new Error(`The local GAMEFILES.DAT changed after the divergent replay (expected ${context.recording.gameHash}/${context.recording.gameBytes} bytes, got ${currentGameHash}/${gameBuffer.byteLength} bytes).`);
-      }
+      await validateFrozenReplayIdentityV1(context.recording, gameBuffer, context.editConfig);
 
       const replayCandidate = async candidate => {
         attemptNumber += 1;
