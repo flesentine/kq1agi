@@ -31,37 +31,41 @@ export function snapshotReadyPlayJournal(options = {}) {
   const source = options.rawEvents ?? globalThis.__kq1agiPlayRecordingRaw;
   const variableSAB = options.variableSAB ?? globalThis.__kq1agiVariableSAB ?? null;
   const lastCompletedTick = Number(options.lastCompletedTick ?? globalThis.__kq1agiPlayLastCompletedTick ?? 0) | 0;
+  const gameDirectory = String(options.gameDirectory ?? globalThis.__kq1agiPlayGameDirectory ?? '');
   const overflowed = options.overflowed ?? !!globalThis.__kq1agiPlayRecordingOverflow;
-  if (!Array.isArray(source)) return { ready: false, reason: 'no-journal', lastCompletedTick, lastReleaseTick: 0 };
-  if (!variableSAB) return { ready: false, reason: 'no-shared-state', lastCompletedTick, lastReleaseTick: 0 };
+  const base = { gameDirectory, lastCompletedTick, lastReleaseTick: 0 };
+  if (!Array.isArray(source)) return { ready: false, reason: 'no-journal', ...base };
+  if (!variableSAB) return { ready: false, reason: 'no-shared-state', ...base };
+  if (!gameDirectory) return { ready: false, reason: 'no-game-identity', ...base };
 
   let vars;
   try {
     vars = new Int32Array(variableSAB);
     if (vars.length <= 517) throw new Error('short shared variable buffer');
   } catch (error) {
-    return { ready: false, reason: 'no-shared-state', lastCompletedTick, lastReleaseTick: 0 };
+    return { ready: false, reason: 'no-shared-state', ...base };
   }
 
   let inTick;
   try {
     inTick = Atomics.load(vars, 517) | 0;
   } catch (error) {
-    return { ready: false, reason: 'no-shared-state', lastCompletedTick, lastReleaseTick: 0 };
+    return { ready: false, reason: 'no-shared-state', ...base };
   }
 
   let lastReleaseTick = 0;
   for (const event of source) {
     if (event?.type === 'pulse' && event.released) lastReleaseTick = Math.max(lastReleaseTick, Number(event.tick) | 0);
   }
-  if (lastReleaseTick < 1) return { ready: false, reason: 'no-cycle-release', inTick, lastCompletedTick, lastReleaseTick };
-  if (inTick !== 0) return { ready: false, reason: 'worker-busy', inTick, lastCompletedTick, lastReleaseTick };
+  if (lastReleaseTick < 1) return { ready: false, reason: 'no-cycle-release', gameDirectory, inTick, lastCompletedTick, lastReleaseTick };
+  if (inTick !== 0) return { ready: false, reason: 'worker-busy', gameDirectory, inTick, lastCompletedTick, lastReleaseTick };
   if (lastCompletedTick !== lastReleaseTick) {
-    return { ready: false, reason: 'worker-events-pending', inTick, lastCompletedTick, lastReleaseTick };
+    return { ready: false, reason: 'worker-events-pending', gameDirectory, inTick, lastCompletedTick, lastReleaseTick };
   }
   return {
     ready: true,
     reason: 'complete',
+    gameDirectory,
     inTick,
     lastCompletedTick,
     lastReleaseTick,
@@ -74,7 +78,17 @@ function boundaryMessage(boundary) {
   if (boundary.reason === 'worker-busy') return 'Normal PLAY is still inside its current interpreter cycle. Try REPLAY PLAY again when the worker is idle.';
   if (boundary.reason === 'worker-events-pending') return `Normal PLAY finished its shared cycle, but its worker observations have not all reached the journal yet (last release ${boundary.lastReleaseTick}, confirmed complete ${boundary.lastCompletedTick}). Try REPLAY PLAY again.`;
   if (boundary.reason === 'no-cycle-release') return 'Normal PLAY has not completed its first interpreter cycle yet.';
+  if (boundary.reason === 'no-game-identity') return 'Phase -1D could not identify the game currently running in normal PLAY. Reload before reproducing the event again.';
   return 'The normal PLAY shared state is not ready for an authoritative replay snapshot yet.';
+}
+
+function contractMissText(summary, recording, editConfig) {
+  const result = summary.result ?? {};
+  const identity = `recording=${recordingIdentity(recording)}\neditConfig=${editConfigIdentity(editConfig)}`;
+  if (result.reason === 'random-stream-consumption') {
+    return `${identity}\n\nThe replay did not consume the complete recorded RNG stream (expected ${result.expectedRandomDraws}, ORIGINAL ${result.truthRandomDraws}, EDITED ${result.editedRandomDraws}). This is a reproduction-contract failure, not an ORIGINAL-vs-EDITED semantic divergence.`;
+  }
+  return `${identity}\n\nThe frozen PLAY transport contract could not be reproduced (${result.reason ?? 'unknown-contract'} at logical tick ${result.tick ?? '?'}). This is a reproduction-contract failure, not an ORIGINAL-vs-EDITED semantic divergence.`;
 }
 
 function installPhase1D() {
@@ -125,8 +139,9 @@ function installPhase1D() {
       return;
     }
     const boundary = snapshotReadyPlayJournal();
+    const game = boundary.gameDirectory ? ` · game ${boundary.gameDirectory}` : '';
     const suffix = boundary.ready ? ' · replay boundary ready' : ' · waiting for worker boundary';
-    recordingStatus.textContent = `PLAY journal: ticks 1–${stats.finalTick} · ${stats.eventCount} transport event(s) · ${stats.randomCount} RNG draw(s) · ${stats.releaseCount} cycle release(s)${suffix}`;
+    recordingStatus.textContent = `PLAY journal: ticks 1–${stats.finalTick} · ${stats.eventCount} transport event(s) · ${stats.randomCount} RNG draw(s) · ${stats.releaseCount} cycle release(s)${game}${suffix}`;
   }
 
   async function startReplay() {
@@ -151,6 +166,11 @@ function installPhase1D() {
       refreshJournal();
       return;
     }
+    if (boundary.gameDirectory !== directoryName) {
+      setStatus('PLAY GAME MISMATCH', 'ERROR');
+      detail.textContent = `The frozen PLAY journal belongs to local game "${boundary.gameDirectory}", but CERTIFY currently selects "${directoryName}". Select the same imported game before replaying.`;
+      return;
+    }
     const rawEvents = boundary.rawEvents;
     const overflowed = boundary.overflowed;
 
@@ -158,7 +178,7 @@ function installPhase1D() {
     setReplayRunning(true);
     setStatus('FREEZING PLAY WINDOW', 'BUSY');
     progress.textContent = 'Preparing Phase -1D replay…';
-    detail.textContent = `Normal PLAY boundary confirmed at released cycle tick ${boundary.lastReleaseTick}. Hashing local GAMEFILES.DAT, frozen EditConfig v1, and the in-memory PLAY journal…`;
+    detail.textContent = `Normal PLAY boundary confirmed for ${boundary.gameDirectory} at released cycle tick ${boundary.lastReleaseTick}. Hashing local GAMEFILES.DAT, frozen EditConfig v1, and the in-memory PLAY journal…`;
 
     try {
       replayHost?.terminate();
@@ -203,10 +223,10 @@ function installPhase1D() {
         detail.textContent = `${formatCertificationResult(summary.result)}\neditConfig=${editConfigIdentity(editConfig)}\nrecording=${recordingIdentity(recording)}`;
       } else if (summary.status === 'REPLAY_TIMING_MISS') {
         setStatus(`REPLAY TIMING MISS @ ${summary.result.tick}`, 'WAITING');
-        detail.textContent = `recording=${recordingIdentity(recording)}\neditConfig=${editConfigIdentity(editConfig)}\n\nThe certification workers could not reproduce the recorded cycle-release/final-settle timing at tick ${summary.result.tick}. This is a reproduction failure, not an ORIGINAL-vs-EDITED semantic divergence.`;
+        detail.textContent = `recording=${recordingIdentity(recording)}\neditConfig=${editConfigIdentity(editConfig)}\n\nThe certification workers could not reproduce recorded timing (${summary.result.reason ?? 'timing'} at tick ${summary.result.tick}). This is a reproduction failure, not an ORIGINAL-vs-EDITED semantic divergence.`;
       } else if (summary.status === 'REPLAY_CONTRACT_MISS') {
         setStatus(`REPLAY CONTRACT MISS @ ${summary.result.tick}`, 'WAITING');
-        detail.textContent = `recording=${recordingIdentity(recording)}\neditConfig=${editConfigIdentity(editConfig)}\n\nThe replay did not consume the complete recorded RNG stream (expected ${summary.result.expectedRandomDraws}, ORIGINAL ${summary.result.truthRandomDraws}, EDITED ${summary.result.editedRandomDraws}). This is a reproduction-contract failure, not an ORIGINAL-vs-EDITED semantic divergence.`;
+        detail.textContent = contractMissText(summary, recording, editConfig);
       } else if (summary.status === 'STOPPED') {
         setStatus('STOPPED', 'IDLE');
       } else {
