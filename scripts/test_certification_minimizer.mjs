@@ -157,6 +157,15 @@ const mismatch = await minimizeDivergentPrefix(recording, target, async () => ({
 }));
 assert.equal(mismatch.status, 'NOT_REPRODUCED');
 
+// A stale diagnostic firstDivergence field on a non-divergent replay summary must
+// never be accepted as proof that the candidate reproduced the target.
+const staleDiagnostic = await minimizeDivergentPrefix(recording, target, async () => ({
+  status: 'REPLAY_MATCH',
+  firstDivergence: target,
+  result: { status: 'MATCH', tick: 42 },
+}));
+assert.equal(staleDiagnostic.status, 'NOT_REPRODUCED');
+
 let stop = false;
 const attemptsSeen = [];
 const stopped = await minimizeDivergentPrefix(recording, target, async () => {
