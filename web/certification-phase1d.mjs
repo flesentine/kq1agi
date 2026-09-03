@@ -1,5 +1,5 @@
 import { formatCertificationResult, readImportedGame } from './certification-panel.mjs';
-import { captureEditConfigV1, createEditConfigApplicator, hashEditConfigV1 } from './certification-edit-config.mjs';
+import { captureEditConfigV1, createEditConfigApplicator, EditConfigLayout, hashEditConfigV1 } from './certification-edit-config.mjs';
 import { minimizeDivergentPrefix } from './certification-minimizer.mjs';
 import { ReplayCertificationHost } from './certification-replay-host.mjs';
 import {
@@ -59,8 +59,10 @@ export async function validateFrozenReplayIdentityV1(recording, gameBuffer, edit
 
   const expectedEditConfigHash = String(recording.editConfigHash ?? '');
   const declaredEditConfigHash = String(editConfig?.hash ?? '');
+  const editConfigSchema = String(editConfig?.schema ?? '');
   const actualEditConfigHash = await hashEditConfigV1(editConfig);
   if (!expectedEditConfigHash
+      || editConfigSchema !== EditConfigLayout.SCHEMA
       || declaredEditConfigHash !== expectedEditConfigHash
       || actualEditConfigHash !== expectedEditConfigHash) {
     throw new Error(`The frozen EditConfig changed after the divergent replay (recording ${expectedEditConfigHash || 'missing'}, declared ${declaredEditConfigHash || 'missing'}, actual ${actualEditConfigHash}).`);
