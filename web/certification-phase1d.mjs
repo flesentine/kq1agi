@@ -129,7 +129,7 @@ function installPhase1D() {
 
       if (summary.status === 'REPLAY_MATCH') {
         setStatus(`REPLAY MATCH × ${summary.certifiedBarriers}`, 'MATCH');
-        detail.textContent = `recording=${recordingIdentity(recording)}\neditConfig=${editConfigIdentity(editConfig)}\n\nThe recorded PLAY window reached tick ${summary.finalTick} with the recorded 60 Hz cycle-release schedule and no covered semantic divergence across ${summary.certifiedBarriers} shared barrier(s).`;
+        detail.textContent = `recording=${recordingIdentity(recording)}\neditConfig=${editConfigIdentity(editConfig)}\n\nThe recorded PLAY window reached tick ${summary.finalTick}, settled its final in-flight cycle at that same logical tick, consumed the complete recorded RNG stream, and found no covered semantic divergence across ${summary.certifiedBarriers} shared barrier(s).`;
       } else if (summary.status === 'DIVERGED') {
         setStatus(`DIVERGED @ ${summary.firstDivergence.tick}`, 'DIVERGED');
         detail.textContent = `${formatCertificationResult(summary.firstDivergence)}\neditConfig=${editConfigIdentity(editConfig)}\nrecording=${recordingIdentity(recording)}\n\nThis is the first divergent shared barrier in the recorded PLAY window.`;
@@ -138,7 +138,10 @@ function installPhase1D() {
         detail.textContent = `${formatCertificationResult(summary.result)}\neditConfig=${editConfigIdentity(editConfig)}\nrecording=${recordingIdentity(recording)}`;
       } else if (summary.status === 'REPLAY_TIMING_MISS') {
         setStatus(`REPLAY TIMING MISS @ ${summary.result.tick}`, 'WAITING');
-        detail.textContent = `recording=${recordingIdentity(recording)}\neditConfig=${editConfigIdentity(editConfig)}\n\nThe certification workers could not reproduce the recorded cycle-release decision at tick ${summary.result.tick}. This is a reproduction/timing failure, not an ORIGINAL-vs-EDITED semantic divergence.`;
+        detail.textContent = `recording=${recordingIdentity(recording)}\neditConfig=${editConfigIdentity(editConfig)}\n\nThe certification workers could not reproduce the recorded cycle-release/final-settle timing at tick ${summary.result.tick}. This is a reproduction failure, not an ORIGINAL-vs-EDITED semantic divergence.`;
+      } else if (summary.status === 'REPLAY_CONTRACT_MISS') {
+        setStatus(`REPLAY CONTRACT MISS @ ${summary.result.tick}`, 'WAITING');
+        detail.textContent = `recording=${recordingIdentity(recording)}\neditConfig=${editConfigIdentity(editConfig)}\n\nThe replay did not consume the complete recorded RNG stream (expected ${summary.result.expectedRandomDraws}, ORIGINAL ${summary.result.truthRandomDraws}, EDITED ${summary.result.editedRandomDraws}). This is a reproduction-contract failure, not an ORIGINAL-vs-EDITED semantic divergence.`;
       } else if (summary.status === 'STOPPED') {
         setStatus('STOPPED', 'IDLE');
       } else {
