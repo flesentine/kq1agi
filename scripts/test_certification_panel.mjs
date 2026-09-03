@@ -88,14 +88,21 @@ class FakeHost {
 }
 
 const fast = { pulseIntervalMs: 0 };
+let beforePulseCalls = 0;
 
 let summary = await runCertificationSession(new FakeHost([
   { status: 'BUSY', tick: 1 },
   { status: 'MATCH', tick: 2 },
   { status: 'MATCH', tick: 3 },
-]), { ...fast, targetBarriers: 2, maxBusyPulses: 5 });
+]), {
+  ...fast,
+  targetBarriers: 2,
+  maxBusyPulses: 5,
+  beforePulse: () => { beforePulseCalls += 1; },
+});
 assert.equal(summary.status, 'MATCH_LIMIT');
 assert.equal(summary.barriers, 2);
+assert.equal(beforePulseCalls, 3);
 
 summary = await runCertificationSession(new FakeHost([
   { status: 'MATCH', tick: 1 },
