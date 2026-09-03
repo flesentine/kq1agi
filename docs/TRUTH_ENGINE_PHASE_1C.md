@@ -22,7 +22,7 @@ The normal Pages build remains the playable edited runtime. In addition, the Pag
 - `certification/certification-host.mjs` — Phase -1B deterministic host;
 - `certification/certification-panel.mjs` — Phase -1C local OPFS/UI bridge.
 
-The page loads only the tiny panel module up front. The heavy certification workers and their compiled GWT payloads are not started until the user presses **RUN**.
+The page loads only the lightweight certification panel/host JavaScript up front. The heavy certification workers and their compiled GWT payloads are not started until the user presses **RUN**.
 
 ## Local game discovery
 
@@ -33,6 +33,8 @@ The panel enumerates the browser origin's `Game Files` OPFS directory and lists 
 ## Initial run mode
 
 Phase -1C intentionally begins with a deterministic **no-input smoke run**. The panel advances the two certification lanes through a requested number of shared barriers (60 by default) and stops on the first covered divergence.
+
+The browser runner paces `CertificationHost.pulse()` against a monotonic 60 Hz schedule because one host pulse is one logical 1/60-second game pulse. It deliberately does **not** spin pulses as fast as the browser event loop can run them; otherwise worker CPU scheduling would become simulated game time. If the browser misses a pulse deadline, the schedule re-anchors instead of issuing a burst of catch-up pulses.
 
 If the game enters a long blocking input wait, the panel reports **WAITING FOR INPUT** after a bounded number of logical pulses instead of treating the wait as a mismatch. Automatic capture/replay of the user's real PLAY input is explicitly deferred to the later record/replay phase.
 
@@ -58,6 +60,7 @@ Normal PLAY continues to use its existing worker, OPFS game import, OPFS player 
 - The panel reads an existing local `GAMEFILES.DAT` without asking for another upload.
 - No King's Quest resources are present in the repository or CI artifact.
 - A requested no-input run reports progress by shared barrier and stops at the first divergence.
+- Browser certification pulses are paced at logical 60 Hz rather than tied to event-loop spin speed.
 - A divergence identifies its first observed tick and trace/digest/event category.
 - A blocking input wait is reported as waiting, not divergence.
 - Normal production PLAY/EDIT continues to build and run when CERTIFY is never opened.
