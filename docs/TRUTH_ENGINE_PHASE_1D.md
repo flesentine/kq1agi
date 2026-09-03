@@ -74,7 +74,7 @@ Replay ticks are paced at logical 60 Hz for the same reason as the Phase -1C smo
 
 ## Random stream
 
-Normal PLAY still uses the existing `java.util.Random` implementation. Phase -1D adds an observer around the three bounded AGI runtime random call sites; with no observer, the helper delegates directly to the existing `Random.nextInt(bound)`.
+Normal PLAY still uses the existing `java.util.Random` implementation. Phase -1D adds an observer around **all five bounded AGI runtime random call sites in the pinned engine**: four `AnimatedObject` wander/follow draws and the AGI `random` command. A build-time coverage check fails if any direct `state.random.nextInt(...)` call remains in those runtime paths. With no observer, the helper delegates directly to the existing `Random.nextInt(bound)`.
 
 During replay, both certification lanes use `CertificationReplayRandom`, which returns the captured `(bound, value)` sequence exactly. Stream exhaustion or a bound mismatch is a replay-contract failure; the runtime does not invent a replacement random value. At the final settled barrier, both lanes' consumed draw counts must also equal the frozen recording's total draw count.
 
@@ -103,7 +103,7 @@ For a clean reproduction, finish editing first, reload the page, reproduce the g
 - The journal starts before the first normal logical tick and remains local/in-memory only.
 - The frozen recording binds `GAMEFILES.DAT`, EditConfig v1, and the canonical recording hash.
 - Exact encoded AGI key queue values are replayed; DOM keyboard mapping is not reimplemented by certification.
-- Exact captured bounded RNG values are supplied to both certification lanes with bound validation.
+- All five pinned bounded AGI runtime RNG call sites are wrapped and build-time verified; exact captured values are supplied to both certification lanes with bound validation.
 - Recorded sound completion flags are replayed at recorded logical ticks.
 - Recorded interpreter cycle-release decisions are followed at paced logical 60 Hz.
 - The final released interpreter cycle is settled and compared without advancing past the recording's final logical tick.
