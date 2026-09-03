@@ -36,6 +36,8 @@ When **REPLAY PLAY** is pressed, the current journal is copied synchronously bef
 
 The recording must start at logical tick 1. If the journal started late or cannot be tied to the current local game, Phase -1D refuses replay rather than pretending it can reconstruct the missing identity or prefix.
 
+The recording hash authenticates a canonical representation: release ticks are normalized, transport events are canonicalized and ordered by sequence, and valid RNG draws are ordered by sequence. Replay now executes that **same canonical representation**. Hash-equivalent raw representation changes therefore cannot alter replay behavior; for example, reordering the raw RNG array or appending a malformed draw cannot change the RNG stream while retaining the same recording identity.
+
 ## Replay semantics
 
 The certification replay host is a Phase -1D subclass of the frozen Phase -1B host. The base host and `semantic-v1` comparator remain unchanged.
