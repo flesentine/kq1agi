@@ -19,6 +19,7 @@ node scripts/test_certification_panel.mjs
 node scripts/test_certification_edit_config.mjs
 node scripts/test_certification_recording.mjs
 node scripts/test_certification_replay_host.mjs
+node scripts/test_phase1d_recording_boundary.mjs
 
 git clone --quiet https://github.com/lanceewing/agile-gdx.git "$TRUTH_TREE"
 git -C "$TRUTH_TREE" checkout --quiet "$PINNED_AGILE_SHA"
@@ -35,7 +36,11 @@ cp -a "$PRODUCTION_TREE" "$EDITED_TREE"
 # instrumentation sees its original, stable source anchors in both cert lanes.
 python3 scripts/instrument_phase1d_play_recording.py "$PRODUCTION_TREE"
 python3 scripts/fix_phase1d_random_coverage.py "$PRODUCTION_TREE"
+python3 scripts/instrument_phase1d_recording_boundary.py "$PRODUCTION_TREE"
 git -C "$PRODUCTION_TREE" diff --check
+
+grep -q 'RecordingCycleComplete' "$PRODUCTION_TREE/html/src/main/java/com/agifans/agile/worker/AgileWebWorker.java"
+grep -q 'RecordingCycleComplete' "$PRODUCTION_TREE/html/src/main/java/com/agifans/agile/gwt/GwtAgileRunner.java"
 
 for dir in "$TRUTH_TREE" "$EDITED_TREE"; do
   python3 scripts/instrument_truth_worker.py "$dir"
@@ -88,7 +93,7 @@ cp docs/TRUTH_ENGINE_PHASE_1D.md "$OUT/README.md"
 printf '%s\n' \
   'Phase -1D browser bundle. No AGI game resources are included.' \
   'EditConfig v1 freezes browser editor state and applies it only to the edited lane.' \
-  'PLAY recording v1 stays in browser memory and binds the local GAMEFILES.DAT hash, EditConfig hash, input transport, complete bounded RNG stream, sound completion timing, and 60 Hz cycle-release schedule.' \
+  'PLAY recording v1 stays in browser memory and binds the local GAMEFILES.DAT hash, EditConfig hash, input transport, complete bounded RNG stream, sound completion timing, complete-worker freeze boundary, and 60 Hz cycle-release schedule.' \
   > "$OUT/ARTIFACT.txt"
 
 find "$OUT" -maxdepth 2 -type f | sort
