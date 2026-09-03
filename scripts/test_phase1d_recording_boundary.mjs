@@ -9,6 +9,7 @@ function makeShared({ totalTicks = 0, inTick = 0 } = {}) {
   return { sab, vars };
 }
 
+const GAME = 'demo1-local';
 const released = [
   { type: 'pulse', tick: 1, seq: 1, released: true },
   { type: 'random', tick: 1, seq: 2, bound: 9, value: 4 },
@@ -20,10 +21,12 @@ const released = [
     rawEvents: released,
     variableSAB: sab,
     lastCompletedTick: 1,
+    gameDirectory: GAME,
     overflowed: false,
   });
   assert.equal(result.ready, true);
   assert.equal(result.reason, 'complete');
+  assert.equal(result.gameDirectory, GAME);
   assert.equal(result.lastReleaseTick, 1);
   assert.equal(result.lastCompletedTick, 1);
   assert.deepEqual(result.rawEvents, released);
@@ -41,6 +44,7 @@ const released = [
     rawEvents: released,
     variableSAB: sab,
     lastCompletedTick: 1,
+    gameDirectory: GAME,
   });
   assert.equal(result.ready, false);
   assert.equal(result.reason, 'worker-busy');
@@ -52,6 +56,7 @@ const released = [
     rawEvents: released,
     variableSAB: sab,
     lastCompletedTick: 0,
+    gameDirectory: GAME,
   });
   assert.equal(result.ready, false);
   assert.equal(result.reason, 'worker-events-pending');
@@ -73,8 +78,10 @@ const released = [
     rawEvents: longCycle,
     variableSAB: sab,
     lastCompletedTick: 1,
+    gameDirectory: GAME,
   });
   assert.equal(result.ready, true);
+  assert.equal(result.gameDirectory, GAME);
   assert.equal(result.lastReleaseTick, 1);
   assert.equal(result.lastCompletedTick, 1);
 }
@@ -88,13 +95,31 @@ const released = [
     ],
     variableSAB: sab,
     lastCompletedTick: 0,
+    gameDirectory: GAME,
   });
   assert.equal(result.ready, false);
   assert.equal(result.reason, 'no-cycle-release');
 }
 
 {
-  const result = snapshotReadyPlayJournal({ rawEvents: released, variableSAB: null, lastCompletedTick: 1 });
+  const { sab } = makeShared({ totalTicks: 1, inTick: 0 });
+  const result = snapshotReadyPlayJournal({
+    rawEvents: released,
+    variableSAB: sab,
+    lastCompletedTick: 1,
+    gameDirectory: '',
+  });
+  assert.equal(result.ready, false);
+  assert.equal(result.reason, 'no-game-identity');
+}
+
+{
+  const result = snapshotReadyPlayJournal({
+    rawEvents: released,
+    variableSAB: null,
+    lastCompletedTick: 1,
+    gameDirectory: GAME,
+  });
   assert.equal(result.ready, false);
   assert.equal(result.reason, 'no-shared-state');
 }
