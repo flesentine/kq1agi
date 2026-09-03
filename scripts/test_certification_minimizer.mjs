@@ -16,16 +16,18 @@ const recording = Object.freeze({
   gameBytes: 1234,
   editConfigHash: 'sha256:edit',
   overflowed: false,
-  releaseTicks: [1, 5, 20, 42, 70, 100],
+  releaseTicks: [1, 5, 20, 42, 45, 70, 100],
   events: [
     { tick: 2, seq: 1, phase: 'idle', type: 'key-state', keyCode: 1, pressed: true },
     { tick: 41, seq: 2, phase: 'busy', type: 'key-queue', encodedKey: 0x80041 },
-    { tick: 65, seq: 3, phase: 'idle', type: 'mouse', x: 3, y: 4, button: 1 },
+    { tick: 44, seq: 3, phase: 'idle', type: 'mouse', x: 2, y: 3, button: 0 },
+    { tick: 65, seq: 4, phase: 'idle', type: 'mouse', x: 3, y: 4, button: 1 },
   ],
   random: [
-    { tick: 5, seq: 4, bound: 8, value: 3 },
-    { tick: 42, seq: 5, bound: 9, value: 4 },
-    { tick: 80, seq: 6, bound: 10, value: 2 },
+    { tick: 5, seq: 5, bound: 8, value: 3 },
+    { tick: 42, seq: 6, bound: 9, value: 4 },
+    { tick: 46, seq: 7, bound: 6, value: 1 },
+    { tick: 80, seq: 8, bound: 10, value: 2 },
   ],
   hash: 'sha256:old',
 });
@@ -52,9 +54,9 @@ assert.equal(sameDivergence({ ...target, tick: 43 }, target), false);
 
 const focus = focusRecordingAroundTick(recording, 42, 5);
 assert.deepEqual([focus.startTick, focus.endTick], [37, 47]);
-assert.deepEqual(focus.events.map(event => event.tick), [41]);
-assert.deepEqual(focus.random.map(draw => draw.tick), [42]);
-assert.deepEqual(focus.releaseTicks, [42]);
+assert.deepEqual(focus.events.map(event => event.tick), [41, 44]);
+assert.deepEqual(focus.random.map(draw => draw.tick), [42, 46]);
+assert.deepEqual(focus.releaseTicks, [42, 45]);
 
 const directAttempts = [];
 const direct = await minimizeDivergentPrefix(recording, target, async candidate => {
@@ -68,7 +70,10 @@ assert.equal(direct.status, 'MINIMIZED');
 assert.equal(direct.minimizedFinalTick, 42);
 assert.equal(direct.removedTicks, 58);
 assert.deepEqual(directAttempts, [42]);
-assert.deepEqual([direct.focus.startTick, direct.focus.endTick], [37, 42]);
+// The authoritative replay prefix stops at 42, but the debugging focus deliberately
+// retains the original post-divergence context through tick 47.
+assert.deepEqual([direct.focus.startTick, direct.focus.endTick], [37, 47]);
+assert.deepEqual(direct.focus.events.map(event => event.tick), [41, 44]);
 
 // Exercise the fallback: imagine a future transport contract where the same
 // divergence at tick 42 is not exposed until a final boundary at tick 45.
@@ -91,5 +96,17 @@ const mismatch = await minimizeDivergentPrefix(recording, target, async candidat
   result: { ...target, index: 3 },
 }));
 assert.equal(mismatch.status, 'NOT_REPRODUCED');
+
+let stop = false;
+const attemptsSeen = [];
+const stopped = await minimizeDivergentPrefix(recording, target, async candidate => {
+  stop = true;
+  return { status: 'REPLAY_MATCH' };
+}, {
+  shouldStop: () => stop,
+  onAttempt: attempt => attemptsSeen.push(attempt.finalTick),
+});
+assert.equal(stopped.status, 'STOPPED');
+assert.deepEqual(attemptsSeen, [42]);
 
 console.log('certification minimizer tests: PASS');
