@@ -72,28 +72,56 @@ export function sameDivergence(result, target) {
   return !!targetFingerprint && divergenceFingerprint(result) === targetFingerprint;
 }
 
+function snapshotSourceRecordingV1(recording) {
+  if (!recording || typeof recording !== 'object') return null;
+  // Capture every replay-authoritative field synchronously before any async digest
+  // work. The Phase -1D envelope is top-level frozen but its nested arrays are not;
+  // this snapshot prevents a caller/UI task from changing the source between hash
+  // validation and later minimization candidates.
+  const releaseTicks = Object.freeze([...(recording.releaseTicks ?? [])]);
+  const events = Object.freeze([...(recording.events ?? [])].map(event =>
+    Object.freeze(event && typeof event === 'object' ? { ...event } : event)));
+  const random = Object.freeze([...(recording.random ?? [])].map(draw =>
+    Object.freeze(draw && typeof draw === 'object' ? { ...draw } : draw)));
+  return Object.freeze({
+    schema: recording.schema,
+    completeFromStart: recording.completeFromStart,
+    startTick: recording.startTick,
+    finalTick: recording.finalTick,
+    gameHash: recording.gameHash,
+    gameBytes: recording.gameBytes,
+    editConfigHash: recording.editConfigHash,
+    overflowed: recording.overflowed,
+    releaseTicks,
+    events,
+    random,
+    hash: recording.hash,
+  });
+}
+
 async function validateSourceRecordingV1(recording) {
-  if (!recording || recording.schema !== RECORDING_SCHEMA) {
+  const source = snapshotSourceRecordingV1(recording);
+  if (!source || source.schema !== RECORDING_SCHEMA) {
     throw new Error(`Phase -1E requires a ${RECORDING_SCHEMA} recording.`);
   }
-  if (!recording.completeFromStart || asInt(recording.startTick) !== 1) {
+  if (!source.completeFromStart || asInt(source.startTick) !== 1) {
     throw new Error('Phase -1E requires a complete recording starting at logical tick 1.');
   }
-  if (recording.overflowed) {
+  if (source.overflowed) {
     throw new Error('Phase -1E refuses to minimize an overflowed PLAY recording.');
   }
-  if (asInt(recording.finalTick) < 1) {
+  if (asInt(source.finalTick) < 1) {
     throw new Error('Phase -1E requires a recording with at least one logical tick.');
   }
-  const expectedHash = String(recording.hash ?? '');
+  const expectedHash = String(source.hash ?? '');
   if (!expectedHash) {
     throw new Error('Phase -1E requires the frozen Phase -1D recording hash.');
   }
-  const actualHash = await hashPlayRecordingV1(recording);
+  const actualHash = await hashPlayRecordingV1(source);
   if (actualHash !== expectedHash) {
     throw new Error(`Phase -1E source recording hash mismatch: expected ${expectedHash}, got ${actualHash}.`);
   }
-  return actualHash;
+  return source;
 }
 
 async function buildRecordingPrefixUnchecked(recording, finalTick) {
@@ -131,8 +159,8 @@ async function buildRecordingPrefixUnchecked(recording, finalTick) {
  * silently launder a mutated/stale recording into a new hash-valid prefix.
  */
 export async function buildRecordingPrefixV1(recording, finalTick) {
-  await validateSourceRecordingV1(recording);
-  return buildRecordingPrefixUnchecked(recording, finalTick);
+  const source = await validateSourceRecordingV1(recording);
+  return buildRecordingPrefixUnchecked(source, finalTick);
 }
 
 export function focusRecordingAroundTick(recording, tick, radius = 60) {
@@ -170,12 +198,12 @@ function divergenceFromSummary(summary) {
  */
 export async function minimizeDivergentPrefix(recording, targetResult, replayCandidate, options = {}) {
   if (typeof replayCandidate !== 'function') throw new TypeError('replayCandidate must be a function.');
-  await validateSourceRecordingV1(recording);
+  const source = await validateSourceRecordingV1(recording);
 
   const targetFingerprint = divergenceFingerprint(targetResult);
   if (!targetFingerprint) throw new Error('Phase -1E minimization requires a DIVERGED target result.');
   const targetTick = asInt(targetResult.tick);
-  const originalFinalTick = asInt(recording.finalTick);
+  const originalFinalTick = asInt(source.finalTick);
   if (targetTick < 1 || targetTick > originalFinalTick) {
     throw new Error('Target divergence tick is outside the recording.');
   }
@@ -191,7 +219,7 @@ export async function minimizeDivergentPrefix(recording, targetResult, replayCan
     if (shouldStop()) return { stopped: true };
     // The immutable source was verified once at minimization start. Candidate hashes
     // remain freshly computed by the same Phase -1D canonical hash function.
-    const candidate = await buildRecordingPrefixUnchecked(recording, finalTick);
+    const candidate = await buildRecordingPrefixUnchecked(source, finalTick);
     const summary = await replayCandidate(candidate);
     const divergence = divergenceFromSummary(summary);
     const reproduced = sameDivergence(divergence, targetFingerprint);
@@ -249,6 +277,6 @@ export async function minimizeDivergentPrefix(recording, targetResult, replayCan
     attempts: Object.freeze([...attempts]),
     // Keep context after the divergence for debugging even though the authoritative
     // replay prefix stops at the minimized final boundary.
-    focus: focusRecordingAroundTick(recording, targetTick, options.focusRadius ?? 60),
+    focus: focusRecordingAroundTick(source, targetTick, options.focusRadius ?? 60),
   });
 }
