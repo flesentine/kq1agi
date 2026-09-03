@@ -14,11 +14,6 @@ fi
 
 rm -rf "$TRUTH_TREE" "$EDITED_TREE" "$OUT"
 
-# Phase -1D instruments the exact production source tree before it is copied into
-# the edited certification lane and before the normal Pages app is compiled.
-python3 scripts/instrument_phase1d_play_recording.py "$PRODUCTION_TREE"
-git -C "$PRODUCTION_TREE" diff --check
-
 node scripts/test_certification_host.mjs
 node scripts/test_certification_panel.mjs
 node scripts/test_certification_edit_config.mjs
@@ -29,9 +24,17 @@ git clone --quiet https://github.com/lanceewing/agile-gdx.git "$TRUTH_TREE"
 git -C "$TRUTH_TREE" checkout --quiet "$PINNED_AGILE_SHA"
 test "$(git -C "$TRUTH_TREE" rev-parse HEAD)" = "$PINNED_AGILE_SHA"
 
-# The edited certification lane starts from the exact already-patched source tree
-# used by this Pages build, before certification-only instrumentation is applied.
+# Freeze the edited certification source before adding the normal-PLAY observer.
+# Phase -1D's recording hooks are observational UI/worker transport plumbing, not
+# part of the edited game semantics. The certification replay instrumentation below
+# installs its own bounded-RNG replay hook in both lanes after Phase -1B setup.
 cp -a "$PRODUCTION_TREE" "$EDITED_TREE"
+
+# The normal Pages app does need the page-start PLAY observer. Instrument it only
+# after the edited certification source has been frozen so the Phase -1B worker
+# instrumentation sees its original, stable source anchors in both cert lanes.
+python3 scripts/instrument_phase1d_play_recording.py "$PRODUCTION_TREE"
+git -C "$PRODUCTION_TREE" diff --check
 
 for dir in "$TRUTH_TREE" "$EDITED_TREE"; do
   python3 scripts/instrument_truth_worker.py "$dir"
