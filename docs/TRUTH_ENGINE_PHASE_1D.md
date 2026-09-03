@@ -6,7 +6,9 @@ Phase -1D does not replace `semantic-v1`. It adds a reproducibility contract aro
 
 ## Recording authority
 
-The recording begins when the page starts, before AGILE launches. It records values **after AGILE has already translated browser input into the transport seen by the normal worker**, rather than trying to reconstruct that translation later from DOM events.
+The page installs the journal bootstrap before AGILE launches. The journal itself is reset and bound to one game when normal **PLAY starts**, before that game's worker begins its first logical tick. Starting another game in the same page clears the old journal so two PLAY sessions cannot be merged accidentally.
+
+Phase -1D records values **after AGILE has already translated browser input into the transport seen by the normal worker**, rather than trying to reconstruct that translation later from DOM events.
 
 PLAY recording v1 contains:
 
@@ -17,19 +19,22 @@ PLAY recording v1 contains:
 - actual bounded AGI random results as `(bound, value)` pairs in draw order; and
 - actual sound end-flag completion events at the logical tick observed by normal PLAY.
 
-Each transport event also retains whether normal PLAY observed the worker as idle or busy when the write occurred. PLAY recording v1 binds that metadata into the journal identity. The authoritative replay clock is still the logical 60 Hz tick; Phase -1D does not claim an exact Java instruction position for a browser write that happened part-way through a busy interpreter cycle.
+Each transport event also retains whether normal PLAY observed the worker as **idle** or **busy** when the write occurred. Replay honors that phase: idle writes are not moved into a busy cycle, and busy writes are not silently moved to an idle boundary. The authoritative replay clock is still the logical 60 Hz tick; Phase -1D does not claim an exact Java instruction position for a browser write that happened part-way through a busy interpreter cycle.
 
 The journal is kept only in browser memory. It is not written to OPFS, localStorage, CI, the repository, or a network endpoint. A safety cap prevents an unbounded browser-memory journal; if that cap is reached, replay is refused rather than silently truncating the recording.
 
 ## Frozen replay identity
 
+For an imported game, AGILE's `AppConfigItem.filePath` is the directory name passed to `OPFSGameFiles` for `Game Files/<directory>/GAMEFILES.DAT`. Phase -1D records that directory at PLAY start. **REPLAY PLAY refuses to run if the CERTIFY selector points at a different local game.** This prevents a valid journal from game A being replayed against game B merely because game B was selected when certification began.
+
 When **REPLAY PLAY** is pressed, the current journal is copied synchronously before any asynchronous hashing or OPFS work. The replay is then bound to:
 
-1. the SHA-256 identity of the selected local `GAMEFILES.DAT` buffer;
-2. the frozen Phase -1C `EditConfig v1` hash; and
-3. the canonical `kq1agi-play-recording-v1` hash.
+1. the local game directory captured when PLAY started;
+2. the SHA-256 identity of that selected local `GAMEFILES.DAT` buffer;
+3. the frozen Phase -1C `EditConfig v1` hash; and
+4. the canonical `kq1agi-play-recording-v1` hash.
 
-The recording must start at logical tick 1. If the page was modified or the journal started late, Phase -1D asks for a reload and a fresh reproduction rather than pretending it can reconstruct the missing prefix.
+The recording must start at logical tick 1. If the journal started late or cannot be tied to the current local game, Phase -1D refuses replay rather than pretending it can reconstruct the missing identity or prefix.
 
 ## Replay semantics
 
@@ -37,12 +42,14 @@ The certification replay host is a Phase -1D subclass of the frozen Phase -1B ho
 
 For each recorded logical tick, replay:
 
-1. applies the recorded transport values at their logical tick boundary;
+1. applies recorded idle/busy transport values at their recorded logical tick and transport phase;
 2. applies the frozen EditConfig only to EDITED, and only while both certification lanes are idle;
 3. advances the shared AGI clock at a paced logical 60 Hz;
 4. releases a new interpreter cycle only when normal PLAY recorded a release at that tick;
 5. feeds both certification workers the exact recorded bounded RNG stream; and
 6. injects recorded sound completion flags rather than deriving completion timing from WAV duration.
+
+Busy-phase transport is injected synchronously after the replay clock/release writes and before either certification worker receives its next event-loop turn. An idle-phase transport write stamped at logical tick `T` proves normal PLAY became idle before tick `T+1`; replay therefore gives that idle boundary at most one 60 Hz interval to occur. If it cannot reproduce the phase in that window, it reports a timing miss instead of pausing logical time for seconds until the worker catches up.
 
 ORIGINAL receives the same recorded gameplay transport but never receives EditConfig. EDITED receives the same gameplay transport plus the frozen EditConfig.
 
@@ -50,21 +57,23 @@ A completed shared barrier is still compared with the Phase -1B trace/digest/eve
 
 ## Final recording boundary
 
-The last recorded 60 Hz pulse is not automatically a certification barrier. Normal PLAY may have released an interpreter cycle on that pulse and the user may press **REPLAY PLAY** while that cycle's completion is already represented in the frozen journal window.
+`RecordingRandomDraw` and `RecordingCycleComplete` are FIFO messages from the same normal PLAY worker. `RecordingCycleComplete` is posted after the interpreter returns for the released cycle, so observing that marker also proves that every RNG observation posted earlier by that cycle has reached the UI message queue.
 
-Phase -1D therefore settles any final in-flight certification cycle **without advancing logical time**, publishes the normal Phase -1B common-barrier snapshot at that same final tick, and compares it before `REPLAY MATCH` can be reported. A semantic difference that appears only when the final cycle completes is still reported as `DIVERGED` at the final recorded tick.
+Phase -1D freezes a PLAY window only when the normal shared worker is idle and the most recent released cycle's completion marker has arrived. The synchronous boundary check and journal copy happen in one UI task, so another 60 Hz page callback cannot interleave between validation and the copy.
+
+The last recorded 60 Hz pulse is not automatically a certification barrier. Phase -1D therefore settles any final in-flight certification cycle **without advancing logical time**, publishes the normal Phase -1B common-barrier snapshot at that same final tick, and compares it before `REPLAY MATCH` can be reported. A semantic difference that appears only when the final cycle completes is still reported as `DIVERGED` at the final recorded tick.
 
 After that final barrier, Phase -1D also verifies that ORIGINAL and EDITED both consumed the complete recorded bounded-RNG stream. Two lanes agreeing with each other after consuming only a prefix of the recording is not accepted as a match.
 
 ## Replay timing and contract misses
 
-Worker scheduling is not silently converted into a gameplay mismatch. If the certification workers cannot reproduce a recorded cycle-release decision, or cannot settle a required in-flight cycle at the recorded logical boundary, Phase -1D reports:
+Worker scheduling is not silently converted into a gameplay mismatch. If the certification workers cannot reproduce a recorded cycle-release decision, a recorded idle/busy transport phase, or a required in-flight completion at its allowed logical boundary, Phase -1D reports:
 
 `REPLAY_TIMING_MISS`
 
 This means the recorded browser execution schedule was not reproduced closely enough to make the next semantic comparison authoritative. It is **not** reported as an ORIGINAL-vs-EDITED divergence.
 
-If both lanes agree semantically but the replay did not consume the complete recorded RNG stream, Phase -1D reports:
+If the frozen recording itself cannot be honored — for example, its transport phase ordering is impossible, the replay host does not provide a required phase hook, or both lanes do not consume the complete recorded RNG stream — Phase -1D reports:
 
 `REPLAY_CONTRACT_MISS`
 
@@ -84,28 +93,32 @@ The Phase -1C no-input smoke path remains available and continues to use the det
 
 Phase -1D v1 assumes the editor configuration is stable during the gameplay window being reproduced. The frozen EditConfig is the configuration present when REPLAY PLAY is pressed. Phase -1D v1 does **not** journal historical scene-mask or sprite-pin authoring mutations that happened earlier in that same PLAY window.
 
-For a clean reproduction, finish editing first, reload the page, reproduce the gameplay event without changing editor configuration, and then run REPLAY PLAY.
+For a clean reproduction, finish editing first, start/reload the intended local game, reproduce the gameplay event without changing editor configuration, and then run REPLAY PLAY.
 
 ## Result meanings
 
-- `REPLAY MATCH × N` — the recorded logical window was consumed, the final in-flight cycle was settled at the same final tick, the complete recorded RNG stream was consumed, and no covered semantic divergence was found across `N` shared barriers.
+- `REPLAY MATCH × N` — the recorded logical window and transport phases were consumed, the final in-flight cycle was settled at the same final tick, the complete recorded RNG stream was consumed, and no covered semantic divergence was found across `N` shared barriers.
 - `DIVERGED @ tick` — the first covered ORIGINAL-vs-EDITED semantic divergence in the recorded window.
 - `REPLAY COMPLETE / MATCH` — both lanes reached the synchronized terminal contract and the final semantic state matched.
-- `REPLAY TIMING MISS @ tick` — the recorded release/final-settle schedule could not be reproduced; this is not a semantic divergence.
-- `REPLAY CONTRACT MISS @ tick` — replay did not satisfy the frozen reproduction contract, such as complete RNG-stream consumption; this is not a semantic divergence.
+- `REPLAY TIMING MISS @ tick` — the recorded release/transport/final-settle timing could not be reproduced; this is not a semantic divergence.
+- `REPLAY CONTRACT MISS @ tick` — replay did not satisfy the frozen reproduction contract; this is not a semantic divergence.
 - `REPLAY ERROR` — the recording contract, local data binding, worker bootstrap, or replay runtime failed.
 
-`REPLAY MATCH` is scoped to the shared barriers actually observed inside the frozen recording window. It is not a claim of framebuffer/pixel identity, JVM object-graph identity, exact sub-cycle browser event timing, or behavior after the recording ends.
+`REPLAY MATCH` is scoped to the shared barriers actually observed inside the frozen recording window. It is not a claim of framebuffer/pixel identity, JVM object-graph identity, exact sub-cycle Java instruction timing, or behavior after the recording ends.
 
 ## Phase -1D acceptance criteria
 
 - Normal PLAY builds with the recording observer enabled but retains the same underlying input, random, sound, and worker transports.
-- The journal starts before the first normal logical tick and remains local/in-memory only.
+- A fresh journal is established before the selected game's first normal logical tick and remains local/in-memory only.
+- The journal is reset when a new PLAY game starts so sessions cannot be mixed.
+- The journal records the exact local game directory used by normal PLAY, and REPLAY PLAY refuses a different selected directory.
 - The frozen recording binds `GAMEFILES.DAT`, EditConfig v1, and the canonical recording hash.
 - Exact encoded AGI key queue values are replayed; DOM keyboard mapping is not reimplemented by certification.
+- Recorded transport writes are replayed at their captured logical tick and idle/busy phase; impossible or unreproducible phase timing is not silently normalized.
 - All five pinned bounded AGI runtime RNG call sites are wrapped and build-time verified; exact captured values are supplied to both certification lanes with bound validation.
 - Recorded sound completion flags are replayed at recorded logical ticks.
 - Recorded interpreter cycle-release decisions are followed at paced logical 60 Hz.
+- A recorded idle-phase event must reproduce its idle boundary within one logical 60 Hz interval rather than freezing the replay clock until an arbitrary barrier timeout.
 - The final released interpreter cycle is settled and compared without advancing past the recording's final logical tick.
 - Both replay lanes must consume exactly the complete recorded RNG stream before `REPLAY MATCH`.
 - A reproduction schedule failure is `REPLAY_TIMING_MISS`, not `DIVERGED`.
