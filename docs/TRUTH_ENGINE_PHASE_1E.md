@@ -14,17 +14,28 @@ The authoritative first reduction is therefore:
 
 A later checkpoint phase can make true arbitrary-window replay possible.
 
+## Source recording authority
+
+Phase -1E derives candidates only from an intact frozen Phase -1D recording. Before any candidate is created, it requires:
+
+- schema `kq1agi-play-recording-v1`;
+- `completeFromStart=true` and `startTick=1`;
+- a non-overflowed recording with at least one logical tick; and
+- a canonical recording hash that exactly matches the frozen `recording.hash`.
+
+A stale or mutated source recording is rejected before any candidate replay. Phase -1E must never "repair" an altered source merely by recomputing a fresh candidate hash, because that would weaken the Phase -1D recording-integrity contract.
+
 ## Exact divergence target
 
-A candidate is accepted only when it reproduces the same first divergence fingerprint:
+A candidate is accepted only when it reproduces the same first divergence fingerprint. The fingerprint deliberately excludes worker `cycle` and snapshot timing, but preserves the reason-specific semantic identity:
 
-- same logical divergence tick;
-- same divergence reason;
-- same trace/digest slot when present;
-- same ORIGINAL and EDITED values when present; and
-- same external-event type when relevant.
+- `trace`, `semantic-digest`, and `random-stream`: same logical tick, reason, slot, ORIGINAL value, and EDITED value;
+- `external-event`: same logical tick, reason, and complete stable external-event detail payload, including sound hashes/flags or worker-error identity;
+- `quit-state`: same logical tick, quit booleans, and shared quit-marker state;
+- `quit-handshake`: same logical tick and lane quit booleans; and
+- future/unknown categories: the available slot/value/detail payload without binding to non-authoritative cycle telemetry.
 
-A different semantic mismatch is not accepted merely because it is also `DIVERGED`.
+A different semantic mismatch is not accepted merely because it is also `DIVERGED` or belongs to the same broad external-event category.
 
 ## Candidate construction
 
@@ -42,7 +53,7 @@ It removes only data after the candidate final tick:
 - later canonical transport events; and
 - later recorded RNG draws.
 
-The candidate receives a newly computed canonical recording hash. The Phase -1D replay hash verification remains authoritative.
+The candidate receives a newly computed canonical recording hash. The Phase -1D replay hash verification remains authoritative for every replay candidate.
 
 ## Search policy
 
@@ -52,6 +63,8 @@ If a future replay contract needs a slightly later final settlement boundary to 
 
 If even the full recording no longer reproduces the exact target divergence, minimization reports `NOT_REPRODUCED` and does not invent a result.
 
+Minimization is cancellable between candidate runs. A stopped search returns `STOPPED` with the attempts completed so far.
+
 ## Event focus
 
 Alongside the minimized prefix, Phase -1E extracts a small focus view around the divergence tick containing:
@@ -60,7 +73,7 @@ Alongside the minimized prefix, Phase -1E extracts a small focus view around the
 - recorded RNG draws; and
 - recorded interpreter release ticks.
 
-This is a debugging view, not an arbitrary-start replay window. The complete prefix is still required to reconstruct game state.
+The focus view is taken from the original frozen recording, so it can retain useful post-divergence context even when the authoritative minimized replay ends exactly at the divergence. This is a debugging/reporting view, not an arbitrary-start replay window. The complete prefix is still required to reconstruct game state.
 
 ## What Phase -1E does not do yet
 
@@ -72,14 +85,19 @@ Phase -1E also does not claim framebuffer identity, JVM object-graph identity, o
 
 ## Acceptance criteria
 
+- The source Phase -1D recording hash is verified before any candidate is derived.
+- A mutated, stale, incomplete, or overflowed source is rejected rather than rehashed into a new authoritative candidate.
 - Prefix candidates always start at logical tick 1.
 - Game and EditConfig identity are preserved exactly.
 - Data after the candidate final tick is removed and the recording hash is recomputed.
 - A reduction is accepted only for the exact same first divergence fingerprint.
+- External-event and terminal mismatch payload identity is preserved, not merely their broad reason/type.
+- Worker cycle/snapshot timing is not treated as part of semantic divergence identity.
 - The direct divergence-tick candidate is tried first.
 - A bounded binary-search fallback finds the smallest later final boundary when needed.
 - A non-reproducing recording returns `NOT_REPRODUCED` rather than a false minimization.
-- The result includes an event/RNG/release focus view around the divergence.
+- The search can be stopped between candidate runs.
+- The result includes an event/RNG/release focus view around the divergence, including original post-divergence context when available.
 - Phase -1D replay and hash validation remain unchanged and authoritative.
 
 ## Next implementation step
