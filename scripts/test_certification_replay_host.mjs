@@ -68,10 +68,19 @@ assert.equal(result.status, 'IDLE');
 assert.equal(host.logicalTick, 1);
 assert.equal(host.cycle, 0);
 
+// A quickly completed replay cycle is deliberately left un-compared until a
+// recorded semantic boundary is reached. CPU speed must not choose the barrier tick.
 result = await host.pulse({ allowCycleRelease: true });
-assert.equal(result.status, 'MATCH');
+assert.equal(result.status, 'IDLE');
+assert.equal(result.comparisonDeferred, true);
 assert.equal(host.logicalTick, 2);
 assert.equal(host.cycle, 1);
+assert.equal(host.comparedCycle, 0);
+result = await host.settleCurrentCycle('recorded-release');
+assert.equal(result.status, 'MATCH');
+assert.equal(result.settleReason, 'recorded-release');
+assert.equal(host.comparedCycle, 1);
+assert.equal(host.logicalTick, 2);
 
 host.injectSoundCompletion(7);
 assert.equal(Atomics.load(host.truth.vars, 256 + 7), 1);
@@ -83,9 +92,8 @@ host._handleLaneMessage(host.edited, { name: 'PlaySound', object: { endFlag: 9 }
 assert.equal(host.pendingExternalDivergence, null);
 assert.equal(host.pendingSoundCompletions.length, 0);
 
-// End a recording on a release whose interpreter cycle is still in flight.
-// settleCurrentCycle must wait without incrementing logical time, then publish the
-// common final barrier and expose the replay RNG draw counts from that snapshot.
+// A recorded boundary may take longer than one wall-clock frame to reproduce. Hold
+// logical time fixed until both lanes finish, then compare the same logical tick.
 const [truthWorker, editedWorker] = MockWorker.instances;
 truthWorker.hold = true;
 editedWorker.hold = true;
@@ -93,19 +101,41 @@ result = await host.pulse({ allowCycleRelease: true });
 assert.equal(result.status, 'BUSY');
 assert.equal(host.logicalTick, 3);
 assert.equal(host.cycle, 2);
-const finalTick = host.logicalTick;
+const heldTick = host.logicalTick;
 truthWorker.randomDraws = 2;
 editedWorker.randomDraws = 2;
-truthWorker.hold = false;
-editedWorker.hold = false;
-result = await host.settleCurrentCycle();
+setTimeout(() => {
+  truthWorker.hold = false;
+  editedWorker.hold = false;
+}, 35);
+const waitStarted = Date.now();
+result = await host.settleCurrentCycle('recorded-release');
+assert.ok((Date.now() - waitStarted) >= 20);
 assert.equal(result.status, 'MATCH');
 assert.equal(result.replaySettled, true);
-assert.equal(host.logicalTick, finalTick);
+assert.equal(result.settleReason, 'recorded-release');
+assert.equal(host.logicalTick, heldTick);
 assert.deepEqual(host.getReplayRandomDrawCounts(), { truth: 2, edited: 2 });
 
-// A semantic difference that becomes visible only when the final busy cycle ends
-// must still be caught at the same final logical tick.
+// Completing early on a no-release tick must not publish an opportunistic barrier.
+// The clock advances according to the recorded schedule and comparison stays deferred.
+result = await host.pulse({ allowCycleRelease: true });
+assert.equal(result.status, 'IDLE');
+assert.equal(result.comparisonDeferred, true);
+const deferredCycle = host.cycle;
+const deferredTick = host.logicalTick;
+assert.ok(deferredCycle > host.comparedCycle);
+result = await host.pulse({ allowCycleRelease: false });
+assert.equal(result.status, 'IDLE');
+assert.equal(host.logicalTick, deferredTick + 1);
+assert.equal(host.cycle, deferredCycle);
+assert.ok(host.comparedCycle < deferredCycle);
+result = await host.settleCurrentCycle('recorded-release');
+assert.equal(result.status, 'MATCH');
+assert.equal(host.comparedCycle, deferredCycle);
+
+// A semantic difference that becomes visible at a recorded boundary remains a real
+// divergence at that same logical tick.
 truthWorker.hold = true;
 editedWorker.hold = true;
 editedWorker.digestXor = 1;
@@ -114,16 +144,15 @@ assert.equal(result.status, 'BUSY');
 const divergenceTick = host.logicalTick;
 truthWorker.hold = false;
 editedWorker.hold = false;
-result = await host.settleCurrentCycle();
+result = await host.settleCurrentCycle('final-cycle');
 assert.equal(result.status, 'DIVERGED');
 assert.equal(result.reason, 'semantic-digest');
 assert.equal(host.logicalTick, divergenceTick);
-
 host.terminate();
 
-// Phase-aware transport must be injected after the logical clock/release writes but
-// before the workers receive an event-loop turn. Idle-phase preparation must then
-// settle and certify that exact cycle without advancing logical time.
+// Busy-phase transport is injected synchronously after the logical clock/release
+// writes and before the workers receive an event-loop turn. Idle preparation may
+// wait longer than one frame while logical time remains fixed.
 MockWorker.instances.length = 0;
 const phaseHost = new ReplayCertificationHost({
   WorkerCtor: MockWorker,
@@ -160,8 +189,10 @@ assert.equal(result.status, 'BUSY');
 assert.equal(result.transportPhase, 'busy');
 assert.equal(phaseHost.logicalTick, phaseTick);
 
-phaseTruth.hold = false;
-phaseEdited.hold = false;
+setTimeout(() => {
+  phaseTruth.hold = false;
+  phaseEdited.hold = false;
+}, 35);
 result = await phaseHost.prepareTransportPhase('idle');
 assert.equal(result.status, 'MATCH');
 assert.equal(result.replaySettled, true);
