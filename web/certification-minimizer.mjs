@@ -111,24 +111,36 @@ export async function minimizeDivergentPrefix(recording, targetResult, replayCan
     throw new Error('Target divergence tick is outside the recording.');
   }
 
+  const shouldStop = options.shouldStop ?? (() => false);
+  const onAttempt = options.onAttempt ?? (() => {});
   const attempts = [];
+  const stopped = () => Object.freeze({
+    status: 'STOPPED', targetFingerprint, originalFinalTick, targetTick,
+    attempts: Object.freeze([...attempts]),
+  });
   const tryTick = async finalTick => {
+    if (shouldStop()) return { stopped: true };
     const candidate = await buildRecordingPrefixV1(recording, finalTick);
     const summary = await replayCandidate(candidate);
     const divergence = divergenceFromSummary(summary);
     const reproduced = sameDivergence(divergence, targetFingerprint);
-    attempts.push(Object.freeze({ finalTick, status: summary?.status ?? 'unknown', reproduced }));
-    return { candidate, summary, divergence, reproduced };
+    const attempt = Object.freeze({ finalTick, status: summary?.status ?? 'unknown', reproduced });
+    attempts.push(attempt);
+    onAttempt(attempt);
+    return { candidate, summary, divergence, reproduced, stopped: false };
   };
 
   let best = await tryTick(targetTick);
+  if (best.stopped) return stopped();
   if (!best.reproduced) {
     let low = targetTick + 1;
     let high = originalFinalTick;
     let verified = null;
     while (low <= high) {
+      if (shouldStop()) return stopped();
       const mid = Math.floor((low + high) / 2);
       const probe = await tryTick(mid);
+      if (probe.stopped) return stopped();
       if (probe.reproduced) {
         verified = probe;
         best = probe;
@@ -140,6 +152,7 @@ export async function minimizeDivergentPrefix(recording, targetResult, replayCan
     if (!verified) {
       const fullAlreadyTried = attempts.some(attempt => attempt.finalTick === originalFinalTick);
       const full = fullAlreadyTried ? null : await tryTick(originalFinalTick);
+      if (full?.stopped) return stopped();
       if (full?.reproduced) best = full;
       else {
         return Object.freeze({
@@ -163,6 +176,8 @@ export async function minimizeDivergentPrefix(recording, targetResult, replayCan
     recording: best.candidate,
     replaySummary: best.summary,
     attempts: Object.freeze([...attempts]),
-    focus: focusRecordingAroundTick(best.candidate, targetTick, options.focusRadius ?? 60),
+    // Keep context after the divergence for debugging even though the authoritative
+    // replay prefix stops at the minimized final boundary.
+    focus: focusRecordingAroundTick(recording, targetTick, options.focusRadius ?? 60),
   });
 }
