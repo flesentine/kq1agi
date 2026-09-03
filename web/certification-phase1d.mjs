@@ -21,6 +21,62 @@ function recordingIdentity(recording) {
   return `${shortHash(recording?.hash)} · ticks 1–${recording?.finalTick ?? 0} · ${recording?.events?.length ?? 0} transport event(s) · ${recording?.random?.length ?? 0} RNG draw(s)`;
 }
 
+/**
+ * Freeze only at a normal-PLAY worker completion boundary. RecordingRandomDraw and
+ * RecordingCycleComplete are FIFO messages from the same worker, so seeing the
+ * completion marker for the most recent released cycle means every RNG observation
+ * from that cycle has reached the UI journal before we copy it.
+ */
+export function snapshotReadyPlayJournal(options = {}) {
+  const source = options.rawEvents ?? globalThis.__kq1agiPlayRecordingRaw;
+  const variableSAB = options.variableSAB ?? globalThis.__kq1agiVariableSAB ?? null;
+  const lastCompletedTick = Number(options.lastCompletedTick ?? globalThis.__kq1agiPlayLastCompletedTick ?? 0) | 0;
+  const overflowed = options.overflowed ?? !!globalThis.__kq1agiPlayRecordingOverflow;
+  if (!Array.isArray(source)) return { ready: false, reason: 'no-journal', lastCompletedTick, lastReleaseTick: 0 };
+  if (!variableSAB) return { ready: false, reason: 'no-shared-state', lastCompletedTick, lastReleaseTick: 0 };
+
+  let vars;
+  try {
+    vars = new Int32Array(variableSAB);
+    if (vars.length <= 517) throw new Error('short shared variable buffer');
+  } catch (error) {
+    return { ready: false, reason: 'no-shared-state', lastCompletedTick, lastReleaseTick: 0 };
+  }
+
+  let inTick;
+  try {
+    inTick = Atomics.load(vars, 517) | 0;
+  } catch (error) {
+    return { ready: false, reason: 'no-shared-state', lastCompletedTick, lastReleaseTick: 0 };
+  }
+
+  let lastReleaseTick = 0;
+  for (const event of source) {
+    if (event?.type === 'pulse' && event.released) lastReleaseTick = Math.max(lastReleaseTick, Number(event.tick) | 0);
+  }
+  if (lastReleaseTick < 1) return { ready: false, reason: 'no-cycle-release', inTick, lastCompletedTick, lastReleaseTick };
+  if (inTick !== 0) return { ready: false, reason: 'worker-busy', inTick, lastCompletedTick, lastReleaseTick };
+  if (lastCompletedTick !== lastReleaseTick) {
+    return { ready: false, reason: 'worker-events-pending', inTick, lastCompletedTick, lastReleaseTick };
+  }
+  return {
+    ready: true,
+    reason: 'complete',
+    inTick,
+    lastCompletedTick,
+    lastReleaseTick,
+    overflowed: !!overflowed,
+    rawEvents: source.map(event => ({ ...event })),
+  };
+}
+
+function boundaryMessage(boundary) {
+  if (boundary.reason === 'worker-busy') return 'Normal PLAY is still inside its current interpreter cycle. Try REPLAY PLAY again when the worker is idle.';
+  if (boundary.reason === 'worker-events-pending') return `Normal PLAY finished its shared cycle, but its worker observations have not all reached the journal yet (last release ${boundary.lastReleaseTick}, confirmed complete ${boundary.lastCompletedTick}). Try REPLAY PLAY again.`;
+  if (boundary.reason === 'no-cycle-release') return 'Normal PLAY has not completed its first interpreter cycle yet.';
+  return 'The normal PLAY shared state is not ready for an authoritative replay snapshot yet.';
+}
+
 function installPhase1D() {
   const panel = document.getElementById('certify-panel');
   const replayButton = document.getElementById('certify-replay-button');
@@ -68,7 +124,9 @@ function installPhase1D() {
       recordingStatus.textContent = `PLAY journal started at tick ${stats.startTick || '?'} · reload required for replay from game start`;
       return;
     }
-    recordingStatus.textContent = `PLAY journal: ticks 1–${stats.finalTick} · ${stats.eventCount} transport event(s) · ${stats.randomCount} RNG draw(s) · ${stats.releaseCount} cycle release(s)`;
+    const boundary = snapshotReadyPlayJournal();
+    const suffix = boundary.ready ? ' · replay boundary ready' : ' · waiting for worker boundary';
+    recordingStatus.textContent = `PLAY journal: ticks 1–${stats.finalTick} · ${stats.eventCount} transport event(s) · ${stats.randomCount} RNG draw(s) · ${stats.releaseCount} cycle release(s)${suffix}`;
   }
 
   async function startReplay() {
@@ -84,16 +142,23 @@ function installPhase1D() {
       return;
     }
 
-    // Freeze before any awaits so normal PLAY can continue without changing this window.
-    const rawEvents = Array.isArray(globalThis.__kq1agiPlayRecordingRaw)
-      ? globalThis.__kq1agiPlayRecordingRaw.map(event => ({ ...event })) : [];
-    const overflowed = !!globalThis.__kq1agiPlayRecordingOverflow;
+    // This check and copy are synchronous. The browser cannot run the next normal
+    // 60 Hz callback between the boundary validation and the raw journal snapshot.
+    const boundary = snapshotReadyPlayJournal();
+    if (!boundary.ready) {
+      setStatus('WAIT FOR PLAY IDLE', 'WAITING');
+      detail.textContent = boundaryMessage(boundary);
+      refreshJournal();
+      return;
+    }
+    const rawEvents = boundary.rawEvents;
+    const overflowed = boundary.overflowed;
 
     stopRequested = false;
     setReplayRunning(true);
     setStatus('FREEZING PLAY WINDOW', 'BUSY');
     progress.textContent = 'Preparing Phase -1D replay…';
-    detail.textContent = 'Hashing local GAMEFILES.DAT, frozen EditConfig v1, and the in-memory PLAY journal…';
+    detail.textContent = `Normal PLAY boundary confirmed at released cycle tick ${boundary.lastReleaseTick}. Hashing local GAMEFILES.DAT, frozen EditConfig v1, and the in-memory PLAY journal…`;
 
     try {
       replayHost?.terminate();
