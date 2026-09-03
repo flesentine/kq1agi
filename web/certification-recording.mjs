@@ -326,6 +326,7 @@ export async function runCertificationReplaySession(host, recording, options = {
     // Wall-clock speed is not allowed to turn into simulated game time.
     const settled = await settleAtCurrentTick('recorded-idle-event', tick, { transportPhase: 'idle' });
     if (settled) return settled;
+    await beforePulse(host);
     for (const event of bucket.idle) applyEvent(host, event);
     bucket.idle.length = 0;
     onUpdate({
@@ -359,9 +360,8 @@ export async function runCertificationReplaySession(host, recording, options = {
     if (releaseExpected) {
       const releaseBarrier = await settleAtCurrentTick('recorded-release', targetTick, { releaseExpected: true });
       if (releaseBarrier) return releaseBarrier;
+      await beforePulse(host);
     }
-
-    await beforePulse(host);
 
     if (targetTick !== pacedTargetTick && pulseIntervalMs > 0) {
       if (pacedTargetTick !== 0) {
