@@ -23,12 +23,12 @@ const raw = [
 const normalized = normalizePlayRecordingRaw(raw);
 assert.equal(normalized.completeFromStart, true);
 assert.deepEqual(normalized.releaseTicks, [1, 3]);
-assert.equal(normalized.events.filter(e => e.type === 'mouse').length, 1);
-assert.equal(normalized.events.find(e => e.type === 'mouse').x, 11);
+assert.equal(normalized.events.filter(e => e.type === 'mouse').length, 2);
+assert.equal(normalized.events.filter(e => e.type === 'mouse')[1].x, 11);
 assert.deepEqual(normalized.random.map(({ bound, value }) => [bound, value]), [[9, 4]]);
 assert.deepEqual(getPlayRecordingStats(raw), {
   completeFromStart: true, startTick: 1, finalTick: 3, releaseCount: 2,
-  eventCount: 4, randomCount: 1, rawCount: 9,
+  eventCount: 5, randomCount: 1, rawCount: 9, overflowed: false,
 });
 
 const frozen = await freezePlayRecordingV1({
@@ -45,6 +45,9 @@ await assert.rejects(freezePlayRecordingV1({
   gameBuffer: new ArrayBuffer(1), editConfigHash: 'x',
   rawEvents: [{ type: 'pulse', tick: 2, seq: 1, released: true }],
 }), /did not start at logical tick 1/);
+await assert.rejects(freezePlayRecordingV1({
+  gameBuffer: new ArrayBuffer(1), editConfigHash: 'x', rawEvents: raw, overflowed: true,
+}), /safety limit/);
 
 class FakeHost {
   constructor() {
@@ -74,7 +77,7 @@ assert.equal(summary.consumedTicks, 3);
 assert.equal(summary.certifiedBarriers, 2);
 assert.deepEqual(host.keys, [[1, 19, true]]);
 assert.deepEqual(host.queue, [[1, 0x80041]]);
-assert.deepEqual(host.mouse, [[1, 11, 21, 1]]);
+assert.deepEqual(host.mouse, [[1, 10, 20, 0], [1, 11, 21, 1]]);
 assert.deepEqual(host.soundEnds, [[2, 7]]);
 
 class BarrierOnlyHost extends FakeHost {
