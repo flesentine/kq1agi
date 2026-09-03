@@ -127,7 +127,7 @@ panel = r'''<button id="certify-button" type="button" title="Open deterministic 
   <div id="certify-status" data-state="IDLE">IDLE</div>
   <div id="certify-progress">0 certified barriers</div>
   <pre id="certify-detail">Phase -1D records the normal PLAY transport from page start so the same input/RNG/timing window can be replayed through ORIGINAL and EDITED.</pre>
-  <p id="certify-privacy">Local-only: GAMEFILES.DAT stays in same-origin OPFS and the PLAY journal stays in memory. Nothing is uploaded.</p>
+  <p id="certify-privacy">Local-only: No game data is uploaded. GAMEFILES.DAT stays in same-origin OPFS and the PLAY journal stays in memory.</p>
 </aside>
 '''
 html = html.replace('<div id="boot-message">', recording_bootstrap + panel + '<div id="boot-message">', 1)
