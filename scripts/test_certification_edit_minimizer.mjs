@@ -50,6 +50,13 @@ const config = await freezeConfig({
 });
 const recording = await freezeRecording(config.hash);
 
+const duplicateConfig = await freezeConfig({
+  schema: 'kq1agi-edit-config-v1',
+  rooms: [room(1), room(257)],
+  visualPins: [],
+});
+assert.throws(() => groupEditConfigV1(duplicateConfig), /duplicate room 1/);
+
 const groups = groupEditConfigV1(config);
 assert.deepEqual(groups.map(group => group.id), ['edit-room-1', 'edit-room-2', 'edit-visual-pins']);
 assert.deepEqual(groups.map(group => group.kind), ['room-config', 'room-config', 'visual-pins']);
@@ -60,6 +67,14 @@ assert.equal(withoutRoom2.editConfig.visualPins.length, 1);
 assert.equal(withoutRoom2.recording.editConfigHash, withoutRoom2.editConfig.hash);
 assert.equal(withoutRoom2.recording.hash, await hashPlayRecordingV1(withoutRoom2.recording));
 assert.notEqual(withoutRoom2.recording.hash, recording.hash);
+assert.equal(withoutRoom2.recording.finalTick, recording.finalTick);
+assert.equal(withoutRoom2.recording.gameHash, recording.gameHash);
+assert.equal(withoutRoom2.recording.gameBytes, recording.gameBytes);
+assert.deepEqual(withoutRoom2.recording.releaseTicks, recording.releaseTicks);
+assert.deepEqual(withoutRoom2.recording.events, recording.events);
+assert.deepEqual(withoutRoom2.recording.random, recording.random);
+assert.deepEqual(config.rooms.map(entry => entry.room), [1, 2]);
+assert.equal(config.visualPins.length, 1);
 await assert.rejects(
   buildEditConfigWithoutGroupsV1(recording, config, ['edit-room-999']),
   /Unknown Phase -1G edit group/,
