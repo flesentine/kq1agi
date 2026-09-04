@@ -57,7 +57,8 @@ for dir in "$TRUTH_TREE" "$EDITED_TREE"; do
   python3 scripts/fix_certification_snapshot_barrier.py "$dir"
   python3 scripts/instrument_phase1d_certification_replay.py "$dir"
   python3 scripts/fix_phase1d_random_coverage.py "$dir"
-  python3 scripts/instrument_phase1h_checkpoint_probe.py "$dir"\n  python3 scripts/instrument_phase1h_checkpoint_serialization.py "$dir"
+  python3 scripts/instrument_phase1h_checkpoint_probe.py "$dir"
+  python3 scripts/instrument_phase1h_checkpoint_serialization.py "$dir"
   python3 scripts/fix_certification_browser_worker_path.py "$dir"
   git -C "$dir" diff --check
   chmod +x "$dir/gradlew"
