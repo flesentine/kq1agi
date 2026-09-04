@@ -258,6 +258,24 @@ if 'captureCertificationCheckpoint()' not in c:
         return savedGames.captureCertificationCheckpoint();
     }
 
+    public void restoreCertificationResourceLoadState(
+            boolean[] logicLoaded, boolean[] pictureLoaded, boolean[] viewLoaded, boolean[] soundLoaded) {
+        if (logicLoaded == null || pictureLoaded == null || viewLoaded == null || soundLoaded == null
+                || logicLoaded.length != 256 || pictureLoaded.length != 256
+                || viewLoaded.length != 256 || soundLoaded.length != 256) {
+            throw new IllegalArgumentException("Certification resource checkpoint size mismatch");
+        }
+        for (int i = 0; i < 256; i++) {
+            if (state.logics[i] != null) state.logics[i].isLoaded = logicLoaded[i];
+            if (state.pictures[i] != null) state.pictures[i].isLoaded = pictureLoaded[i];
+            if (state.views[i] != null) state.views[i].isLoaded = viewLoaded[i];
+            if (state.sounds[i] != null) {
+                state.sounds[i].isLoaded = soundLoaded[i];
+                if (soundLoaded[i]) soundPlayer.loadSound(state.sounds[i]);
+            }
+        }
+    }
+
     public boolean restoreCertificationCheckpoint(byte[] checkpointData) {
         if (!savedGames.restoreCertificationCheckpoint(checkpointData)) return false;
 
@@ -317,6 +335,11 @@ if 'captureCertificationCheckpoint()' not in i:
         String simpleName;
         int randomDrawCount;
         int scriptMax;
+        int[] scanStart;
+        boolean[] logicLoaded;
+        boolean[] pictureLoaded;
+        boolean[] viewLoaded;
+        boolean[] soundLoaded;
     }
 
     private CertificationCheckpointOverlay certificationCheckpointOverlay;
@@ -356,6 +379,18 @@ if 'captureCertificationCheckpoint()' not in i:
         overlay.simpleName = state.simpleName;
         overlay.randomDrawCount = getCertificationRandomDrawCount();
         overlay.scriptMax = state.scriptBuffer.maxScript;
+        overlay.scanStart = new int[state.scanStart.length];
+        overlay.logicLoaded = new boolean[256];
+        overlay.pictureLoaded = new boolean[256];
+        overlay.viewLoaded = new boolean[256];
+        overlay.soundLoaded = new boolean[256];
+        for (int i = 0; i < state.scanStart.length; i++) overlay.scanStart[i] = state.scanStart[i];
+        for (int i = 0; i < 256; i++) {
+            overlay.logicLoaded[i] = state.logics[i] != null && state.logics[i].isLoaded;
+            overlay.pictureLoaded[i] = state.pictures[i] != null && state.pictures[i].isLoaded;
+            overlay.viewLoaded[i] = state.views[i] != null && state.views[i].isLoaded;
+            overlay.soundLoaded[i] = state.sounds[i] != null && state.sounds[i].isLoaded;
+        }
         return overlay;
     }
 
@@ -395,6 +430,12 @@ if 'captureCertificationCheckpoint()' not in i:
         state.lastInput = overlay.lastInput;
         state.simpleName = overlay.simpleName;
         state.scriptBuffer.maxScript = overlay.scriptMax;
+        if (overlay.scanStart == null || overlay.scanStart.length != state.scanStart.length) {
+            throw new IllegalStateException("Certification scanStart checkpoint size mismatch");
+        }
+        for (int i = 0; i < state.scanStart.length; i++) state.scanStart[i] = overlay.scanStart[i];
+        commands.restoreCertificationResourceLoadState(
+                overlay.logicLoaded, overlay.pictureLoaded, overlay.viewLoaded, overlay.soundLoaded);
         if (overlay.randomDrawCount >= 0) {
             if (!(state.random instanceof CertificationCheckpointRandom)) {
                 throw new IllegalStateException("Certification random source is not checkpointable");
