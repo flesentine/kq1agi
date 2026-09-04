@@ -58,6 +58,10 @@ const host = new ReplayCertificationHost({
   barrierTimeoutMs: 500,
 });
 await host.start(new ArrayBuffer(16));
+assert.equal(host.checkpointContext.randomReplaySpec, 'v1|9:4;255:17');
+assert.equal(host.checkpointContext.recordedExternalTiming, true);
+assert.match(host.checkpointContext.gameHash, /^sha256:/);
+assert.equal(host.checkpointContext.gameBytes, 16);
 assert.equal(MockWorker.instances.length, 2);
 for (const worker of MockWorker.instances) {
   assert.equal(worker.init.certificationRandomReplay, 'v1|9:4;255:17');
