@@ -11,6 +11,9 @@ commands = root / 'core/src/main/java/com/agifans/agile/Commands.java'
 interpreter = root / 'core/src/main/java/com/agifans/agile/Interpreter.java'
 worker = root / 'html/src/main/java/com/agifans/agile/worker/AgileWebWorker.java'
 store = root / 'core/src/main/java/com/agifans/agile/CertificationCheckpointStore.java'
+checkpoint_random = root / 'core/src/main/java/com/agifans/agile/CertificationCheckpointRandom.java'
+certification_random = root / 'core/src/main/java/com/agifans/agile/CertificationRandom.java'
+replay_random = root / 'core/src/main/java/com/agifans/agile/CertificationReplayRandom.java'
 
 for path in (saved_games, commands, interpreter, worker):
     if not path.exists():
@@ -21,6 +24,92 @@ def one(text: str, old: str, new: str, label: str) -> str:
     if count != 1:
         raise RuntimeError(f'{label}: expected 1 match, found {count}')
     return text.replace(old, new, 1)
+
+checkpoint_random.write_text(r'''package com.agifans.agile;
+
+/** Random source whose exact certification draw position can be restored. */
+public interface CertificationCheckpointRandom {
+    public int getDrawCount();
+    public void restoreCheckpointDrawCount(int drawCount);
+}
+''')
+
+random_text = certification_random.read_text()
+if 'implements CertificationCheckpointRandom' not in random_text:
+    random_text = one(
+        random_text,
+        'public class CertificationRandom extends Random {',
+        'public class CertificationRandom extends Random implements CertificationCheckpointRandom {',
+        'certification random checkpoint interface',
+    )
+if 'private final long checkpointSeed;' not in random_text:
+    random_text = one(
+        random_text,
+        '    private int drawCount;\n',
+        '    private int drawCount;\n    private final long checkpointSeed;\n',
+        'certification random checkpoint seed field',
+    )
+if 'checkpointSeed = seed;' not in random_text:
+    random_text = one(
+        random_text,
+        '        super(seed);\n        drawCount = 0;\n',
+        '        super(seed);\n        checkpointSeed = seed;\n        drawCount = 0;\n',
+        'certification random checkpoint seed capture',
+    )
+if 'restoreCheckpointDrawCount' not in random_text:
+    random_text = one(
+        random_text,
+        '''    public int getDrawCount() {
+        return drawCount;
+    }
+''',
+        '''    public int getDrawCount() {
+        return drawCount;
+    }
+
+    @Override
+    public void restoreCheckpointDrawCount(int targetDrawCount) {
+        if (targetDrawCount < 0) throw new IllegalArgumentException("Negative certification draw count");
+        super.setSeed(checkpointSeed);
+        drawCount = 0;
+        for (int i = 0; i < targetDrawCount; i++) next(32);
+    }
+''',
+        'certification random checkpoint restore',
+    )
+certification_random.write_text(random_text)
+
+if replay_random.exists():
+    replay_text = replay_random.read_text()
+    if 'implements CertificationCheckpointRandom' not in replay_text:
+        replay_text = one(
+            replay_text,
+            'public class CertificationReplayRandom extends Random {',
+            'public class CertificationReplayRandom extends Random implements CertificationCheckpointRandom {',
+            'replay random checkpoint interface',
+        )
+    if 'restoreCheckpointDrawCount' not in replay_text:
+        replay_text = one(
+            replay_text,
+            '''    public int getDrawCount() {
+        return index;
+    }
+''',
+            '''    public int getDrawCount() {
+        return index;
+    }
+
+    @Override
+    public void restoreCheckpointDrawCount(int targetDrawCount) {
+        if (targetDrawCount < 0 || targetDrawCount > values.size()) {
+            throw new IllegalArgumentException("Invalid replay checkpoint draw count " + targetDrawCount);
+        }
+        index = targetDrawCount;
+    }
+''',
+            'replay random checkpoint restore',
+        )
+    replay_random.write_text(replay_text)
 
 store.write_text(r'''package com.agifans.agile;
 
@@ -195,12 +284,135 @@ if 'captureCertificationCheckpoint()' not in i:
     anchor = '''    /**
      * Executes a single AGI interpreter animation tick. This method is invoked 60 times a
 '''
-    methods = r'''    public byte[] captureCertificationCheckpoint() {
-        return commands.captureCertificationCheckpoint();
+    methods = r'''    private static class CertificationCheckpointOverlay {
+        boolean[] controllers;
+        boolean acceptInput;
+        boolean userControl;
+        boolean graphicsMode;
+        boolean pictureVisible;
+        boolean showStatusLine;
+        int statusLineRow;
+        int pictureRow;
+        int inputLineRow;
+        int horizon;
+        int textAttribute;
+        int foregroundColour;
+        int backgroundColour;
+        char cursorCharacter;
+        long animationTicks;
+        boolean gamePaused;
+        int currentLogNum;
+        int maxDrawn;
+        int priorityBase;
+        boolean menuEnabled;
+        boolean menuOpen;
+        boolean holdKey;
+        boolean blocking;
+        short blockUpperLeftX;
+        short blockUpperLeftY;
+        short blockLowerRightX;
+        short blockLowerRightY;
+        String currentInput;
+        String lastInput;
+        String simpleName;
+        int randomDrawCount;
+    }
+
+    private CertificationCheckpointOverlay certificationCheckpointOverlay;
+
+    private CertificationCheckpointOverlay captureCertificationCheckpointOverlay() {
+        CertificationCheckpointOverlay overlay = new CertificationCheckpointOverlay();
+        overlay.controllers = new boolean[state.controllers.length];
+        for (int i = 0; i < state.controllers.length; i++) overlay.controllers[i] = state.controllers[i];
+        overlay.acceptInput = state.acceptInput;
+        overlay.userControl = state.userControl;
+        overlay.graphicsMode = state.graphicsMode;
+        overlay.pictureVisible = state.pictureVisible;
+        overlay.showStatusLine = state.showStatusLine;
+        overlay.statusLineRow = state.statusLineRow;
+        overlay.pictureRow = state.pictureRow;
+        overlay.inputLineRow = state.inputLineRow;
+        overlay.horizon = state.horizon;
+        overlay.textAttribute = state.textAttribute;
+        overlay.foregroundColour = state.foregroundColour;
+        overlay.backgroundColour = state.backgroundColour;
+        overlay.cursorCharacter = state.cursorCharacter;
+        overlay.animationTicks = state.animationTicks;
+        overlay.gamePaused = state.gamePaused;
+        overlay.currentLogNum = state.currentLogNum;
+        overlay.maxDrawn = state.maxDrawn;
+        overlay.priorityBase = state.priorityBase;
+        overlay.menuEnabled = state.menuEnabled;
+        overlay.menuOpen = state.menuOpen;
+        overlay.holdKey = state.holdKey;
+        overlay.blocking = state.blocking;
+        overlay.blockUpperLeftX = state.blockUpperLeftX;
+        overlay.blockUpperLeftY = state.blockUpperLeftY;
+        overlay.blockLowerRightX = state.blockLowerRightX;
+        overlay.blockLowerRightY = state.blockLowerRightY;
+        overlay.currentInput = (state.currentInput == null ? null : state.currentInput.toString());
+        overlay.lastInput = state.lastInput;
+        overlay.simpleName = state.simpleName;
+        overlay.randomDrawCount = getCertificationRandomDrawCount();
+        return overlay;
+    }
+
+    private void restoreCertificationCheckpointOverlay(CertificationCheckpointOverlay overlay) {
+        if (overlay == null) throw new IllegalStateException("Missing certification checkpoint overlay");
+        if (overlay.controllers == null || overlay.controllers.length != state.controllers.length) {
+            throw new IllegalStateException("Certification controller checkpoint size mismatch");
+        }
+        for (int i = 0; i < state.controllers.length; i++) state.controllers[i] = overlay.controllers[i];
+        state.acceptInput = overlay.acceptInput;
+        state.userControl = overlay.userControl;
+        state.graphicsMode = overlay.graphicsMode;
+        state.pictureVisible = overlay.pictureVisible;
+        state.showStatusLine = overlay.showStatusLine;
+        state.statusLineRow = overlay.statusLineRow;
+        state.pictureRow = overlay.pictureRow;
+        state.inputLineRow = overlay.inputLineRow;
+        state.horizon = overlay.horizon;
+        state.textAttribute = overlay.textAttribute;
+        state.foregroundColour = overlay.foregroundColour;
+        state.backgroundColour = overlay.backgroundColour;
+        state.cursorCharacter = overlay.cursorCharacter;
+        state.animationTicks = overlay.animationTicks;
+        state.gamePaused = overlay.gamePaused;
+        state.currentLogNum = overlay.currentLogNum;
+        state.maxDrawn = overlay.maxDrawn;
+        state.priorityBase = overlay.priorityBase;
+        state.menuEnabled = overlay.menuEnabled;
+        state.menuOpen = overlay.menuOpen;
+        state.holdKey = overlay.holdKey;
+        state.blocking = overlay.blocking;
+        state.blockUpperLeftX = overlay.blockUpperLeftX;
+        state.blockUpperLeftY = overlay.blockUpperLeftY;
+        state.blockLowerRightX = overlay.blockLowerRightX;
+        state.blockLowerRightY = overlay.blockLowerRightY;
+        state.currentInput = (overlay.currentInput == null ? null : new StringBuilder(overlay.currentInput));
+        state.lastInput = overlay.lastInput;
+        state.simpleName = overlay.simpleName;
+        if (overlay.randomDrawCount >= 0) {
+            if (!(state.random instanceof CertificationCheckpointRandom)) {
+                throw new IllegalStateException("Certification random source is not checkpointable");
+            }
+            ((CertificationCheckpointRandom)state.random).restoreCheckpointDrawCount(overlay.randomDrawCount);
+        }
+    }
+
+    public byte[] captureCertificationCheckpoint() {
+        CertificationCheckpointOverlay overlay = captureCertificationCheckpointOverlay();
+        byte[] checkpointData = commands.captureCertificationCheckpoint();
+        if (checkpointData == null || checkpointData.length == 0) return checkpointData;
+        certificationCheckpointOverlay = overlay;
+        return checkpointData;
     }
 
     public boolean restoreCertificationCheckpoint(byte[] checkpointData) {
-        return commands.restoreCertificationCheckpoint(checkpointData);
+        if (certificationCheckpointOverlay == null) return false;
+        if (!commands.restoreCertificationCheckpoint(checkpointData)) return false;
+        restoreCertificationCheckpointOverlay(certificationCheckpointOverlay);
+        return true;
     }
 
 '''
