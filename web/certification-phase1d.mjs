@@ -2,6 +2,7 @@ import { formatCertificationResult, readImportedGame } from './certification-pan
 import { captureEditConfigV1, createEditConfigApplicator, EditConfigLayout, hashEditConfigV1 } from './certification-edit-config.mjs';
 import { minimizeDivergentPrefix } from './certification-minimizer.mjs';
 import { groupReplayInputEventsV1, minimizeInputGroupsV1 } from './certification-input-minimizer.mjs';
+import { groupEditConfigV1, minimizeEditConfigV1 } from './certification-edit-minimizer.mjs';
 import { ReplayCertificationHost } from './certification-replay-host.mjs';
 import {
   encodeRandomReplay,
@@ -43,6 +44,18 @@ function inputGroupsText(groups, limit = 12) {
     `${group.id} ${group.kind} ticks ${group.startTick}–${group.endTick} seq ${group.startSeq}–${group.endSeq}`);
   if (groups.length > limit) shown.push(`… ${groups.length - limit} more group(s)`);
   return ['remaining groups:', ...shown].join('\n');
+}
+
+function editGroupsText(groups, limit = 12) {
+  if (!groups?.length) return 'remaining edit groups: none';
+  const shown = groups.slice(0, limit).map(group => {
+    if (group.kind === 'room-config') {
+      return `${group.id} room ${group.room} · ${group.maskLayers?.length ?? 0} configured mask layer(s)`;
+    }
+    return `${group.id} visual pins · ${group.count ?? 0} record(s)`;
+  });
+  if (groups.length > limit) shown.push(`… ${groups.length - limit} more group(s)`);
+  return ['remaining edit groups:', ...shown].join('\n');
 }
 
 /**
@@ -186,11 +199,23 @@ function installPhase1D() {
     minimizeButton.insertAdjacentElement('afterend', reduceInputsButton);
   }
 
+  let reduceEditsButton = document.getElementById('certify-reduce-edits-button');
+  if (!reduceEditsButton) {
+    reduceEditsButton = document.createElement('button');
+    reduceEditsButton.id = 'certify-reduce-edits-button';
+    reduceEditsButton.type = 'button';
+    reduceEditsButton.textContent = 'REDUCE EDITS';
+    reduceEditsButton.title = 'Remove whole room EditConfig groups and visual pins while preserving the exact divergence';
+    reduceEditsButton.disabled = true;
+    reduceInputsButton.insertAdjacentElement('afterend', reduceEditsButton);
+  }
+
   let replayHost = null;
   let replayRunning = false;
   let stopRequested = false;
   let lastDivergenceContext = null;
   let lastMinimizedContext = null;
+  let lastInputReducedContext = null;
 
   const setStatus = (text, state) => {
     status.textContent = text;
@@ -200,8 +225,10 @@ function installPhase1D() {
   const invalidateMinimization = () => {
     lastDivergenceContext = null;
     lastMinimizedContext = null;
+    lastInputReducedContext = null;
     minimizeButton.disabled = true;
     reduceInputsButton.disabled = true;
+    reduceEditsButton.disabled = true;
   };
 
   const setReplayRunning = value => {
@@ -209,6 +236,7 @@ function installPhase1D() {
     replayButton.disabled = value;
     minimizeButton.disabled = value || !lastDivergenceContext;
     reduceInputsButton.disabled = value || !lastMinimizedContext;
+    reduceEditsButton.disabled = value || !lastInputReducedContext;
     runButton.disabled = value;
     if (refreshButton) refreshButton.disabled = value;
     gameSelect.disabled = value;
@@ -352,7 +380,9 @@ function installPhase1D() {
   async function startMinimize() {
     if (replayRunning || !lastDivergenceContext) return;
     lastMinimizedContext = null;
+    lastInputReducedContext = null;
     reduceInputsButton.disabled = true;
+    reduceEditsButton.disabled = true;
     const context = lastDivergenceContext;
     if (gameSelect.value !== context.directoryName) {
       invalidateMinimization();
@@ -437,6 +467,8 @@ function installPhase1D() {
 
   async function startReduceInputs() {
     if (replayRunning || !lastMinimizedContext) return;
+    lastInputReducedContext = null;
+    reduceEditsButton.disabled = true;
     const context = lastMinimizedContext;
     if (gameSelect.value !== context.directoryName) {
       invalidateMinimization();
@@ -489,6 +521,15 @@ function installPhase1D() {
         const label = reduced.status === 'INPUTS_MINIMIZED'
           ? `INPUTS ${reduced.keptGroups.length}/${reduced.totalGroups}`
           : 'INPUTS ALREADY MINIMAL';
+        const reducedContext = Object.freeze({
+          directoryName: context.directoryName,
+          recording: reduced.recording,
+          editConfig: context.editConfig,
+          firstDivergence: context.firstDivergence,
+        });
+        lastMinimizedContext = reducedContext;
+        lastInputReducedContext = reducedContext;
+        reduceEditsButton.disabled = false;
         setStatus(label, 'MATCH');
         detail.textContent = [
           `target=${formatCertificationResult(context.firstDivergence)}`,
@@ -502,8 +543,17 @@ function installPhase1D() {
           inputGroupsText(reduced.keptGroups),
         ].join('\n');
       } else if (reduced.status === 'NO_REMOVABLE_INPUTS') {
+        const reducedContext = Object.freeze({
+          directoryName: context.directoryName,
+          recording: reduced.recording,
+          editConfig: context.editConfig,
+          firstDivergence: context.firstDivergence,
+        });
+        lastMinimizedContext = reducedContext;
+        lastInputReducedContext = reducedContext;
+        reduceEditsButton.disabled = false;
         setStatus('NO REMOVABLE INPUTS', 'MATCH');
-        detail.textContent = `The minimized prefix contains no dependency-safe keyboard/mouse groups. ${reduced.lockedEvents} locked reproduction event(s) remain.`;
+        detail.textContent = `The minimized prefix contains no dependency-safe keyboard/mouse groups. ${reduced.lockedEvents} locked reproduction event(s) remain. REDUCE EDITS can now minimize the frozen EditConfig.`;
       } else if (reduced.status === 'NOT_REPRODUCED') {
         setStatus('INPUT TARGET NOT REPRODUCED', 'WAITING');
         detail.textContent = `The Phase -1E source no longer reproduced the exact target divergence. No input reduction was accepted.\nattempts=${reduced.attempts.length}`;
@@ -534,9 +584,122 @@ function installPhase1D() {
     }
   }
 
+  async function startReduceEdits() {
+    if (replayRunning || !lastInputReducedContext) return;
+    const context = lastInputReducedContext;
+    if (gameSelect.value !== context.directoryName) {
+      invalidateMinimization();
+      setStatus('EDIT GAME MISMATCH', 'ERROR');
+      detail.textContent = 'The selected imported game changed after input minimization. Replay the intended game and repeat the reduction pipeline before reducing edits.';
+      return;
+    }
+
+    stopRequested = false;
+    setReplayRunning(true);
+    const groups = groupEditConfigV1(context.editConfig);
+    setStatus('REDUCING EDITS', 'BUSY');
+    progress.textContent = `${groups.length} dependency-safe EditConfig group(s) · target tick ${context.firstDivergence.tick}`;
+    detail.textContent = [
+      `recording=${recordingIdentity(context.recording)}`,
+      `editConfig=${editConfigIdentity(context.editConfig)}`,
+      '',
+      'Keeping GAMEFILES.DAT, minimized ticks, input transport, RNG draws, sound completions, and exact divergence frozen while delta-debugging whole room configs and the visual-pin set.',
+    ].join('\n');
+
+    let attemptNumber = 0;
+    try {
+      const gameBuffer = await readImportedGame(context.directoryName);
+      await validateFrozenReplayIdentityV1(context.recording, gameBuffer, context.editConfig);
+
+      const replayCandidate = async (candidateRecording, candidateConfig) => {
+        attemptNumber += 1;
+        await validateFrozenReplayIdentityV1(candidateRecording, gameBuffer, candidateConfig);
+        return runFrozenRecording(candidateRecording, gameBuffer, candidateConfig, {
+          pulseIntervalMs: 0,
+          onUpdate: update => {
+            progress.textContent = `edit attempt ${attemptNumber} · replay tick ${replayHost?.logicalTick ?? update.targetTick ?? 0}/${candidateRecording.finalTick}`;
+          },
+        });
+      };
+
+      const reduced = await minimizeEditConfigV1(
+        context.recording,
+        context.editConfig,
+        context.firstDivergence,
+        replayCandidate,
+        {
+          maxAttempts: 128,
+          shouldStop: () => stopRequested,
+          onAttempt: attempt => {
+            progress.textContent = `edit attempt ${attempt.number} · kept ${attempt.keptGroups}/${groups.length} group(s) · ${attempt.reproduced ? 'same divergence' : attempt.status}`;
+          },
+        },
+      );
+
+      if (reduced.status === 'EDITS_MINIMIZED' || reduced.status === 'EDITS_ALREADY_MINIMAL') {
+        const label = reduced.status === 'EDITS_MINIMIZED'
+          ? `EDITS ${reduced.keptGroups.length}/${reduced.totalGroups}`
+          : 'EDITS ALREADY MINIMAL';
+        const reducedContext = Object.freeze({
+          directoryName: context.directoryName,
+          recording: reduced.recording,
+          editConfig: reduced.editConfig,
+          firstDivergence: context.firstDivergence,
+        });
+        lastMinimizedContext = reducedContext;
+        lastInputReducedContext = reducedContext;
+        setStatus(label, 'MATCH');
+        detail.textContent = [
+          `target=${formatCertificationResult(context.firstDivergence)}`,
+          `source recording=${recordingIdentity(context.recording)}`,
+          `rebound recording=${recordingIdentity(reduced.recording)}`,
+          `source EditConfig=${editConfigIdentity(context.editConfig)}`,
+          `reduced EditConfig=${editConfigIdentity(reduced.editConfig)}`,
+          `groups=${reduced.totalGroups} → ${reduced.keptGroups.length}`,
+          `room configs=${reduced.totalRoomGroups} → ${reduced.keptRoomGroups}`,
+          `visual pins=${reduced.totalVisualPins} → ${reduced.keptVisualPins}`,
+          `attempts=${reduced.attempts.length}`,
+          '',
+          editGroupsText(reduced.keptGroups),
+        ].join('\n');
+      } else if (reduced.status === 'NO_REMOVABLE_EDITS') {
+        setStatus('NO REMOVABLE EDITS', 'MATCH');
+        detail.textContent = 'The current minimized reproduction has no configured rooms or visual pins to remove.';
+      } else if (reduced.status === 'NOT_REPRODUCED') {
+        setStatus('EDIT TARGET NOT REPRODUCED', 'WAITING');
+        detail.textContent = `The Phase -1F source no longer reproduced the exact target divergence. No EditConfig reduction was accepted.\nattempts=${reduced.attempts.length}`;
+      } else if (reduced.status === 'PARTIAL') {
+        setStatus(`EDITS PARTIAL ${reduced.keptGroups.length}/${reduced.totalGroups}`, 'WAITING');
+        detail.textContent = [
+          'The EditConfig attempt budget ended before 1-minimality was proven.',
+          `groups=${reduced.totalGroups} → ${reduced.keptGroups.length}`,
+          `room configs=${reduced.totalRoomGroups} → ${reduced.keptRoomGroups}`,
+          `visual pins=${reduced.totalVisualPins} → ${reduced.keptVisualPins}`,
+          `attempts=${reduced.attempts.length}`,
+          '',
+          editGroupsText(reduced.keptGroups),
+        ].join('\n');
+      } else if (reduced.status === 'STOPPED') {
+        setStatus('STOPPED', 'IDLE');
+      } else {
+        setStatus(reduced.status, 'ERROR');
+        detail.textContent = JSON.stringify(reduced, null, 2);
+      }
+    } catch (error) {
+      setStatus('EDIT REDUCTION ERROR', 'ERROR');
+      detail.textContent = String(error?.stack ?? error);
+    } finally {
+      replayHost?.terminate();
+      replayHost = null;
+      setReplayRunning(false);
+      refreshJournal();
+    }
+  }
+
   replayButton.addEventListener('click', startReplay);
   minimizeButton.addEventListener('click', startMinimize);
   reduceInputsButton.addEventListener('click', startReduceInputs);
+  reduceEditsButton.addEventListener('click', startReduceEdits);
   gameSelect.addEventListener('change', invalidateMinimization);
   runButton.addEventListener('click', invalidateMinimization, { capture: true });
   stopButton.addEventListener('click', () => {
