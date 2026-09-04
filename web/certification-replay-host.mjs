@@ -62,6 +62,7 @@ export class ReplayCertificationHost extends CertificationHost {
 
   async start(encodedGameFileBuffer) {
     if (this.started) throw new Error('ReplayCertificationHost.start() may only be called once.');
+    await this._bindCheckpointGameIdentity(encodedGameFileBuffer);
     this.started = true;
     const truthGame = cloneArrayBuffer(encodedGameFileBuffer);
     const editedGame = cloneArrayBuffer(encodedGameFileBuffer);
