@@ -71,6 +71,39 @@ def verify_lane(root: Path, label: str) -> dict:
     require(interpreter, 'state.animationTicks = overlay.animationTicks', f'{label} animation-phase restore')
     require(interpreter, 'state.currentInput = (overlay.currentInput == null ? null : new StringBuilder(overlay.currentInput))', f'{label} input-buffer restore')
     require(interpreter, 'restoreCheckpointDrawCount(overlay.randomDrawCount)', f'{label} random-position restore')
+    for checkpoint_marker, checkpoint_name in [
+        ('overlay.controllers', 'controllers'),
+        ('state.acceptInput = overlay.acceptInput', 'acceptInput'),
+        ('state.userControl = overlay.userControl', 'userControl'),
+        ('state.graphicsMode = overlay.graphicsMode', 'graphicsMode'),
+        ('state.pictureVisible = overlay.pictureVisible', 'pictureVisible'),
+        ('state.showStatusLine = overlay.showStatusLine', 'showStatusLine'),
+        ('state.statusLineRow = overlay.statusLineRow', 'statusLineRow'),
+        ('state.pictureRow = overlay.pictureRow', 'pictureRow'),
+        ('state.inputLineRow = overlay.inputLineRow', 'inputLineRow'),
+        ('state.horizon = overlay.horizon', 'horizon'),
+        ('state.textAttribute = overlay.textAttribute', 'textAttribute'),
+        ('state.foregroundColour = overlay.foregroundColour', 'foregroundColour'),
+        ('state.backgroundColour = overlay.backgroundColour', 'backgroundColour'),
+        ('state.cursorCharacter = overlay.cursorCharacter', 'cursorCharacter'),
+        ('state.animationTicks = overlay.animationTicks', 'animationTicks'),
+        ('state.gamePaused = overlay.gamePaused', 'gamePaused'),
+        ('state.currentLogNum = overlay.currentLogNum', 'currentLogNum'),
+        ('state.maxDrawn = overlay.maxDrawn', 'maxDrawn'),
+        ('state.priorityBase = overlay.priorityBase', 'priorityBase'),
+        ('state.menuEnabled = overlay.menuEnabled', 'menuEnabled'),
+        ('state.menuOpen = overlay.menuOpen', 'menuOpen'),
+        ('state.holdKey = overlay.holdKey', 'holdKey'),
+        ('state.blocking = overlay.blocking', 'blocking'),
+        ('state.blockUpperLeftX = overlay.blockUpperLeftX', 'blockUpperLeftX'),
+        ('state.blockUpperLeftY = overlay.blockUpperLeftY', 'blockUpperLeftY'),
+        ('state.blockLowerRightX = overlay.blockLowerRightX', 'blockLowerRightX'),
+        ('state.blockLowerRightY = overlay.blockLowerRightY', 'blockLowerRightY'),
+        ('state.currentInput = (overlay.currentInput == null ? null : new StringBuilder(overlay.currentInput))', 'currentInput'),
+        ('state.lastInput = overlay.lastInput', 'lastInput'),
+        ('state.simpleName = overlay.simpleName', 'simpleName'),
+    ]:
+        require(interpreter, checkpoint_marker, f'{label} checkpoint overlay {checkpoint_name}')
     require(worker, 'certificationDigestSAB', f'{label} digest transport')
     require(worker, 'certificationMode', f'{label} certification mode')
     require(worker, 'certificationSeed', f'{label} certification seed')
