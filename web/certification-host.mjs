@@ -40,6 +40,7 @@ const DEFAULTS = Object.freeze({
   keyCapacity: 256,
   traceSlots: 16,
   digestSlots: 13,
+  checkpointSlots: 32768,
   variableSlots: VAR.VARIABLE_SLOTS,
   seed: 0x4b513142,
   barrierTimeoutMs: 3000,
@@ -59,8 +60,10 @@ export function createLaneBuffers(options = {}) {
   const keyCapacity = options.keyCapacity ?? DEFAULTS.keyCapacity;
   const traceSlots = options.traceSlots ?? DEFAULTS.traceSlots;
   const digestSlots = options.digestSlots ?? DEFAULTS.digestSlots;
+  const checkpointSlots = options.checkpointSlots ?? DEFAULTS.checkpointSlots;
   const variableSlots = options.variableSlots ?? DEFAULTS.variableSlots;
   if (digestSlots < 13) throw new Error('Certification digest needs at least 13 Uint32 slots.');
+  if (checkpointSlots < 4096) throw new Error('Certification checkpoint transport needs at least 4096 Uint32 slots.');
   if (variableSlots < VAR.VARIABLE_SLOTS) {
     throw new Error(`Certification shared state needs at least ${VAR.VARIABLE_SLOTS} Int32 slots.`);
   }
@@ -72,16 +75,18 @@ export function createLaneBuffers(options = {}) {
   const pixelDataSAB = new SharedArrayBuffer(width * height * 4);
   const diagnosticTraceSAB = new SharedArrayBuffer(traceSlots * 4);
   const certificationDigestSAB = new SharedArrayBuffer(digestSlots * 4);
+  const certificationCheckpointSAB = new SharedArrayBuffer(checkpointSlots * 4);
   return {
-    keyCapacity, width, height, variableSlots,
+    keyCapacity, width, height, variableSlots, checkpointSlots,
     keyPressQueueSAB, keysSAB, oldKeysSAB, variableSAB, pixelDataSAB,
-    diagnosticTraceSAB, certificationDigestSAB,
+    diagnosticTraceSAB, certificationDigestSAB, certificationCheckpointSAB,
     queue: new Uint32Array(keyPressQueueSAB),
     keys: new Uint32Array(keysSAB),
     oldKeys: new Uint32Array(oldKeysSAB),
     vars: new Uint32Array(variableSAB),
     trace: new Uint32Array(diagnosticTraceSAB),
     digest: new Uint32Array(certificationDigestSAB),
+    checkpointData: new Uint32Array(certificationCheckpointSAB),
   };
 }
 
@@ -161,6 +166,60 @@ function restoreLaneTransport(lane, snapshot) {
   restoreU32(lane.oldKeys, snapshot?.oldKeys);
   restoreU32(lane.vars, snapshot?.vars);
   restoreU32(new Uint32Array(lane.pixelDataSAB), snapshot?.pixels);
+}
+
+function readWorkerCheckpointPayload(lane) {
+  const length = Atomics.load(lane.checkpointData, 0) >>> 0;
+  if (length < 1 || length + 1 > lane.checkpointData.length) {
+    throw new Error('Worker checkpoint payload length is invalid for ' + lane.name + '.');
+  }
+  return Object.freeze(Array.from(lane.checkpointData.slice(1, length + 1), value => value & 0xff));
+}
+
+function writeWorkerCheckpointPayload(lane, payload) {
+  if (!Array.isArray(payload) || payload.length < 1 || payload.length + 1 > lane.checkpointData.length) {
+    throw new Error('Checkpoint payload does not fit ' + lane.name + ' checkpoint transport.');
+  }
+  Atomics.store(lane.checkpointData, 0, payload.length >>> 0);
+  for (let i = 0; i < payload.length; i += 1) {
+    Atomics.store(lane.checkpointData, i + 1, Number(payload[i]) & 0xff);
+  }
+}
+
+function fallbackCheckpointHash(bytes) {
+  let hash = 0x811c9dc5;
+  for (const byte of bytes) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
+  return 'fnv1a32:' + hash.toString(16).padStart(8, '0');
+}
+
+function canonicalCheckpointForHash(checkpoint) {
+  return {
+    schema: 'kq1agi-certification-checkpoint-v1',
+    logicalTick: Number(checkpoint?.logicalTick) >>> 0,
+    cycle: Number(checkpoint?.cycle) >>> 0,
+    comparedCycle: Number(checkpoint?.comparedCycle) >>> 0,
+    truthTrace: [...(checkpoint?.truthTrace ?? [])].map(value => Number(value) >>> 0),
+    editedTrace: [...(checkpoint?.editedTrace ?? [])].map(value => Number(value) >>> 0),
+    truthDigest: [...(checkpoint?.truthDigest ?? [])].map(value => Number(value) >>> 0),
+    editedDigest: [...(checkpoint?.editedDigest ?? [])].map(value => Number(value) >>> 0),
+    truthTransport: checkpoint?.truthTransport ?? null,
+    editedTransport: checkpoint?.editedTransport ?? null,
+    truthWorkerPayload: [...(checkpoint?.truthWorkerPayload ?? [])].map(value => Number(value) & 0xff),
+    editedWorkerPayload: [...(checkpoint?.editedWorkerPayload ?? [])].map(value => Number(value) & 0xff),
+    pendingSoundCompletions: [...(checkpoint?.pendingSoundCompletions ?? [])].map(event => ({
+      dueTick: Number(event?.dueTick) >>> 0,
+      endFlag: Number(event?.endFlag) & 0xff,
+    })),
+  };
+}
+
+export async function hashCertificationCheckpointV1(checkpoint) {
+  const bytes = new TextEncoder().encode(JSON.stringify(canonicalCheckpointForHash(checkpoint)));
+  if (globalThis.crypto?.subtle?.digest) {
+    const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes));
+    return 'sha256:' + Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+  return fallbackCheckpointHash(bytes);
 }
 function firstDifference(a, b) {
   const n = Math.max(a.length, b.length);
@@ -348,6 +407,7 @@ export class CertificationHost {
           pixelDataSAB: lane.pixelDataSAB,
           diagnosticTraceSAB: lane.diagnosticTraceSAB,
           certificationDigestSAB: lane.certificationDigestSAB,
+          certificationCheckpointSAB: lane.certificationCheckpointSAB,
           certificationMode: true,
           certificationSeed: this.seed,
         },
@@ -480,9 +540,9 @@ export class CertificationHost {
     if (capture.truthStatus !== 1 || capture.editedStatus !== 1) {
       return { status: 'CHECKPOINT_CAPTURE_ERROR', baseline, capture };
     }
-    return Object.freeze({
+    const checkpoint = {
       status: 'CHECKPOINT_CAPTURED',
-      schema: 'kq1agi-certification-checkpoint-probe-v1',
+      schema: 'kq1agi-certification-checkpoint-v1',
       logicalTick: this.logicalTick,
       cycle: this.cycle,
       comparedCycle: this.comparedCycle,
@@ -493,17 +553,27 @@ export class CertificationHost {
       editedDigest: Object.freeze(readSemanticDigest(this.edited)),
       truthTransport: snapshotLaneTransport(this.truth),
       editedTransport: snapshotLaneTransport(this.edited),
+      truthWorkerPayload: readWorkerCheckpointPayload(this.truth),
+      editedWorkerPayload: readWorkerCheckpointPayload(this.edited),
       pendingSoundCompletions: Object.freeze(this.pendingSoundCompletions.map(event => Object.freeze({ ...event }))),
-    });
+    };
+    return Object.freeze({ ...checkpoint, hash: await hashCertificationCheckpointV1(checkpoint) });
   }
 
   async restoreCheckpointProbe(checkpoint) {
-    if (!checkpoint || checkpoint.schema !== 'kq1agi-certification-checkpoint-probe-v1') {
-      throw new Error('Unknown Phase -1H checkpoint probe schema.');
+    if (!checkpoint || checkpoint.schema !== 'kq1agi-certification-checkpoint-v1') {
+      throw new Error('Unknown Phase -1H checkpoint schema.');
+    }
+    const expectedHash = String(checkpoint.hash ?? '');
+    const actualHash = await hashCertificationCheckpointV1(checkpoint);
+    if (!expectedHash || expectedHash !== actualHash) {
+      return { status: 'CHECKPOINT_HASH_MISMATCH', expectedHash, actualHash };
     }
     if (!isIdle(this.truth) || !isIdle(this.edited)) {
       throw new Error('Checkpoint restore requires both certification lanes to be idle.');
     }
+    writeWorkerCheckpointPayload(this.truth, checkpoint.truthWorkerPayload);
+    writeWorkerCheckpointPayload(this.edited, checkpoint.editedWorkerPayload);
     const restore = await this._requestCheckpointProbe('restore');
     if (restore.truthStatus !== 2 || restore.editedStatus !== 2) {
       return { status: 'CHECKPOINT_RESTORE_ERROR', restore };
