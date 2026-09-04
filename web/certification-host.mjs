@@ -469,6 +469,14 @@ export class CertificationHost {
       return { status: 'CHECKPOINT_BASELINE_REJECTED', baseline };
     }
     const capture = await this._requestCheckpointProbe('capture');
+    if (capture.truthStatus === 4 || capture.editedStatus === 4) {
+      return {
+        status: 'CHECKPOINT_CAPTURE_UNAVAILABLE',
+        reason: 'no-reconstructable-picture',
+        baseline,
+        capture,
+      };
+    }
     if (capture.truthStatus !== 1 || capture.editedStatus !== 1) {
       return { status: 'CHECKPOINT_CAPTURE_ERROR', baseline, capture };
     }
