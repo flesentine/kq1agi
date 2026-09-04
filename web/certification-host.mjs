@@ -430,6 +430,128 @@ export class CertificationHost {
     return epoch;
   }
 
+  async _requestCheckpointProbe(action) {
+    if (!this.started || !this.truth.ready || !this.edited.ready) {
+      throw new Error('CertificationHost is not ready for checkpoint probing.');
+    }
+    if (!isIdle(this.truth) || !isIdle(this.edited)) {
+      throw new Error('Checkpoint probing requires both certification lanes to be idle.');
+    }
+    const actionCode = action === 'capture' ? 1 : action === 'restore' ? 2 : 0;
+    if (!actionCode) throw new Error('Unknown checkpoint probe action: ' + action);
+    const epoch = (++this.checkpointEpoch) >>> 0 || (++this.checkpointEpoch) >>> 0;
+    const request = ((epoch << 2) | actionCode) >>> 0;
+    for (const lane of [this.truth, this.edited]) {
+      Atomics.store(lane.digest, DIGEST.CHECKPOINT_STATUS, 0);
+      Atomics.store(lane.digest, DIGEST.CHECKPOINT_REQUEST, request);
+    }
+    const deadline = Date.now() + this.barrierTimeoutMs;
+    while (Atomics.load(this.truth.digest, DIGEST.CHECKPOINT_ACK) !== request
+        || Atomics.load(this.edited.digest, DIGEST.CHECKPOINT_ACK) !== request) {
+      if (this.truth.error || this.edited.error) throw new Error('Certification worker failed during checkpoint probe.');
+      if (Date.now() > deadline) throw new Error('Timed out waiting for checkpoint ' + action + ' acknowledgement.');
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    return {
+      request,
+      truthStatus: Atomics.load(this.truth.digest, DIGEST.CHECKPOINT_STATUS) >>> 0,
+      editedStatus: Atomics.load(this.edited.digest, DIGEST.CHECKPOINT_STATUS) >>> 0,
+    };
+  }
+
+  async captureCheckpointProbe() {
+    if (!isIdle(this.truth) || !isIdle(this.edited)) {
+      throw new Error('Checkpoint capture requires both certification lanes to be idle.');
+    }
+    const snapshotEpoch = await this._synchronizeBarrierSnapshot();
+    const baseline = this.compare(snapshotEpoch);
+    if (baseline.status !== 'MATCH') {
+      return { status: 'CHECKPOINT_BASELINE_REJECTED', baseline };
+    }
+    const capture = await this._requestCheckpointProbe('capture');
+    if (capture.truthStatus !== 1 || capture.editedStatus !== 1) {
+      return { status: 'CHECKPOINT_CAPTURE_ERROR', baseline, capture };
+    }
+    return Object.freeze({
+      status: 'CHECKPOINT_CAPTURED',
+      schema: 'kq1agi-certification-checkpoint-probe-v1',
+      logicalTick: this.logicalTick,
+      cycle: this.cycle,
+      comparedCycle: this.comparedCycle,
+      baseline,
+      truthTrace: Object.freeze(readTrace(this.truth)),
+      editedTrace: Object.freeze(readTrace(this.edited)),
+      truthDigest: Object.freeze(readSemanticDigest(this.truth)),
+      editedDigest: Object.freeze(readSemanticDigest(this.edited)),
+      truthTransport: snapshotLaneTransport(this.truth),
+      editedTransport: snapshotLaneTransport(this.edited),
+      pendingSoundCompletions: Object.freeze(this.pendingSoundCompletions.map(event => Object.freeze({ ...event }))),
+    });
+  }
+
+  async restoreCheckpointProbe(checkpoint) {
+    if (!checkpoint || checkpoint.schema !== 'kq1agi-certification-checkpoint-probe-v1') {
+      throw new Error('Unknown Phase -1H checkpoint probe schema.');
+    }
+    if (!isIdle(this.truth) || !isIdle(this.edited)) {
+      throw new Error('Checkpoint restore requires both certification lanes to be idle.');
+    }
+    const restore = await this._requestCheckpointProbe('restore');
+    if (restore.truthStatus !== 2 || restore.editedStatus !== 2) {
+      return { status: 'CHECKPOINT_RESTORE_ERROR', restore };
+    }
+
+    restoreLaneTransport(this.truth, checkpoint.truthTransport);
+    restoreLaneTransport(this.edited, checkpoint.editedTransport);
+    this.logicalTick = Number(checkpoint.logicalTick) >>> 0;
+    this.cycle = Number(checkpoint.cycle) >>> 0;
+    this.comparedCycle = Number(checkpoint.comparedCycle) >>> 0;
+    this.pendingSoundCompletions = (checkpoint.pendingSoundCompletions ?? []).map(event => ({ ...event }));
+    this.pendingExternalDivergence = null;
+    this.truth.soundRequests.length = 0;
+    this.edited.soundRequests.length = 0;
+
+    const snapshotEpoch = await this._synchronizeBarrierSnapshot();
+    const actualTruthTrace = readTrace(this.truth);
+    const actualEditedTrace = readTrace(this.edited);
+    const actualTruthDigest = readSemanticDigest(this.truth);
+    const actualEditedDigest = readSemanticDigest(this.edited);
+
+    const lanes = [
+      ['truth', checkpoint.truthTrace, actualTruthTrace, checkpoint.truthDigest, actualTruthDigest],
+      ['edited', checkpoint.editedTrace, actualEditedTrace, checkpoint.editedDigest, actualEditedDigest],
+    ];
+    for (const lane of lanes) {
+      const laneName = lane[0];
+      const expectedTrace = lane[1];
+      const actualTrace = lane[2];
+      const expectedDigest = lane[3];
+      const actualDigest = lane[4];
+      const traceIndex = firstDifference(expectedTrace, actualTrace);
+      if (traceIndex >= 0) {
+        return {
+          status: 'CHECKPOINT_NOT_EXACT', lane: laneName, category: 'trace', index: traceIndex,
+          expected: expectedTrace[traceIndex], actual: actualTrace[traceIndex], expectedTrace, actualTrace,
+        };
+      }
+      const digestIndex = firstDifference(expectedDigest, actualDigest);
+      if (digestIndex >= 0) {
+        return {
+          status: 'CHECKPOINT_NOT_EXACT', lane: laneName,
+          category: digestIndex === DIGEST.RANDOM_DRAWS ? 'random-stream' : 'semantic-digest',
+          index: digestIndex, expected: expectedDigest[digestIndex], actual: actualDigest[digestIndex],
+          expectedDigest, actualDigest,
+        };
+      }
+    }
+
+    const pair = this.compare(snapshotEpoch);
+    if (pair.status !== 'MATCH') return { status: 'CHECKPOINT_NOT_EXACT', category: 'lane-pair', pair };
+    return {
+      status: 'CHECKPOINT_ROUNDTRIP_MATCH', scope: 'semantic-v1',
+      tick: this.logicalTick, cycle: this.cycle, snapshotEpoch, pair,
+    };
+  }
   async _resolveQuitIfObserved() {
     const truthMarked = isQuitMarked(this.truth);
     const editedMarked = isQuitMarked(this.edited);
