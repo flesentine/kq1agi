@@ -56,6 +56,18 @@ old_overlay_tail = r'''    private CertificationCheckpointOverlay certificationC
         overlay.simpleName = state.simpleName;
         overlay.randomDrawCount = getCertificationRandomDrawCount();
         overlay.scriptMax = state.scriptBuffer.maxScript;
+        overlay.scanStart = new int[state.scanStart.length];
+        overlay.logicLoaded = new boolean[256];
+        overlay.pictureLoaded = new boolean[256];
+        overlay.viewLoaded = new boolean[256];
+        overlay.soundLoaded = new boolean[256];
+        for (int i = 0; i < state.scanStart.length; i++) overlay.scanStart[i] = state.scanStart[i];
+        for (int i = 0; i < 256; i++) {
+            overlay.logicLoaded[i] = state.logics[i] != null && state.logics[i].isLoaded;
+            overlay.pictureLoaded[i] = state.pictures[i] != null && state.pictures[i].isLoaded;
+            overlay.viewLoaded[i] = state.views[i] != null && state.views[i].isLoaded;
+            overlay.soundLoaded[i] = state.sounds[i] != null && state.sounds[i].isLoaded;
+        }
         return overlay;
     }
 
@@ -95,6 +107,12 @@ old_overlay_tail = r'''    private CertificationCheckpointOverlay certificationC
         state.lastInput = overlay.lastInput;
         state.simpleName = overlay.simpleName;
         state.scriptBuffer.maxScript = overlay.scriptMax;
+        if (overlay.scanStart == null || overlay.scanStart.length != state.scanStart.length) {
+            throw new IllegalStateException("Certification scanStart checkpoint size mismatch");
+        }
+        for (int i = 0; i < state.scanStart.length; i++) state.scanStart[i] = overlay.scanStart[i];
+        commands.restoreCertificationResourceLoadState(
+                overlay.logicLoaded, overlay.pictureLoaded, overlay.viewLoaded, overlay.soundLoaded);
         if (overlay.randomDrawCount >= 0) {
             if (!(state.random instanceof CertificationCheckpointRandom)) {
                 throw new IllegalStateException("Certification random source is not checkpointable");
@@ -166,6 +184,18 @@ new_overlay_tail = r'''    private static final int CERTIFICATION_CHECKPOINT_MAG
         overlay.simpleName = state.simpleName;
         overlay.randomDrawCount = getCertificationRandomDrawCount();
         overlay.scriptMax = state.scriptBuffer.maxScript;
+        overlay.scanStart = new int[state.scanStart.length];
+        overlay.logicLoaded = new boolean[256];
+        overlay.pictureLoaded = new boolean[256];
+        overlay.viewLoaded = new boolean[256];
+        overlay.soundLoaded = new boolean[256];
+        for (int i = 0; i < state.scanStart.length; i++) overlay.scanStart[i] = state.scanStart[i];
+        for (int i = 0; i < 256; i++) {
+            overlay.logicLoaded[i] = state.logics[i] != null && state.logics[i].isLoaded;
+            overlay.pictureLoaded[i] = state.pictures[i] != null && state.pictures[i].isLoaded;
+            overlay.viewLoaded[i] = state.views[i] != null && state.views[i].isLoaded;
+            overlay.soundLoaded[i] = state.sounds[i] != null && state.sounds[i].isLoaded;
+        }
         return overlay;
     }
 
@@ -205,6 +235,12 @@ new_overlay_tail = r'''    private static final int CERTIFICATION_CHECKPOINT_MAG
         state.lastInput = overlay.lastInput;
         state.simpleName = overlay.simpleName;
         state.scriptBuffer.maxScript = overlay.scriptMax;
+        if (overlay.scanStart == null || overlay.scanStart.length != state.scanStart.length) {
+            throw new IllegalStateException("Certification scanStart checkpoint size mismatch");
+        }
+        for (int i = 0; i < state.scanStart.length; i++) state.scanStart[i] = overlay.scanStart[i];
+        commands.restoreCertificationResourceLoadState(
+                overlay.logicLoaded, overlay.pictureLoaded, overlay.viewLoaded, overlay.soundLoaded);
         if (overlay.randomDrawCount >= 0) {
             if (!(state.random instanceof CertificationCheckpointRandom)) {
                 throw new IllegalStateException("Certification random source is not checkpointable");
@@ -312,6 +348,16 @@ new_overlay_tail = r'''    private static final int CERTIFICATION_CHECKPOINT_MAG
         pos = certificationCheckpointWriteString(buffer, pos, overlay.simpleName);
         pos = certificationCheckpointWriteInt(buffer, pos, overlay.randomDrawCount);
         pos = certificationCheckpointWriteInt(buffer, pos, overlay.scriptMax);
+        pos = certificationCheckpointWriteInt(buffer, pos, overlay.scanStart.length);
+        for (int value : overlay.scanStart) pos = certificationCheckpointWriteInt(buffer, pos, value);
+        pos = certificationCheckpointWriteInt(buffer, pos, 256);
+        for (int i = 0; i < 256; i++) {
+            int loadedBits = (overlay.logicLoaded[i] ? 1 : 0)
+                    | (overlay.pictureLoaded[i] ? 2 : 0)
+                    | (overlay.viewLoaded[i] ? 4 : 0)
+                    | (overlay.soundLoaded[i] ? 8 : 0);
+            pos = certificationCheckpointWriteInt(buffer, pos, loadedBits);
+        }
 
         byte[] exact = new byte[pos];
         System.arraycopy(buffer, 0, exact, 0, pos);
@@ -374,6 +420,25 @@ new_overlay_tail = r'''    private static final int CERTIFICATION_CHECKPOINT_MAG
         overlay.simpleName = certificationCheckpointReadString(data, cursor);
         overlay.randomDrawCount = certificationCheckpointReadInt(data, cursor);
         overlay.scriptMax = certificationCheckpointReadInt(data, cursor);
+        int scanStartLength = certificationCheckpointReadInt(data, cursor);
+        if (scanStartLength != state.scanStart.length) {
+            throw new IllegalArgumentException("Certification scanStart checkpoint size mismatch");
+        }
+        overlay.scanStart = new int[scanStartLength];
+        for (int i = 0; i < scanStartLength; i++) overlay.scanStart[i] = certificationCheckpointReadInt(data, cursor);
+        int resourceLength = certificationCheckpointReadInt(data, cursor);
+        if (resourceLength != 256) throw new IllegalArgumentException("Certification resource checkpoint size mismatch");
+        overlay.logicLoaded = new boolean[resourceLength];
+        overlay.pictureLoaded = new boolean[resourceLength];
+        overlay.viewLoaded = new boolean[resourceLength];
+        overlay.soundLoaded = new boolean[resourceLength];
+        for (int i = 0; i < resourceLength; i++) {
+            int loadedBits = certificationCheckpointReadInt(data, cursor);
+            overlay.logicLoaded[i] = (loadedBits & 1) != 0;
+            overlay.pictureLoaded[i] = (loadedBits & 2) != 0;
+            overlay.viewLoaded[i] = (loadedBits & 4) != 0;
+            overlay.soundLoaded[i] = (loadedBits & 8) != 0;
+        }
         if (cursor.pos != data.length) throw new IllegalArgumentException("Trailing certification checkpoint data");
         decoded.overlay = overlay;
         return decoded;
