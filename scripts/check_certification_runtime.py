@@ -203,6 +203,9 @@ for marker, label in [
     ('editedWorkerPayload: readWorkerCheckpointPayload', 'edited worker checkpoint export'),
     ('writeWorkerCheckpointPayload(this.truth', 'truth worker checkpoint import'),
     ('writeWorkerCheckpointPayload(this.edited', 'edited worker checkpoint import'),
+    ('canonicalCheckpointContext', 'checkpoint replay-context canonicalization'),
+    ("status: 'CHECKPOINT_CONTEXT_MISMATCH'", 'checkpoint replay-context rejection'),
+    ("requires SubtleCrypto SHA-256", 'checkpoint cryptographic hash requirement'),
 ]:
     require(host, marker, f'host {label}')
 
@@ -229,6 +232,8 @@ report = {
         'checkpoint_serialized_worker_payload': 'PASS',
         'checkpoint_hash_authentication': 'PASS',
         'checkpoint_fresh_worker_import_transport': 'PASS',
+        'checkpoint_frozen_context_binding': 'PASS',
+        'checkpoint_sha256_only': 'PASS',
     },
     'comparison_scope': {
         'status': 'SEMANTIC_V1',
