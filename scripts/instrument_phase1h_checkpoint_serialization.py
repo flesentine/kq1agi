@@ -307,6 +307,7 @@ new_overlay_tail = r'''    private static final int CERTIFICATION_CHECKPOINT_MAG
         pos = certificationCheckpointWriteString(buffer, pos, overlay.lastInput);
         pos = certificationCheckpointWriteString(buffer, pos, overlay.simpleName);
         pos = certificationCheckpointWriteInt(buffer, pos, overlay.randomDrawCount);
+        pos = certificationCheckpointWriteInt(buffer, pos, overlay.scriptMax);
 
         byte[] exact = new byte[pos];
         System.arraycopy(buffer, 0, exact, 0, pos);
@@ -368,6 +369,7 @@ new_overlay_tail = r'''    private static final int CERTIFICATION_CHECKPOINT_MAG
         overlay.lastInput = certificationCheckpointReadString(data, cursor);
         overlay.simpleName = certificationCheckpointReadString(data, cursor);
         overlay.randomDrawCount = certificationCheckpointReadInt(data, cursor);
+        overlay.scriptMax = certificationCheckpointReadInt(data, cursor);
         if (cursor.pos != data.length) throw new IllegalArgumentException("Trailing certification checkpoint data");
         decoded.overlay = overlay;
         return decoded;
