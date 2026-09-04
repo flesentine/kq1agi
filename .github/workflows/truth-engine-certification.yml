@@ -56,7 +56,8 @@ jobs:
           python3 scripts/instrument_certification_runtime.py agile-gdx-truth
           python3 scripts/fix_certification_gwt_compat.py agile-gdx-truth
           python3 scripts/fix_certification_snapshot_barrier.py agile-gdx-truth
-          python3 scripts/instrument_phase1h_checkpoint_probe.py agile-gdx-truth\n          python3 scripts/instrument_phase1h_checkpoint_serialization.py agile-gdx-truth
+          python3 scripts/instrument_phase1h_checkpoint_probe.py agile-gdx-truth
+          python3 scripts/instrument_phase1h_checkpoint_serialization.py agile-gdx-truth
           git -C agile-gdx-truth add -N \
             core/src/main/java/com/agifans/agile/CertificationRandom.java \
             core/src/main/java/com/agifans/agile/CertificationCheckpointStore.java \
@@ -138,7 +139,8 @@ jobs:
           python3 scripts/instrument_certification_runtime.py agile-gdx-edited
           python3 scripts/fix_certification_gwt_compat.py agile-gdx-edited
           python3 scripts/fix_certification_snapshot_barrier.py agile-gdx-edited
-          python3 scripts/instrument_phase1h_checkpoint_probe.py agile-gdx-edited\n          python3 scripts/instrument_phase1h_checkpoint_serialization.py agile-gdx-edited
+          python3 scripts/instrument_phase1h_checkpoint_probe.py agile-gdx-edited
+          python3 scripts/instrument_phase1h_checkpoint_serialization.py agile-gdx-edited
           git -C agile-gdx-edited diff --check
 
       - name: Verify dual-lane certification contracts
