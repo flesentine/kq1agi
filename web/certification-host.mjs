@@ -192,6 +192,16 @@ function fallbackCheckpointHash(bytes) {
   return 'fnv1a32:' + hash.toString(16).padStart(8, '0');
 }
 
+function canonicalCheckpointTransport(snapshot) {
+  return {
+    queue: [...(snapshot?.queue ?? [])].map(value => Number(value) >>> 0),
+    keys: [...(snapshot?.keys ?? [])].map(value => Number(value) >>> 0),
+    oldKeys: [...(snapshot?.oldKeys ?? [])].map(value => Number(value) >>> 0),
+    vars: [...(snapshot?.vars ?? [])].map(value => Number(value) >>> 0),
+    pixels: [...(snapshot?.pixels ?? [])].map(value => Number(value) >>> 0),
+  };
+}
+
 function canonicalCheckpointForHash(checkpoint) {
   return {
     schema: 'kq1agi-certification-checkpoint-v1',
@@ -202,8 +212,8 @@ function canonicalCheckpointForHash(checkpoint) {
     editedTrace: [...(checkpoint?.editedTrace ?? [])].map(value => Number(value) >>> 0),
     truthDigest: [...(checkpoint?.truthDigest ?? [])].map(value => Number(value) >>> 0),
     editedDigest: [...(checkpoint?.editedDigest ?? [])].map(value => Number(value) >>> 0),
-    truthTransport: checkpoint?.truthTransport ?? null,
-    editedTransport: checkpoint?.editedTransport ?? null,
+    truthTransport: canonicalCheckpointTransport(checkpoint?.truthTransport),
+    editedTransport: canonicalCheckpointTransport(checkpoint?.editedTransport),
     truthWorkerPayload: [...(checkpoint?.truthWorkerPayload ?? [])].map(value => Number(value) & 0xff),
     editedWorkerPayload: [...(checkpoint?.editedWorkerPayload ?? [])].map(value => Number(value) & 0xff),
     pendingSoundCompletions: [...(checkpoint?.pendingSoundCompletions ?? [])].map(event => ({
