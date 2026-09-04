@@ -44,7 +44,14 @@ public class CertificationCheckpointStore implements SavedGameStore {
 
     public CertificationCheckpointStore(byte[] checkpointData) {
         restoreMode = true;
-        this.checkpointData = checkpointData == null ? null : checkpointData.clone();
+        this.checkpointData = copyBytes(checkpointData);
+    }
+
+    private byte[] copyBytes(byte[] source) {
+        if (source == null) return null;
+        byte[] copy = new byte[source.length];
+        if (source.length > 0) System.arraycopy(source, 0, copy, 0, source.length);
+        return copy;
     }
 
     private SavedGame slot(int num) {
@@ -54,7 +61,7 @@ public class CertificationCheckpointStore implements SavedGameStore {
         game.fileTime = num;
         game.description = (num == 1 ? DESCRIPTION : "__KQ1_CERT_DUMMY_" + num + "__");
         game.exists = restoreMode;
-        game.savedGameData = checkpointData == null ? new byte[0] : checkpointData.clone();
+        game.savedGameData = checkpointData == null ? new byte[0] : copyBytes(checkpointData);
         return game;
     }
 
@@ -82,7 +89,7 @@ public class CertificationCheckpointStore implements SavedGameStore {
     }
 
     public byte[] getCheckpointData() {
-        return checkpointData == null ? null : checkpointData.clone();
+        return copyBytes(checkpointData);
     }
 }
 ''')
