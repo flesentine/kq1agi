@@ -644,7 +644,10 @@ export class CertificationHost {
     this.logicalTick = Number(checkpoint.logicalTick) >>> 0;
     this.cycle = Number(checkpoint.cycle) >>> 0;
     this.comparedCycle = Number(checkpoint.comparedCycle) >>> 0;
-    this.pendingSoundCompletions = (checkpoint.pendingSoundCompletions ?? []).map(event => ({ ...event }));
+    this.pendingSoundCompletions = (checkpoint.pendingSoundCompletions ?? []).map(event => ({
+      dueTick: Number(event?.dueTick) >>> 0,
+      endFlag: Number(event?.endFlag) & 0xff,
+    }));
     this.pendingExternalDivergence = null;
     this.truth.soundRequests.length = 0;
     this.edited.soundRequests.length = 0;
