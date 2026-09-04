@@ -596,9 +596,9 @@ function installPhase1D() {
 
     stopRequested = false;
     setReplayRunning(true);
-    const groups = groupEditConfigV1(context.editConfig);
+    let groups = [];
     setStatus('REDUCING EDITS', 'BUSY');
-    progress.textContent = `${groups.length} dependency-safe EditConfig group(s) · target tick ${context.firstDivergence.tick}`;
+    progress.textContent = 'Verifying frozen EditConfig identity…';
     detail.textContent = [
       `recording=${recordingIdentity(context.recording)}`,
       `editConfig=${editConfigIdentity(context.editConfig)}`,
@@ -610,6 +610,8 @@ function installPhase1D() {
     try {
       const gameBuffer = await readImportedGame(context.directoryName);
       await validateFrozenReplayIdentityV1(context.recording, gameBuffer, context.editConfig);
+      groups = groupEditConfigV1(context.editConfig);
+      progress.textContent = `${groups.length} dependency-safe EditConfig group(s) · target tick ${context.firstDivergence.tick}`;
 
       const replayCandidate = async (candidateRecording, candidateConfig) => {
         attemptNumber += 1;
