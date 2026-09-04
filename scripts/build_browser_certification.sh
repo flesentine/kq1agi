@@ -23,6 +23,7 @@ node scripts/test_certification_replay_host.mjs
 node scripts/test_phase1d_recording_boundary.mjs
 node scripts/test_certification_minimizer.mjs
 node scripts/test_certification_input_minimizer.mjs
+node scripts/test_certification_edit_minimizer.mjs
 
 git clone --quiet https://github.com/lanceewing/agile-gdx.git "$TRUTH_TREE"
 git -C "$TRUTH_TREE" checkout --quiet "$PINNED_AGILE_SHA"
@@ -97,13 +98,18 @@ cp web/certification-replay-host.mjs "$OUT/certification-replay-host.mjs"
 cp web/certification-phase1d.mjs "$OUT/certification-phase1d.mjs"
 cp web/certification-minimizer.mjs "$OUT/certification-minimizer.mjs"
 cp web/certification-input-minimizer.mjs "$OUT/certification-input-minimizer.mjs"
+cp web/certification-edit-minimizer.mjs "$OUT/certification-edit-minimizer.mjs"
 cp docs/TRUTH_ENGINE_PHASE_1D.md "$OUT/README.md"
 cp docs/TRUTH_ENGINE_PHASE_1E.md "$OUT/PHASE_1E.md"
 cp docs/TRUTH_ENGINE_PHASE_1F.md "$OUT/PHASE_1F.md"
+cp docs/TRUTH_ENGINE_PHASE_1G.md "$OUT/PHASE_1G.md"
 
 test -f "$OUT/certification-input-minimizer.mjs"
+test -f "$OUT/certification-edit-minimizer.mjs"
 grep -q 'certify-reduce-inputs-button' "$OUT/certification-phase1d.mjs"
 grep -q 'minimizeInputGroupsV1' "$OUT/certification-phase1d.mjs"
+grep -q 'certify-reduce-edits-button' "$OUT/certification-phase1d.mjs"
+grep -q 'minimizeEditConfigV1' "$OUT/certification-phase1d.mjs"
 
 printf '%s\n' \
   'Phase -1D browser bundle with Phase -1E minimizer. No AGI game resources are included.' \
@@ -111,6 +117,7 @@ printf '%s\n' \
   'PLAY recording v1 stays in browser memory and binds one local game directory, the local GAMEFILES.DAT hash, EditConfig hash, logical tick plus idle/busy input transport phase, complete bounded RNG stream, sound completion timing, complete-worker freeze boundary, and 60 Hz cycle-release schedule.' \
   'Phase -1E reduces a reproducing run to the shortest from-game-start prefix that preserves the exact first semantic divergence; focused windows are reporting views until arbitrary checkpoints exist.' \
   'Phase -1F dependency-safe input minimization can remove keyboard/mouse action groups while preserving the frozen schedule, RNG stream, sound completions, and exact divergence identity.' \
+  'Phase -1G dependency-safe EditConfig minimization removes whole room configs and the visual-pin set while freshly rebinding both EditConfig and recording hashes for every candidate.' \
   > "$OUT/ARTIFACT.txt"
 
 find "$OUT" -maxdepth 2 -type f | sort
