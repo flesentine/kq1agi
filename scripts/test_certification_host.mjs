@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { CertificationHost, createLaneBuffers, CertificationLayout } from '../web/certification-host.mjs';
+import { CertificationHost, createLaneBuffers, CertificationLayout, hashCertificationCheckpointV1 } from '../web/certification-host.mjs';
 
 class MockWorker {
   static instances = [];
@@ -221,6 +221,20 @@ class MockWorker {
   editedWorker.digestXor = 0;
   const healed = await host.restoreCheckpointProbe(checkpoint2);
   assert.equal(healed.status, 'CHECKPOINT_ROUNDTRIP_MATCH');
+
+  // The representation accepted by the hash and the representation executed by
+  // restore must be the same canonical numeric sound timing.
+  const soundCheckpointBase = {
+    ...checkpoint2,
+    pendingSoundCompletions: [{ dueTick: String(checkpoint2.logicalTick + 10), endFlag: '7' }],
+  };
+  const soundCheckpoint = {
+    ...soundCheckpointBase,
+    hash: await hashCertificationCheckpointV1(soundCheckpointBase),
+  };
+  const soundRestore = await host.restoreCheckpointProbe(soundCheckpoint);
+  assert.equal(soundRestore.status, 'CHECKPOINT_ROUNDTRIP_MATCH');
+  assert.deepEqual(host.pendingSoundCompletions, [{ dueTick: checkpoint2.logicalTick + 10, endFlag: 7 }]);
 
   // Authentication fails before any restore request is issued.
   const tampered = {
