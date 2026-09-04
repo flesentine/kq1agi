@@ -66,6 +66,8 @@ def verify_lane(root: Path, label: str) -> dict:
     require(commands, 'captureCertificationCheckpoint()', f'{label} checkpoint command bridge')
     require(commands, 'replayScriptEvents();', f'{label} checkpoint post-restore script replay')
     require(commands, 'showPicture(false);', f'{label} checkpoint post-restore picture rebuild')
+    require(commands, 'restoreCertificationResourceLoadState', f'{label} checkpoint resource-state bridge')
+    require(commands, 'soundPlayer.loadSound(state.sounds[i])', f'{label} checkpoint sound-cache rebuild')
     require(interpreter, 'captureCertificationCheckpoint()', f'{label} checkpoint interpreter bridge')
     require(interpreter, 'CertificationCheckpointOverlay', f'{label} transient checkpoint overlay')
     require(interpreter, 'CERTIFICATION_CHECKPOINT_MAGIC', f'{label} serialized checkpoint magic')
@@ -106,6 +108,8 @@ def verify_lane(root: Path, label: str) -> dict:
         ('state.lastInput = overlay.lastInput', 'lastInput'),
         ('state.simpleName = overlay.simpleName', 'simpleName'),
         ('state.scriptBuffer.maxScript = overlay.scriptMax', 'scriptBuffer.maxScript'),
+        ('state.scanStart[i] = overlay.scanStart[i]', 'scanStart'),
+        ('commands.restoreCertificationResourceLoadState(', 'resource loaded state'),
     ]:
         require(interpreter, checkpoint_marker, f'{label} checkpoint overlay {checkpoint_name}')
     require(worker, 'certificationDigestSAB', f'{label} digest transport')
