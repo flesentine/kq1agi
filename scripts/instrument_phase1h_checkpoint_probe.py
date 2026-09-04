@@ -316,6 +316,7 @@ if 'captureCertificationCheckpoint()' not in i:
         String lastInput;
         String simpleName;
         int randomDrawCount;
+        int scriptMax;
     }
 
     private CertificationCheckpointOverlay certificationCheckpointOverlay;
@@ -354,6 +355,7 @@ if 'captureCertificationCheckpoint()' not in i:
         overlay.lastInput = state.lastInput;
         overlay.simpleName = state.simpleName;
         overlay.randomDrawCount = getCertificationRandomDrawCount();
+        overlay.scriptMax = state.scriptBuffer.maxScript;
         return overlay;
     }
 
@@ -392,6 +394,7 @@ if 'captureCertificationCheckpoint()' not in i:
         state.currentInput = (overlay.currentInput == null ? null : new StringBuilder(overlay.currentInput));
         state.lastInput = overlay.lastInput;
         state.simpleName = overlay.simpleName;
+        state.scriptBuffer.maxScript = overlay.scriptMax;
         if (overlay.randomDrawCount >= 0) {
             if (!(state.random instanceof CertificationCheckpointRandom)) {
                 throw new IllegalStateException("Certification random source is not checkpointable");
