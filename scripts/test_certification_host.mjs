@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { CertificationHost, createLaneBuffers, CertificationLayout } from '../web/certification-host.mjs';
+import { CertificationHost, createLaneBuffers, CertificationLayout, hashCertificationCheckpointV1 } from '../web/certification-host.mjs';
 
 class MockWorker {
   static instances = [];
@@ -11,6 +11,7 @@ class MockWorker {
     this.terminated = false;
     this.hold = false;
     this.digestXor = 0;
+    this.checkpointCaptureAvailable = true;
     MockWorker.instances.push(this);
   }
 
@@ -39,6 +40,7 @@ class MockWorker {
       this.vars = new Uint32Array(this.init.variableSAB);
       this.trace = new Uint32Array(this.init.diagnosticTraceSAB);
       this.digest = new Uint32Array(this.init.certificationDigestSAB);
+      this.checkpointData = new Uint32Array(this.init.certificationCheckpointSAB);
     } else if (message.name === 'Start') {
       queueMicrotask(() => this.onmessage?.({ data: { name: 'CertificationReady', object: {} } }));
       this.timer = setInterval(() => {
@@ -57,6 +59,28 @@ class MockWorker {
             queueMicrotask(() => this.onmessage?.({
               data: { name: 'CertificationSnapshotReady', object: { epoch: request } },
             }));
+          }
+
+          const checkpointRequest = Atomics.load(this.digest, 10) >>> 0;
+          const checkpointAck = Atomics.load(this.digest, 11) >>> 0;
+          if (checkpointRequest !== 0 && checkpointRequest !== checkpointAck) {
+            const action = checkpointRequest & 3;
+            let checkpointStatus = 3;
+            if (action === 1) {
+              if (this.checkpointCaptureAvailable) {
+                const payload = [0x4b, 0x51, 0x31, 0x48, this.vars[512] & 0xff];
+                Atomics.store(this.checkpointData, 0, payload.length);
+                for (let i = 0; i < payload.length; i += 1) Atomics.store(this.checkpointData, i + 1, payload[i]);
+                checkpointStatus = 1;
+              } else {
+                checkpointStatus = 4;
+              }
+            } else if (action === 2) {
+              const length = Atomics.load(this.checkpointData, 0) >>> 0;
+              checkpointStatus = length > 0 ? 2 : 3;
+            }
+            Atomics.store(this.digest, 12, checkpointStatus);
+            Atomics.store(this.digest, 11, checkpointRequest);
           }
         }
       }, 0);
@@ -84,8 +108,10 @@ class MockWorker {
   assert.equal(lane.variableSAB.byteLength, 8353 * 4);
   assert.equal(lane.variableSlots, 8353);
   assert.equal(lane.keyPressQueueSAB.byteLength, 8 + 257 * 4);
-  assert.equal(lane.certificationDigestSAB.byteLength, 10 * 4);
-  assert.throws(() => createLaneBuffers({ digestSlots: 9 }), /at least 10/);
+  assert.equal(lane.certificationDigestSAB.byteLength, 13 * 4);
+  assert.equal(lane.certificationCheckpointSAB.byteLength, 32768 * 4);
+  assert.throws(() => createLaneBuffers({ digestSlots: 12 }), /at least 13/);
+  assert.throws(() => createLaneBuffers({ checkpointSlots: 4095 }), /at least 4096/);
   assert.throws(() => createLaneBuffers({ variableSlots: 8352 }), /at least 8353/);
 }
 
@@ -162,6 +188,95 @@ class MockWorker {
   assert.ok(host.logicalTick >= 60);
   assert.equal(Atomics.load(host.truth.vars, 11), 1);
   assert.equal(result.status, 'MATCH');
+
+  // A valid barrier before the first reconstructable Picture is not a
+  // checkpoint error; the host reports it as explicitly unavailable.
+  truthWorker.checkpointCaptureAvailable = false;
+  editedWorker.checkpointCaptureAvailable = false;
+  const unavailable = await host.captureCheckpointProbe();
+  assert.equal(unavailable.status, 'CHECKPOINT_CAPTURE_UNAVAILABLE');
+  assert.equal(unavailable.reason, 'no-reconstructable-picture');
+  truthWorker.checkpointCaptureAvailable = true;
+  editedWorker.checkpointCaptureAvailable = true;
+
+  // Phase -1H captures only from a certified barrier. Advance after capture,
+  // then restore worker-local + host transport state and require the exact captured
+  // lane digest, not merely equality between the two restored lanes.
+  const checkpoint = await host.captureCheckpointProbe();
+  assert.equal(checkpoint.status, 'CHECKPOINT_CAPTURED');
+  const checkpointTick = checkpoint.logicalTick;
+  result = await host.step();
+  assert.ok(host.logicalTick >= checkpointTick);
+  const restored = await host.restoreCheckpointProbe(checkpoint);
+  assert.equal(restored.status, 'CHECKPOINT_ROUNDTRIP_MATCH');
+  assert.equal(host.logicalTick, checkpointTick);
+
+  const checkpoint2 = await host.captureCheckpointProbe();
+  assert.equal(checkpoint2.status, 'CHECKPOINT_CAPTURED');
+  editedWorker.digestXor = 1;
+  const notExact = await host.restoreCheckpointProbe(checkpoint2);
+  assert.equal(notExact.status, 'CHECKPOINT_NOT_EXACT');
+  assert.equal(notExact.lane, 'edited');
+  assert.equal(notExact.category, 'semantic-digest');
+  editedWorker.digestXor = 0;
+  const healed = await host.restoreCheckpointProbe(checkpoint2);
+  assert.equal(healed.status, 'CHECKPOINT_ROUNDTRIP_MATCH');
+
+  // The representation accepted by the hash and the representation executed by
+  // restore must be the same canonical numeric sound timing.
+  const soundCheckpointBase = {
+    ...checkpoint2,
+    pendingSoundCompletions: [{ dueTick: String(checkpoint2.logicalTick + 10), endFlag: '7' }],
+  };
+  const soundCheckpoint = {
+    ...soundCheckpointBase,
+    hash: await hashCertificationCheckpointV1(soundCheckpointBase),
+  };
+  const soundRestore = await host.restoreCheckpointProbe(soundCheckpoint);
+  assert.equal(soundRestore.status, 'CHECKPOINT_ROUNDTRIP_MATCH');
+  assert.deepEqual(host.pendingSoundCompletions, [{ dueTick: checkpoint2.logicalTick + 10, endFlag: 7 }]);
+
+  // Authentication fails before any restore request is issued.
+  const tampered = {
+    ...checkpoint2,
+    truthWorkerPayload: [...checkpoint2.truthWorkerPayload.slice(0, -1), (checkpoint2.truthWorkerPayload.at(-1) ^ 1) & 0xff],
+  };
+  const restoreAckBeforeTamper = Atomics.load(host.truth.digest, CertificationLayout.DIGEST.CHECKPOINT_ACK);
+  const tamperResult = await host.restoreCheckpointProbe(tampered);
+  assert.equal(tamperResult.status, 'CHECKPOINT_HASH_MISMATCH');
+  assert.equal(Atomics.load(host.truth.digest, CertificationLayout.DIGEST.CHECKPOINT_ACK), restoreAckBeforeTamper);
+
+  // A checkpoint is self-contained enough to import into newly started workers.
+  const serializedCheckpoint = JSON.parse(JSON.stringify(checkpoint2));
+  const freshHost = new CertificationHost({ WorkerCtor: MockWorker, barrierTimeoutMs: 500 });
+  await freshHost.start(new ArrayBuffer(16));
+  const freshRestored = await freshHost.restoreCheckpointProbe(serializedCheckpoint);
+  assert.equal(freshRestored.status, 'CHECKPOINT_ROUNDTRIP_MATCH');
+  assert.equal(freshHost.logicalTick, checkpoint2.logicalTick);
+  assert.equal(freshHost.cycle, checkpoint2.cycle);
+  freshHost.terminate();
+
+  // A fresh worker with a different certification seed must be rejected before
+  // payload import even though the captured draw count itself would still match.
+  const wrongContextHost = new CertificationHost({
+    WorkerCtor: MockWorker,
+    barrierTimeoutMs: 500,
+    seed: 0x12345678,
+  });
+  await wrongContextHost.start(new ArrayBuffer(16));
+  const wrongContextAck = Atomics.load(wrongContextHost.truth.digest, CertificationLayout.DIGEST.CHECKPOINT_ACK);
+  const wrongContext = await wrongContextHost.restoreCheckpointProbe(serializedCheckpoint);
+  assert.equal(wrongContext.status, 'CHECKPOINT_CONTEXT_MISMATCH');
+  assert.equal(Atomics.load(wrongContextHost.truth.digest, CertificationLayout.DIGEST.CHECKPOINT_ACK), wrongContextAck);
+  wrongContextHost.terminate();
+
+  const wrongGameHost = new CertificationHost({ WorkerCtor: MockWorker, barrierTimeoutMs: 500 });
+  await wrongGameHost.start(new ArrayBuffer(17));
+  const wrongGameAck = Atomics.load(wrongGameHost.truth.digest, CertificationLayout.DIGEST.CHECKPOINT_ACK);
+  const wrongGame = await wrongGameHost.restoreCheckpointProbe(serializedCheckpoint);
+  assert.equal(wrongGame.status, 'CHECKPOINT_CONTEXT_MISMATCH');
+  assert.equal(Atomics.load(wrongGameHost.truth.digest, CertificationLayout.DIGEST.CHECKPOINT_ACK), wrongGameAck);
+  wrongGameHost.terminate();
 
   // Comparator still catches semantic drift at an already-synchronized barrier.
   host.edited.digest[2] ^= 1;
@@ -254,4 +369,7 @@ assert.equal(CertificationLayout.VAR.VARIABLE_SLOTS, 8353);
 assert.equal(CertificationLayout.VAR.IN_TICK, 517);
 assert.equal(CertificationLayout.DIGEST.SNAPSHOT_REQUEST, 8);
 assert.equal(CertificationLayout.DIGEST.SNAPSHOT_ACK, 9);
+assert.equal(CertificationLayout.DIGEST.CHECKPOINT_REQUEST, 10);
+assert.equal(CertificationLayout.DIGEST.CHECKPOINT_ACK, 11);
+assert.equal(CertificationLayout.DIGEST.CHECKPOINT_STATUS, 12);
 console.log('certification host tests: PASS');

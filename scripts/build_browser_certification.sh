@@ -57,6 +57,8 @@ for dir in "$TRUTH_TREE" "$EDITED_TREE"; do
   python3 scripts/fix_certification_snapshot_barrier.py "$dir"
   python3 scripts/instrument_phase1d_certification_replay.py "$dir"
   python3 scripts/fix_phase1d_random_coverage.py "$dir"
+  python3 scripts/instrument_phase1h_checkpoint_probe.py "$dir"
+  python3 scripts/instrument_phase1h_checkpoint_serialization.py "$dir"
   python3 scripts/fix_certification_browser_worker_path.py "$dir"
   git -C "$dir" diff --check
   chmod +x "$dir/gradlew"
@@ -81,6 +83,7 @@ for dir in "$TRUTH_TREE" "$EDITED_TREE"; do
   grep -R -q 'certificationDigestSAB' "$dir/html/build/dist/worker"
   grep -R -q 'CertificationReady' "$dir/html/build/dist/worker"
   grep -R -q 'CertificationSnapshotReady' "$dir/html/build/dist/worker"
+  grep -R -q '__KQ1_CERT_CHECKPOINT__' "$dir/html/build/dist/worker"
   grep -R -q 'certificationRandomReplay' "$dir/html/build/dist/worker"
   grep -R -q "importScripts(\['../opfs-saved-games.js'\])" "$dir/html/build/dist/worker"
 done
@@ -103,6 +106,7 @@ cp docs/TRUTH_ENGINE_PHASE_1D.md "$OUT/README.md"
 cp docs/TRUTH_ENGINE_PHASE_1E.md "$OUT/PHASE_1E.md"
 cp docs/TRUTH_ENGINE_PHASE_1F.md "$OUT/PHASE_1F.md"
 cp docs/TRUTH_ENGINE_PHASE_1G.md "$OUT/PHASE_1G.md"
+cp docs/TRUTH_ENGINE_PHASE_1H.md "$OUT/PHASE_1H.md"
 
 test -f "$OUT/certification-input-minimizer.mjs"
 test -f "$OUT/certification-edit-minimizer.mjs"
@@ -118,6 +122,7 @@ printf '%s\n' \
   'Phase -1E reduces a reproducing run to the shortest from-game-start prefix that preserves the exact first semantic divergence; focused windows are reporting views until arbitrary checkpoints exist.' \
   'Phase -1F dependency-safe input minimization can remove keyboard/mouse action groups while preserving the frozen schedule, RNG stream, sound completions, and exact divergence identity.' \
   'Phase -1G dependency-safe EditConfig minimization removes whole room configs and the visual-pin set while freshly rebinding both EditConfig and recording hashes for every candidate.' \
+  'Phase -1H starts an exact checkpoint/restore contract with a certification-only destructive round-trip probe; arbitrary-start replay remains disabled until the restored lane matches its own captured semantic-v1 state.' \
   > "$OUT/ARTIFACT.txt"
 
 find "$OUT" -maxdepth 2 -type f | sort

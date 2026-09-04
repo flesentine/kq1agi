@@ -56,14 +56,22 @@ jobs:
           python3 scripts/instrument_certification_runtime.py agile-gdx-truth
           python3 scripts/fix_certification_gwt_compat.py agile-gdx-truth
           python3 scripts/fix_certification_snapshot_barrier.py agile-gdx-truth
+          python3 scripts/instrument_phase1h_checkpoint_probe.py agile-gdx-truth
+          python3 scripts/instrument_phase1h_checkpoint_serialization.py agile-gdx-truth
           git -C agile-gdx-truth add -N \
             core/src/main/java/com/agifans/agile/CertificationRandom.java \
+            core/src/main/java/com/agifans/agile/CertificationCheckpointStore.java \
+            core/src/main/java/com/agifans/agile/CertificationCheckpointRandom.java \
             html/src/main/java/com/agifans/agile/gwt/CertificationSavedGameStore.java
           git -C agile-gdx-truth diff --check
           git -C agile-gdx-truth diff --name-only | sort | tee /tmp/truth-files.txt
           printf '%s\n' \
+            core/src/main/java/com/agifans/agile/CertificationCheckpointStore.java \
+            core/src/main/java/com/agifans/agile/CertificationCheckpointRandom.java \
             core/src/main/java/com/agifans/agile/CertificationRandom.java \
+            core/src/main/java/com/agifans/agile/Commands.java \
             core/src/main/java/com/agifans/agile/Interpreter.java \
+            core/src/main/java/com/agifans/agile/SavedGames.java \
             html/src/main/java/com/agifans/agile/gwt/CertificationSavedGameStore.java \
             html/src/main/java/com/agifans/agile/worker/AgileWebWorker.java \
             | sort > /tmp/truth-expected.txt
@@ -131,6 +139,8 @@ jobs:
           python3 scripts/instrument_certification_runtime.py agile-gdx-edited
           python3 scripts/fix_certification_gwt_compat.py agile-gdx-edited
           python3 scripts/fix_certification_snapshot_barrier.py agile-gdx-edited
+          python3 scripts/instrument_phase1h_checkpoint_probe.py agile-gdx-edited
+          python3 scripts/instrument_phase1h_checkpoint_serialization.py agile-gdx-edited
           git -C agile-gdx-edited diff --check
 
       - name: Verify dual-lane certification contracts
@@ -161,6 +171,7 @@ jobs:
             grep -R -q 'certificationDigestSAB' "$dir/html/build/dist/worker"
             grep -R -q 'CertificationReady' "$dir/html/build/dist/worker"
             grep -R -q 'CertificationSnapshotReady' "$dir/html/build/dist/worker"
+            grep -R -q '__KQ1_CERT_CHECKPOINT__' "$dir/html/build/dist/worker"
           done
           cmp agile-gdx-truth/html/build/dist/opfs-saved-games.js agile-gdx-edited/html/build/dist/opfs-saved-games.js
           test -f web/certification-host.mjs

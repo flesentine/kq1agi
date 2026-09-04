@@ -22,9 +22,18 @@ function waitTurn() {
  */
 export class ReplayCertificationHost extends CertificationHost {
   constructor(options = {}) {
-    super(options);
-    this.randomReplaySpec = String(options.randomReplaySpec ?? '');
-    this.recordedExternalTiming = options.recordedExternalTiming !== false;
+    const randomReplaySpec = String(options.randomReplaySpec ?? '');
+    const recordedExternalTiming = options.recordedExternalTiming !== false;
+    super({
+      ...options,
+      checkpointContext: {
+        ...(options.checkpointContext ?? {}),
+        randomReplaySpec,
+        recordedExternalTiming,
+      },
+    });
+    this.randomReplaySpec = randomReplaySpec;
+    this.recordedExternalTiming = recordedExternalTiming;
   }
 
   _pairSoundRequests() {
@@ -53,6 +62,7 @@ export class ReplayCertificationHost extends CertificationHost {
 
   async start(encodedGameFileBuffer) {
     if (this.started) throw new Error('ReplayCertificationHost.start() may only be called once.');
+    await this._bindCheckpointGameIdentity(encodedGameFileBuffer);
     this.started = true;
     const truthGame = cloneArrayBuffer(encodedGameFileBuffer);
     const editedGame = cloneArrayBuffer(encodedGameFileBuffer);
@@ -67,6 +77,7 @@ export class ReplayCertificationHost extends CertificationHost {
           pixelDataSAB: lane.pixelDataSAB,
           diagnosticTraceSAB: lane.diagnosticTraceSAB,
           certificationDigestSAB: lane.certificationDigestSAB,
+          certificationCheckpointSAB: lane.certificationCheckpointSAB,
           certificationMode: true,
           certificationSeed: this.seed,
           certificationRandomReplay: this.randomReplaySpec,

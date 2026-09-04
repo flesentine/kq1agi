@@ -273,6 +273,12 @@ function installPhase1D() {
       editedWorkerUrl,
       randomReplaySpec: encodeRandomReplay(recording),
       recordedExternalTiming: true,
+      checkpointContext: {
+        gameHash: recording.gameHash,
+        gameBytes: recording.gameBytes,
+        editConfigHash: recording.editConfigHash,
+        recordingHash: recording.hash,
+      },
     });
     try {
       await replayHost.start(gameBuffer);

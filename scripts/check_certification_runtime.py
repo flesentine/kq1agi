@@ -35,6 +35,10 @@ def verify_lane(root: Path, label: str) -> dict:
     worker = read(root, 'html/src/main/java/com/agifans/agile/worker/AgileWebWorker.java')
     random_java = read(root, 'core/src/main/java/com/agifans/agile/CertificationRandom.java')
     save_store = read(root, 'html/src/main/java/com/agifans/agile/gwt/CertificationSavedGameStore.java')
+    checkpoint_store = read(root, 'core/src/main/java/com/agifans/agile/CertificationCheckpointStore.java')
+    checkpoint_random = read(root, 'core/src/main/java/com/agifans/agile/CertificationCheckpointRandom.java')
+    saved_games = read(root, 'core/src/main/java/com/agifans/agile/SavedGames.java')
+    commands = read(root, 'core/src/main/java/com/agifans/agile/Commands.java')
     variables = read(root, 'html/src/main/java/com/agifans/agile/gwt/GwtVariableData.java')
 
     require(interpreter, 'case 0: return 2;', f'{label} trace v2')
@@ -46,17 +50,87 @@ def verify_lane(root: Path, label: str) -> dict:
     require(save_store, 'class CertificationSavedGameStore extends GwtSavedGameStore', f'{label} isolated save store')
     require(save_store, 'Map<Integer, SavedGame>', f'{label} in-memory saved games')
     require(save_store, 'System.arraycopy', f'{label} GWT-safe save copies')
+    require(checkpoint_store, 'class CertificationCheckpointStore implements SavedGameStore', f'{label} checkpoint store')
+    require(checkpoint_store, '__KQ1_CERT_CHECKPOINT__', f'{label} checkpoint reserved identity')
+    require(checkpoint_random, 'interface CertificationCheckpointRandom', f'{label} checkpointable random contract')
+    require(checkpoint_random, 'restoreCheckpointDrawCount', f'{label} checkpoint random restore contract')
+    require(random_java, 'implements CertificationCheckpointRandom', f'{label} seeded random checkpoint contract')
+    require(random_java, 'restoreCheckpointDrawCount', f'{label} seeded random rewind')
+    replay_random_path = root / 'core/src/main/java/com/agifans/agile/CertificationReplayRandom.java'
+    if replay_random_path.exists():
+        replay_random = replay_random_path.read_text()
+        require(replay_random, 'implements CertificationCheckpointRandom', f'{label} replay random checkpoint contract')
+        require(replay_random, 'restoreCheckpointDrawCount', f'{label} replay random rewind')
+    require(saved_games, 'captureCertificationCheckpoint()', f'{label} checkpoint capture backbone')
+    require(saved_games, 'restoreCertificationCheckpoint(byte[] checkpointData)', f'{label} checkpoint restore backbone')
+    require(commands, 'captureCertificationCheckpoint()', f'{label} checkpoint command bridge')
+    require(commands, 'replayScriptEvents();', f'{label} checkpoint post-restore script replay')
+    require(commands, 'showPicture(false);', f'{label} checkpoint post-restore picture rebuild')
+    require(commands, 'restoreCertificationResourceLoadState', f'{label} checkpoint resource-state bridge')
+    require(commands, 'soundPlayer.loadSound(state.sounds[i])', f'{label} checkpoint sound-cache rebuild')
+    require(interpreter, 'captureCertificationCheckpoint()', f'{label} checkpoint interpreter bridge')
+    require(interpreter, 'CertificationCheckpointOverlay', f'{label} transient checkpoint overlay')
+    require(interpreter, 'CERTIFICATION_CHECKPOINT_MAGIC', f'{label} serialized checkpoint magic')
+    require(interpreter, 'encodeCertificationCheckpoint', f'{label} serialized checkpoint encoder')
+    require(interpreter, 'decodeCertificationCheckpoint', f'{label} serialized checkpoint decoder')
+    require(interpreter, 'state.animationTicks = overlay.animationTicks', f'{label} animation-phase restore')
+    require(interpreter, 'state.currentInput = (overlay.currentInput == null ? null : new StringBuilder(overlay.currentInput))', f'{label} input-buffer restore')
+    require(interpreter, 'restoreCheckpointDrawCount(overlay.randomDrawCount)', f'{label} random-position restore')
+    for checkpoint_marker, checkpoint_name in [
+        ('overlay.controllers', 'controllers'),
+        ('state.acceptInput = overlay.acceptInput', 'acceptInput'),
+        ('state.userControl = overlay.userControl', 'userControl'),
+        ('state.graphicsMode = overlay.graphicsMode', 'graphicsMode'),
+        ('state.pictureVisible = overlay.pictureVisible', 'pictureVisible'),
+        ('state.showStatusLine = overlay.showStatusLine', 'showStatusLine'),
+        ('state.statusLineRow = overlay.statusLineRow', 'statusLineRow'),
+        ('state.pictureRow = overlay.pictureRow', 'pictureRow'),
+        ('state.inputLineRow = overlay.inputLineRow', 'inputLineRow'),
+        ('state.horizon = overlay.horizon', 'horizon'),
+        ('state.textAttribute = overlay.textAttribute', 'textAttribute'),
+        ('state.foregroundColour = overlay.foregroundColour', 'foregroundColour'),
+        ('state.backgroundColour = overlay.backgroundColour', 'backgroundColour'),
+        ('state.cursorCharacter = overlay.cursorCharacter', 'cursorCharacter'),
+        ('state.animationTicks = overlay.animationTicks', 'animationTicks'),
+        ('state.gamePaused = overlay.gamePaused', 'gamePaused'),
+        ('state.currentLogNum = overlay.currentLogNum', 'currentLogNum'),
+        ('state.maxDrawn = overlay.maxDrawn', 'maxDrawn'),
+        ('state.priorityBase = overlay.priorityBase', 'priorityBase'),
+        ('state.menuEnabled = overlay.menuEnabled', 'menuEnabled'),
+        ('state.menuOpen = overlay.menuOpen', 'menuOpen'),
+        ('state.holdKey = overlay.holdKey', 'holdKey'),
+        ('state.blocking = overlay.blocking', 'blocking'),
+        ('state.blockUpperLeftX = overlay.blockUpperLeftX', 'blockUpperLeftX'),
+        ('state.blockUpperLeftY = overlay.blockUpperLeftY', 'blockUpperLeftY'),
+        ('state.blockLowerRightX = overlay.blockLowerRightX', 'blockLowerRightX'),
+        ('state.blockLowerRightY = overlay.blockLowerRightY', 'blockLowerRightY'),
+        ('state.currentInput = (overlay.currentInput == null ? null : new StringBuilder(overlay.currentInput))', 'currentInput'),
+        ('state.lastInput = overlay.lastInput', 'lastInput'),
+        ('state.simpleName = overlay.simpleName', 'simpleName'),
+        ('state.scriptBuffer.maxScript = overlay.scriptMax', 'scriptBuffer.maxScript'),
+        ('state.scanStart[i] = overlay.scanStart[i]', 'scanStart'),
+        ('commands.restoreCertificationResourceLoadState(', 'resource loaded state'),
+    ]:
+        require(interpreter, checkpoint_marker, f'{label} checkpoint overlay {checkpoint_name}')
     require(worker, 'certificationDigestSAB', f'{label} digest transport')
     require(worker, 'certificationMode', f'{label} certification mode')
     require(worker, 'certificationSeed', f'{label} certification seed')
     require(worker, 'CertificationReady', f'{label} ready handshake')
     require(worker, 'new CertificationSavedGameStore()', f'{label} saved-game isolation')
     require(worker, 'certificationDigest.set(0, 1)', f'{label} digest schema')
-    require(worker, 'certificationDigestBytes >= 40', f'{label} snapshot digest transport size')
+    require(worker, 'certificationDigestBytes >= 52', f'{label} checkpoint digest transport size')
     require(worker, 'publishCertificationSnapshotIfRequested()', f'{label} idle snapshot poll')
     require(worker, 'certificationDigest.get(8)', f'{label} snapshot request epoch')
     require(worker, 'certificationDigest.set(9, request)', f'{label} snapshot acknowledgement epoch')
     require(worker, 'CertificationSnapshotReady', f'{label} ordered snapshot acknowledgement')
+    require(worker, 'serviceCertificationCheckpointProbe()', f'{label} checkpoint idle probe')
+    require(worker, 'certificationDigest.get(10)', f'{label} checkpoint request')
+    require(worker, 'certificationDigest.set(11, request)', f'{label} checkpoint acknowledgement')
+    require(worker, 'certificationDigest.set(12, status)', f'{label} checkpoint status')
+    require(worker, 'certificationCheckpointSAB', f'{label} checkpoint shared payload input')
+    require(worker, 'certificationCheckpointTransport = new SharedArray', f'{label} checkpoint shared payload transport')
+    require(worker, 'certificationCheckpointTransport.set(0, certificationCheckpointData.length)', f'{label} checkpoint payload export')
+    require(worker, 'certificationCheckpointData = new byte[checkpointLength]', f'{label} checkpoint payload import')
     require(worker, 'certificationDigest.set(7, 1)', f'{label} shared quit marker')
     require(worker, 'int quitSnapshotAck = certificationDigest.get(9);', f'{label} quit snapshot baseline')
     require(worker, 'while (certificationDigest.get(9) == quitSnapshotAck)', f'{label} final quit snapshot wait')
@@ -90,6 +164,7 @@ def verify_lane(root: Path, label: str) -> dict:
         'common_barrier_snapshot': 'PASS',
         'shared_quit_marker': 'PASS',
         'final_quit_snapshot': 'PASS',
+        'checkpoint_roundtrip_probe': 'PASS',
     }
 
 
@@ -101,7 +176,9 @@ for marker in [
     'TOTAL_TICKS: 512', 'MOUSE_BUTTON: 513', 'MOUSE_X: 514', 'MOUSE_Y: 515',
     'OLD_MOUSE_BUTTON: 516', 'IN_TICK: 517', 'FLAGS_OFFSET: 256',
     'CORE_VARIABLE_SLOTS: 518', 'VARIABLE_SLOTS: 8353', 'variableSlots: VAR.VARIABLE_SLOTS',
-    'QUIT: 7', 'SNAPSHOT_REQUEST: 8', 'SNAPSHOT_ACK: 9', 'digestSlots: 10',
+    'QUIT: 7', 'SNAPSHOT_REQUEST: 8', 'SNAPSHOT_ACK: 9',
+    'CHECKPOINT_REQUEST: 10', 'CHECKPOINT_ACK: 11', 'CHECKPOINT_STATUS: 12', 'digestSlots: 13',
+    'checkpointSlots: 32768', 'certificationCheckpointSAB',
 ]:
     require(host, marker, 'certification host layout')
 
@@ -122,6 +199,18 @@ for marker, label in [
     ("status: 'COMPLETE', scope: finalResult.scope", 'certified completion result'),
     ("status: 'MATCH', scope: 'semantic-v1'", 'scoped MATCH result'),
     ("'random-stream'", 'PRNG divergence result'),
+    ('captureCheckpointProbe()', 'checkpoint capture gate'),
+    ('restoreCheckpointProbe(checkpoint)', 'checkpoint restore verifier'),
+    ("status: 'CHECKPOINT_NOT_EXACT'", 'checkpoint per-lane exactness rejection'),
+    ('hashCertificationCheckpointV1', 'checkpoint content hash'),
+    ("status: 'CHECKPOINT_HASH_MISMATCH'", 'checkpoint tamper rejection'),
+    ('truthWorkerPayload: readWorkerCheckpointPayload', 'truth worker checkpoint export'),
+    ('editedWorkerPayload: readWorkerCheckpointPayload', 'edited worker checkpoint export'),
+    ('writeWorkerCheckpointPayload(this.truth', 'truth worker checkpoint import'),
+    ('writeWorkerCheckpointPayload(this.edited', 'edited worker checkpoint import'),
+    ('canonicalCheckpointContext', 'checkpoint replay-context canonicalization'),
+    ("status: 'CHECKPOINT_CONTEXT_MISMATCH'", 'checkpoint replay-context rejection'),
+    ("requires SubtleCrypto SHA-256", 'checkpoint cryptographic hash requirement'),
 ]:
     require(host, marker, f'host {label}')
 
@@ -143,6 +232,13 @@ report = {
         'shared_quit_marker': 'PASS',
         'final_quit_snapshot': 'PASS',
         'semantic_comparator': 'PASS',
+        'checkpoint_transport_snapshot': 'PASS',
+        'checkpoint_per_lane_roundtrip_verification': 'PASS',
+        'checkpoint_serialized_worker_payload': 'PASS',
+        'checkpoint_hash_authentication': 'PASS',
+        'checkpoint_fresh_worker_import_transport': 'PASS',
+        'checkpoint_frozen_context_binding': 'PASS',
+        'checkpoint_sha256_only': 'PASS',
     },
     'comparison_scope': {
         'status': 'SEMANTIC_V1',
