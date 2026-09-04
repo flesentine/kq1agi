@@ -191,6 +191,8 @@ class MockWorker {
   assert.equal(notExact.lane, 'edited');
   assert.equal(notExact.category, 'semantic-digest');
   editedWorker.digestXor = 0;
+  const healed = await host.restoreCheckpointProbe(checkpoint2);
+  assert.equal(healed.status, 'CHECKPOINT_ROUNDTRIP_MATCH');
 
   // Comparator still catches semantic drift at an already-synchronized barrier.
   host.edited.digest[2] ^= 1;
