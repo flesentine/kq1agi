@@ -36,10 +36,11 @@ The first implementation keeps the worker checkpoint payload inside the worker. 
 On restore:
 
 1. each worker restores its worker-local reconstruction payload while idle;
-2. the host restores the exact shared transport buffers and host logical metadata;
-3. the host requests a fresh common-barrier snapshot;
-4. each restored lane is compared against **its own captured trace and semantic digest**; and
-5. only after both per-lane comparisons pass does ORIGINAL-vs-EDITED MATCH count.
+2. the certification wrapper runs the same post-restore reconstruction as AGILE's normal `restore.game` command: sound reset, menu enable, script-event replay, picture rebuild/show, and status-line update;
+3. the host restores the exact shared transport buffers and host logical metadata;
+4. the host requests a fresh common-barrier snapshot;
+5. each restored lane is compared against **its own captured trace and semantic digest**; and
+6. only after both per-lane comparisons pass does ORIGINAL-vs-EDITED MATCH count.
 
 Comparing only the two restored lanes would be unsafe because both lanes could restore to the same wrong state.
 
@@ -47,7 +48,8 @@ Comparing only the two restored lanes would be unsafe because both lanes could r
 
 - `CHECKPOINT_CAPTURED` — a probe payload and host transport snapshot were captured at an authoritative MATCH barrier.
 - `CHECKPOINT_BASELINE_REJECTED` — the capture point was not an authoritative MATCH barrier.
-- `CHECKPOINT_CAPTURE_ERROR` — one or both workers could not create the reconstruction payload.
+- `CHECKPOINT_CAPTURE_UNAVAILABLE` — the barrier is valid but the save-game reconstruction backbone cannot represent it yet (v1: no current Picture before the first `draw.pic`).
+- `CHECKPOINT_CAPTURE_ERROR` — one or both workers threw while creating the reconstruction payload.
 - `CHECKPOINT_RESTORE_ERROR` — one or both workers could not restore the payload.
 - `CHECKPOINT_NOT_EXACT` — restore completed, but at least one lane's trace/digest differs from its captured barrier.
 - `CHECKPOINT_ROUNDTRIP_MATCH` — both lanes individually restored to their captured semantic-v1 state and still match each other.
