@@ -22,9 +22,18 @@ function waitTurn() {
  */
 export class ReplayCertificationHost extends CertificationHost {
   constructor(options = {}) {
-    super(options);
-    this.randomReplaySpec = String(options.randomReplaySpec ?? '');
-    this.recordedExternalTiming = options.recordedExternalTiming !== false;
+    const randomReplaySpec = String(options.randomReplaySpec ?? '');
+    const recordedExternalTiming = options.recordedExternalTiming !== false;
+    super({
+      ...options,
+      checkpointContext: {
+        ...(options.checkpointContext ?? {}),
+        randomReplaySpec,
+        recordedExternalTiming,
+      },
+    });
+    this.randomReplaySpec = randomReplaySpec;
+    this.recordedExternalTiming = recordedExternalTiming;
   }
 
   _pairSoundRequests() {
