@@ -233,9 +233,10 @@ class MockWorker {
   assert.equal(Atomics.load(host.truth.digest, CertificationLayout.DIGEST.CHECKPOINT_ACK), restoreAckBeforeTamper);
 
   // A checkpoint is self-contained enough to import into newly started workers.
+  const serializedCheckpoint = JSON.parse(JSON.stringify(checkpoint2));
   const freshHost = new CertificationHost({ WorkerCtor: MockWorker, barrierTimeoutMs: 500 });
   await freshHost.start(new ArrayBuffer(16));
-  const freshRestored = await freshHost.restoreCheckpointProbe(checkpoint2);
+  const freshRestored = await freshHost.restoreCheckpointProbe(serializedCheckpoint);
   assert.equal(freshRestored.status, 'CHECKPOINT_ROUNDTRIP_MATCH');
   assert.equal(freshHost.logicalTick, checkpoint2.logicalTick);
   assert.equal(freshHost.cycle, checkpoint2.cycle);
