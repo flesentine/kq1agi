@@ -40,6 +40,7 @@ class MockWorker {
       this.vars = new Uint32Array(this.init.variableSAB);
       this.trace = new Uint32Array(this.init.diagnosticTraceSAB);
       this.digest = new Uint32Array(this.init.certificationDigestSAB);
+      this.checkpointData = new Uint32Array(this.init.certificationCheckpointSAB);
     } else if (message.name === 'Start') {
       queueMicrotask(() => this.onmessage?.({ data: { name: 'CertificationReady', object: {} } }));
       this.timer = setInterval(() => {
@@ -64,7 +65,21 @@ class MockWorker {
           const checkpointAck = Atomics.load(this.digest, 11) >>> 0;
           if (checkpointRequest !== 0 && checkpointRequest !== checkpointAck) {
             const action = checkpointRequest & 3;
-            Atomics.store(this.digest, 12, action === 1 ? (this.checkpointCaptureAvailable ? 1 : 4) : action === 2 ? 2 : 3);
+            let checkpointStatus = 3;
+            if (action === 1) {
+              if (this.checkpointCaptureAvailable) {
+                const payload = [0x4b, 0x51, 0x31, 0x48, this.vars[512] & 0xff];
+                Atomics.store(this.checkpointData, 0, payload.length);
+                for (let i = 0; i < payload.length; i += 1) Atomics.store(this.checkpointData, i + 1, payload[i]);
+                checkpointStatus = 1;
+              } else {
+                checkpointStatus = 4;
+              }
+            } else if (action === 2) {
+              const length = Atomics.load(this.checkpointData, 0) >>> 0;
+              checkpointStatus = length > 0 ? 2 : 3;
+            }
+            Atomics.store(this.digest, 12, checkpointStatus);
             Atomics.store(this.digest, 11, checkpointRequest);
           }
         }
@@ -94,7 +109,9 @@ class MockWorker {
   assert.equal(lane.variableSlots, 8353);
   assert.equal(lane.keyPressQueueSAB.byteLength, 8 + 257 * 4);
   assert.equal(lane.certificationDigestSAB.byteLength, 13 * 4);
+  assert.equal(lane.certificationCheckpointSAB.byteLength, 32768 * 4);
   assert.throws(() => createLaneBuffers({ digestSlots: 12 }), /at least 13/);
+  assert.throws(() => createLaneBuffers({ checkpointSlots: 4095 }), /at least 4096/);
   assert.throws(() => createLaneBuffers({ variableSlots: 8352 }), /at least 8353/);
 }
 
@@ -204,6 +221,25 @@ class MockWorker {
   editedWorker.digestXor = 0;
   const healed = await host.restoreCheckpointProbe(checkpoint2);
   assert.equal(healed.status, 'CHECKPOINT_ROUNDTRIP_MATCH');
+
+  // Authentication fails before any restore request is issued.
+  const tampered = {
+    ...checkpoint2,
+    truthWorkerPayload: [...checkpoint2.truthWorkerPayload.slice(0, -1), (checkpoint2.truthWorkerPayload.at(-1) ^ 1) & 0xff],
+  };
+  const restoreAckBeforeTamper = Atomics.load(host.truth.digest, CertificationLayout.DIGEST.CHECKPOINT_ACK);
+  const tamperResult = await host.restoreCheckpointProbe(tampered);
+  assert.equal(tamperResult.status, 'CHECKPOINT_HASH_MISMATCH');
+  assert.equal(Atomics.load(host.truth.digest, CertificationLayout.DIGEST.CHECKPOINT_ACK), restoreAckBeforeTamper);
+
+  // A checkpoint is self-contained enough to import into newly started workers.
+  const freshHost = new CertificationHost({ WorkerCtor: MockWorker, barrierTimeoutMs: 500 });
+  await freshHost.start(new ArrayBuffer(16));
+  const freshRestored = await freshHost.restoreCheckpointProbe(checkpoint2);
+  assert.equal(freshRestored.status, 'CHECKPOINT_ROUNDTRIP_MATCH');
+  assert.equal(freshHost.logicalTick, checkpoint2.logicalTick);
+  assert.equal(freshHost.cycle, checkpoint2.cycle);
+  freshHost.terminate();
 
   // Comparator still catches semantic drift at an already-synchronized barrier.
   host.edited.digest[2] ^= 1;
