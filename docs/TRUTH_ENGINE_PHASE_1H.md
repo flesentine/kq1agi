@@ -35,7 +35,9 @@ The real compiled-worker qualification exposed the first expected gap in that re
 
 The initial probe kept the reconstruction payload worker-local until real compiled-worker qualification proved the reconstruction exact. The next Phase -1H slice now serializes the Sierra reconstruction bytes and transient/RNG overlay into one deterministic `KQ1H` v1 binary envelope.
 
-Each lane exports that envelope through a dedicated SharedArrayBuffer. The host copies both lane payloads into the checkpoint object, snapshots the host/shared transports, and computes an authenticated checkpoint identity over the canonical content. Restore verifies that identity before making any worker or shared-memory mutation.
+Each lane exports that envelope through a dedicated SharedArrayBuffer. The host copies both lane payloads into the checkpoint object, snapshots the host/shared transports, and computes a canonical SHA-256 identity over the checkpoint content. Phase -1H requires SubtleCrypto SHA-256; there is no weaker fallback for checkpoint authentication.
+
+The authenticated content also binds the checkpoint to the frozen replay context: certification seed, the SHA-256 and byte length of the actual GAMEFILES buffer passed to the host, EditConfig hash, recording hash, exact random replay specification, and recorded-external-timing mode. A fresh host must match that context before any worker payload is imported or any shared state is restored.
 
 Because restore imports the worker envelope from the host-owned checkpoint transport, it no longer depends on a payload left behind in the worker that created the checkpoint. A JSON-serialized checkpoint can therefore be imported into newly started ORIGINAL and EDITED workers.
 
@@ -61,6 +63,7 @@ Fresh-worker restore is held to the same per-lane exactness rule as same-worker 
 - `CHECKPOINT_CAPTURE_ERROR` — one or both workers threw while creating the reconstruction payload.
 - `CHECKPOINT_RESTORE_ERROR` — one or both workers could not restore the payload.
 - `CHECKPOINT_HASH_MISMATCH` — checkpoint content no longer matches its authenticated identity; restore is rejected before mutation.
+- `CHECKPOINT_CONTEXT_MISMATCH` — the fresh host does not match the checkpoint's frozen game/replay context; restore is rejected before worker payload import.
 - `CHECKPOINT_NOT_EXACT` — restore completed, but at least one lane's trace/digest differs from its captured barrier.
 - `CHECKPOINT_ROUNDTRIP_MATCH` — both lanes individually restored to their captured semantic-v1 state and still match each other.
 
@@ -92,7 +95,20 @@ No game resources or checkpoint payloads are committed or uploaded.
 - Browser certification packaging includes the Phase -1H documentation and probe-instrumented workers.
 - No arbitrary-start replay UI is enabled yet.
 - Real compiled-worker Chromium qualification must pass after restoring both the Sierra reconstruction payload and the transient/RNG overlay.
+- Fresh-worker qualification must capture on one worker pair, JSON-serialize the authenticated checkpoint, terminate that pair, reject a mismatched replay context before restore, import into a fresh matching ORIGINAL/EDITED pair, and reproduce the same deterministic suffix.
+
+## Qualification result
+
+The fresh-worker proof passes on the packaged browser artifact:
+
+- checkpoint captured on worker pair A at an authoritative MATCH barrier;
+- JSON serialization preserves the authenticated checkpoint;
+- a deliberately mismatched replay context returns `CHECKPOINT_CONTEXT_MISMATCH` before restore acknowledgement changes;
+- a fresh matching worker pair returns `CHECKPOINT_ROUNDTRIP_MATCH`;
+- four later deterministic barriers reproduce the original continuation exactly across trace, semantic digest, complete shared variable/editor state hashes, and framebuffer hashes;
+- replay RNG returns to the captured draw index; and
+- the qualification reports zero worker, console, page, and HTTP errors.
 
 ## Next implementation step
 
-Compile and qualify the serialized checkpoint against the exact browser artifact. The required proof is: capture on one worker pair, JSON-serialize the authenticated checkpoint, terminate that pair, start fresh ORIGINAL/EDITED workers with the same frozen game/EditConfig/replay identity, import the checkpoint, and reproduce the same deterministic suffix. Only after that passes should Phase -1H expose checkpoint-started replay to the minimizers.
+With the exact fresh-worker gate qualified, the next Phase -1H work is to expose checkpoint-started replay to the minimizers while preserving the same authenticated context, per-lane exactness, and deterministic suffix contracts. Arbitrary-start minimization should remain disabled until that integration itself is regression-gated.
