@@ -105,6 +105,7 @@ def verify_lane(root: Path, label: str) -> dict:
         ('state.currentInput = (overlay.currentInput == null ? null : new StringBuilder(overlay.currentInput))', 'currentInput'),
         ('state.lastInput = overlay.lastInput', 'lastInput'),
         ('state.simpleName = overlay.simpleName', 'simpleName'),
+        ('state.scriptBuffer.maxScript = overlay.scriptMax', 'scriptBuffer.maxScript'),
     ]:
         require(interpreter, checkpoint_marker, f'{label} checkpoint overlay {checkpoint_name}')
     require(worker, 'certificationDigestSAB', f'{label} digest transport')
