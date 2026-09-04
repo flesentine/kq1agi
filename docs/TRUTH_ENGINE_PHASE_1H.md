@@ -29,6 +29,8 @@ At that barrier the host captures losslessly:
 
 Each worker separately captures a certification-only, noninteractive AGI save/restore reconstruction payload into worker-local memory. This uses a temporary in-memory SavedGameStore and never touches OPFS or the player's certification-session saved games.
 
+The real compiled-worker qualification exposed the first expected gap in that reconstruction: AGILE's Sierra save payload restored semantic digest partitions 1–3 exactly but changed partition 0. Phase -1H therefore layers a worker-local transient overlay over the save backbone. The overlay captures the digest-visible core GameState fields that Sierra persistence intentionally normalizes or omits, including controllers, input/menu/picture scalars, animation phase, text colours/attributes, current input text, and related control state.
+
 ## Destructive round-trip verification
 
 The first implementation keeps the worker checkpoint payload inside the worker. This is intentional: before defining a cross-worker serialized checkpoint format, the project must prove that the reconstruction is exact enough to restore the same certification state at all.
@@ -37,10 +39,11 @@ On restore:
 
 1. each worker restores its worker-local reconstruction payload while idle;
 2. the certification wrapper runs the same post-restore reconstruction as AGILE's normal `restore.game` command: sound reset, menu enable, script-event replay, picture rebuild/show, and status-line update;
-3. the host restores the exact shared transport buffers and host logical metadata;
-4. the host requests a fresh common-barrier snapshot;
-5. each restored lane is compared against **its own captured trace and semantic digest**; and
-6. only after both per-lane comparisons pass does ORIGINAL-vs-EDITED MATCH count.
+3. the worker reapplies the transient checkpoint overlay and rewinds the certification random source to its captured draw position;
+4. the host restores the exact shared transport buffers and host logical metadata;
+5. the host requests a fresh common-barrier snapshot;
+6. each restored lane is compared against **its own captured trace and semantic digest**; and
+7. only after both per-lane comparisons pass does ORIGINAL-vs-EDITED MATCH count.
 
 Comparing only the two restored lanes would be unsafe because both lanes could restore to the same wrong state.
 
@@ -81,8 +84,8 @@ No game resources or checkpoint payloads are committed or uploaded.
 - The runtime contract checker verifies the checkpoint store, worker shared-memory handshake and host per-lane exactness gate.
 - Browser certification packaging includes the Phase -1H documentation and probe-instrumented workers.
 - No arbitrary-start replay UI is enabled yet.
-- A later Chromium run must identify whether a real compiled-worker round trip is already exact or which semantic partition still needs supplemental checkpoint state.
+- Real compiled-worker Chromium qualification must pass after restoring both the Sierra reconstruction payload and the transient/RNG overlay.
 
 ## Next implementation step
 
-Run the probe against the exact compiled workers with the public qualification game. For every `CHECKPOINT_NOT_EXACT` result, add only the missing state required to make the same barrier round-trip exact. Once real checkpoints reliably return `CHECKPOINT_ROUNDTRIP_MATCH`, define an authenticated cross-worker checkpoint serialization and allow replay to begin from that checkpoint.
+Re-run the probe against the exact compiled workers with the public qualification game. Once real checkpoints reliably return `CHECKPOINT_ROUNDTRIP_MATCH`, prove suffix continuation equivalence from the restored barrier, then define an authenticated cross-worker checkpoint serialization and allow replay to begin from that checkpoint.
