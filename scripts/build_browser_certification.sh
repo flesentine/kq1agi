@@ -22,6 +22,7 @@ node scripts/test_certification_recording_hash.mjs
 node scripts/test_certification_replay_host.mjs
 node scripts/test_phase1d_recording_boundary.mjs
 node scripts/test_certification_minimizer.mjs
+node scripts/test_certification_input_minimizer.mjs
 
 git clone --quiet https://github.com/lanceewing/agile-gdx.git "$TRUTH_TREE"
 git -C "$TRUTH_TREE" checkout --quiet "$PINNED_AGILE_SHA"
@@ -95,14 +96,21 @@ cp web/certification-recording.mjs "$OUT/certification-recording.mjs"
 cp web/certification-replay-host.mjs "$OUT/certification-replay-host.mjs"
 cp web/certification-phase1d.mjs "$OUT/certification-phase1d.mjs"
 cp web/certification-minimizer.mjs "$OUT/certification-minimizer.mjs"
+cp web/certification-input-minimizer.mjs "$OUT/certification-input-minimizer.mjs"
 cp docs/TRUTH_ENGINE_PHASE_1D.md "$OUT/README.md"
 cp docs/TRUTH_ENGINE_PHASE_1E.md "$OUT/PHASE_1E.md"
+cp docs/TRUTH_ENGINE_PHASE_1F.md "$OUT/PHASE_1F.md"
+
+test -f "$OUT/certification-input-minimizer.mjs"
+grep -q 'certify-reduce-inputs-button' "$OUT/certification-phase1d.mjs"
+grep -q 'minimizeInputGroupsV1' "$OUT/certification-phase1d.mjs"
 
 printf '%s\n' \
   'Phase -1D browser bundle with Phase -1E minimizer. No AGI game resources are included.' \
   'EditConfig v1 freezes browser editor state and applies it only to the edited lane.' \
   'PLAY recording v1 stays in browser memory and binds one local game directory, the local GAMEFILES.DAT hash, EditConfig hash, logical tick plus idle/busy input transport phase, complete bounded RNG stream, sound completion timing, complete-worker freeze boundary, and 60 Hz cycle-release schedule.' \
   'Phase -1E reduces a reproducing run to the shortest from-game-start prefix that preserves the exact first semantic divergence; focused windows are reporting views until arbitrary checkpoints exist.' \
+  'Phase -1F dependency-safe input minimization can remove keyboard/mouse action groups while preserving the frozen schedule, RNG stream, sound completions, and exact divergence identity.' \
   > "$OUT/ARTIFACT.txt"
 
 find "$OUT" -maxdepth 2 -type f | sort

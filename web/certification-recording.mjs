@@ -73,6 +73,16 @@ function canonicalRecording(recording) {
   };
 }
 
+export function canonicalizePlayRecordingV1(recording) {
+  const canonical = canonicalRecording(recording ?? {});
+  return Object.freeze({
+    ...canonical,
+    releaseTicks: Object.freeze([...canonical.releaseTicks]),
+    events: Object.freeze(canonical.events.map(event => Object.freeze({ ...event }))),
+    random: Object.freeze(canonical.random.map(draw => Object.freeze({ ...draw }))),
+  });
+}
+
 function fallbackHash(bytes) {
   let hash = 0x811c9dc5;
   for (const byte of bytes) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;

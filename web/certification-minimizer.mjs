@@ -1,4 +1,4 @@
-import { hashPlayRecordingV1 } from './certification-recording.mjs';
+import { canonicalizePlayRecordingV1, hashPlayRecordingV1 } from './certification-recording.mjs';
 
 const RECORDING_SCHEMA = 'kq1agi-play-recording-v1';
 
@@ -75,15 +75,10 @@ export function sameDivergence(result, target) {
 function snapshotSourceRecordingV1(recording) {
   if (!recording || typeof recording !== 'object') return null;
   // Capture every replay-authoritative field synchronously before any async digest
-  // work. The Phase -1D envelope is top-level frozen but its nested arrays are not;
-  // this snapshot prevents a caller/UI task from changing the source between hash
-  // validation and later minimization candidates.
-  const releaseTicks = Object.freeze([...(recording.releaseTicks ?? [])]);
-  const events = Object.freeze([...(recording.events ?? [])].map(event =>
-    Object.freeze(event && typeof event === 'object' ? { ...event } : event)));
-  const random = Object.freeze([...(recording.random ?? [])].map(draw =>
-    Object.freeze(draw && typeof draw === 'object' ? { ...draw } : draw)));
-  return Object.freeze({
+  // work. The Phase -1D envelope is top-level frozen but its nested arrays are not.
+  // Canonicalize that private copy immediately so every minimization layer sees the
+  // same representation that the recording hash and replay engine authenticate.
+  const rawSnapshot = {
     schema: recording.schema,
     completeFromStart: recording.completeFromStart,
     startTick: recording.startTick,
@@ -92,18 +87,25 @@ function snapshotSourceRecordingV1(recording) {
     gameBytes: recording.gameBytes,
     editConfigHash: recording.editConfigHash,
     overflowed: recording.overflowed,
-    releaseTicks,
-    events,
-    random,
-    hash: recording.hash,
+    releaseTicks: [...(recording.releaseTicks ?? [])],
+    events: [...(recording.events ?? [])].map(event =>
+      event && typeof event === 'object' ? { ...event } : event),
+    random: [...(recording.random ?? [])].map(draw =>
+      draw && typeof draw === 'object' ? { ...draw } : draw),
+  };
+  const canonical = canonicalizePlayRecordingV1(rawSnapshot);
+  return Object.freeze({
+    source: Object.freeze({ ...canonical, hash: recording.hash }),
+    sourceSchema: rawSnapshot.schema,
   });
 }
 
-async function validateSourceRecordingV1(recording) {
-  const source = snapshotSourceRecordingV1(recording);
-  if (!source || source.schema !== RECORDING_SCHEMA) {
+export async function snapshotVerifiedRecordingV1(recording) {
+  const snapshot = snapshotSourceRecordingV1(recording);
+  if (!snapshot || snapshot.sourceSchema !== RECORDING_SCHEMA) {
     throw new Error(`Phase -1E requires a ${RECORDING_SCHEMA} recording.`);
   }
+  const source = snapshot.source;
   if (!source.completeFromStart || asInt(source.startTick) !== 1) {
     throw new Error('Phase -1E requires a complete recording starting at logical tick 1.');
   }
@@ -159,7 +161,7 @@ async function buildRecordingPrefixUnchecked(recording, finalTick) {
  * silently launder a mutated/stale recording into a new hash-valid prefix.
  */
 export async function buildRecordingPrefixV1(recording, finalTick) {
-  const source = await validateSourceRecordingV1(recording);
+  const source = await snapshotVerifiedRecordingV1(recording);
   return buildRecordingPrefixUnchecked(source, finalTick);
 }
 
@@ -198,7 +200,7 @@ function divergenceFromSummary(summary) {
  */
 export async function minimizeDivergentPrefix(recording, targetResult, replayCandidate, options = {}) {
   if (typeof replayCandidate !== 'function') throw new TypeError('replayCandidate must be a function.');
-  const source = await validateSourceRecordingV1(recording);
+  const source = await snapshotVerifiedRecordingV1(recording);
 
   const targetFingerprint = divergenceFingerprint(targetResult);
   if (!targetFingerprint) throw new Error('Phase -1E minimization requires a DIVERGED target result.');
