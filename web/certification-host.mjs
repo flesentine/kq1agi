@@ -421,8 +421,7 @@ export class CertificationHost {
     for (const resolve of pending) resolve();
   }
 
-  async start(encodedGameFileBuffer) {
-    if (this.started) throw new Error('CertificationHost.start() may only be called once.');
+  async _bindCheckpointGameIdentity(encodedGameFileBuffer) {
     if (!(encodedGameFileBuffer instanceof ArrayBuffer)) throw new TypeError('encodedGameFileBuffer must be an ArrayBuffer');
     const actualGameHash = await sha256Bytes(new Uint8Array(encodedGameFileBuffer), 'Phase -1H GAMEFILES identity');
     const declaredGameHash = String(this.checkpointContextInput.gameHash ?? '');
@@ -440,6 +439,12 @@ export class CertificationHost {
       gameHash: actualGameHash,
       gameBytes: encodedGameFileBuffer.byteLength,
     }));
+    return this.checkpointContext;
+  }
+
+  async start(encodedGameFileBuffer) {
+    if (this.started) throw new Error('CertificationHost.start() may only be called once.');
+    await this._bindCheckpointGameIdentity(encodedGameFileBuffer);
     this.started = true;
     const truthGame = cloneArrayBuffer(encodedGameFileBuffer);
     const editedGame = cloneArrayBuffer(encodedGameFileBuffer);
