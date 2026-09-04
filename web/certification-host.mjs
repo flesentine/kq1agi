@@ -186,12 +186,6 @@ function writeWorkerCheckpointPayload(lane, payload) {
   }
 }
 
-function fallbackCheckpointHash(bytes) {
-  let hash = 0x811c9dc5;
-  for (const byte of bytes) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
-  return 'fnv1a32:' + hash.toString(16).padStart(8, '0');
-}
-
 function canonicalCheckpointTransport(snapshot) {
   return {
     queue: [...(snapshot?.queue ?? [])].map(value => Number(value) >>> 0),
@@ -202,9 +196,20 @@ function canonicalCheckpointTransport(snapshot) {
   };
 }
 
+function canonicalCheckpointContext(context) {
+  return {
+    seed: Number(context?.seed) | 0,
+    gameHash: String(context?.gameHash ?? ''),
+    gameBytes: Number.isSafeInteger(Number(context?.gameBytes)) ? Number(context.gameBytes) : -1,
+    editConfigHash: String(context?.editConfigHash ?? ''),
+    recordingHash: String(context?.recordingHash ?? ''),
+  };
+}
+
 function canonicalCheckpointForHash(checkpoint) {
   return {
     schema: 'kq1agi-certification-checkpoint-v1',
+    context: canonicalCheckpointContext(checkpoint?.context),
     logicalTick: Number(checkpoint?.logicalTick) >>> 0,
     cycle: Number(checkpoint?.cycle) >>> 0,
     comparedCycle: Number(checkpoint?.comparedCycle) >>> 0,
@@ -225,11 +230,15 @@ function canonicalCheckpointForHash(checkpoint) {
 
 export async function hashCertificationCheckpointV1(checkpoint) {
   const bytes = new TextEncoder().encode(JSON.stringify(canonicalCheckpointForHash(checkpoint)));
-  if (globalThis.crypto?.subtle?.digest) {
-    const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes));
-    return 'sha256:' + Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
+  if (!globalThis.crypto?.subtle?.digest) {
+    throw new Error('Phase -1H checkpoint authentication requires SubtleCrypto SHA-256.');
   }
-  return fallbackCheckpointHash(bytes);
+  const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes));
+  return 'sha256:' + Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function sameCheckpointContext(a, b) {
+  return JSON.stringify(canonicalCheckpointContext(a)) === JSON.stringify(canonicalCheckpointContext(b));
 }
 function firstDifference(a, b) {
   const n = Math.max(a.length, b.length);
@@ -312,6 +321,10 @@ export class CertificationHost {
     const WorkerCtor = options.WorkerCtor ?? globalThis.Worker;
     if (!WorkerCtor) throw new Error('CertificationHost requires a Worker constructor.');
     this.seed = (options.seed ?? DEFAULTS.seed) | 0;
+    this.checkpointContext = Object.freeze(canonicalCheckpointContext({
+      seed: this.seed,
+      ...(options.checkpointContext ?? {}),
+    }));
     this.barrierTimeoutMs = options.barrierTimeoutMs ?? DEFAULTS.barrierTimeoutMs;
     this.maxBarrierPulses = options.maxBarrierPulses ?? DEFAULTS.maxBarrierPulses;
     this.truth = makeLane('truth', WorkerCtor, options.truthWorkerUrl ?? '/truth-worker/worker.nocache.js', options);
@@ -553,6 +566,7 @@ export class CertificationHost {
     const checkpoint = {
       status: 'CHECKPOINT_CAPTURED',
       schema: 'kq1agi-certification-checkpoint-v1',
+      context: this.checkpointContext,
       logicalTick: this.logicalTick,
       cycle: this.cycle,
       comparedCycle: this.comparedCycle,
@@ -578,6 +592,13 @@ export class CertificationHost {
     const actualHash = await hashCertificationCheckpointV1(checkpoint);
     if (!expectedHash || expectedHash !== actualHash) {
       return { status: 'CHECKPOINT_HASH_MISMATCH', expectedHash, actualHash };
+    }
+    if (!sameCheckpointContext(checkpoint.context, this.checkpointContext)) {
+      return {
+        status: 'CHECKPOINT_CONTEXT_MISMATCH',
+        expectedContext: checkpoint.context,
+        actualContext: this.checkpointContext,
+      };
     }
     if (!isIdle(this.truth) || !isIdle(this.edited)) {
       throw new Error('Checkpoint restore requires both certification lanes to be idle.');
