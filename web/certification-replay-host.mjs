@@ -67,6 +67,7 @@ export class ReplayCertificationHost extends CertificationHost {
           pixelDataSAB: lane.pixelDataSAB,
           diagnosticTraceSAB: lane.diagnosticTraceSAB,
           certificationDigestSAB: lane.certificationDigestSAB,
+          certificationCheckpointSAB: lane.certificationCheckpointSAB,
           certificationMode: true,
           certificationSeed: this.seed,
           certificationRandomReplay: this.randomReplaySpec,
