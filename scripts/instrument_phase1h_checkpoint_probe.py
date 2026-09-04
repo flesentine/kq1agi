@@ -108,6 +108,10 @@ if 'captureCertificationCheckpoint()' not in s:
      * a post-restore semantic-digest comparison, not assumed from this payload.
      */
     public byte[] captureCertificationCheckpoint() {
+        // Sierra save serialization requires a current Picture. A certification
+        // barrier before the first draw.pic is valid runtime state but is not yet
+        // reconstructable through this save-game backbone.
+        if (state.currentPicture == null) return null;
         SavedGameStore originalStore = savedGameStore;
         boolean originalFirstTime = firstTime;
         String originalSimpleName = state.simpleName;
@@ -166,7 +170,18 @@ if 'captureCertificationCheckpoint()' not in c:
     }
 
     public boolean restoreCertificationCheckpoint(byte[] checkpointData) {
-        return savedGames.restoreCertificationCheckpoint(checkpointData);
+        if (!savedGames.restoreCertificationCheckpoint(checkpointData)) return false;
+
+        // Match the normal restore.game command's reconstruction path. SavedGames
+        // restores the serialized fields and script transcript; Commands owns the
+        // replay that rebuilds currentPicture/resources and the visible interpreter
+        // state that future cycles depend on.
+        soundPlayer.reset();
+        menu.enableAllMenus();
+        replayScriptEvents();
+        showPicture(false);
+        textGraphics.updateStatusLine();
+        return true;
     }
 
 '''
@@ -236,7 +251,7 @@ if 'private void serviceCertificationCheckpointProbe()' not in w:
         try {
             if (action == 1) {
                 certificationCheckpointData = interpreter.captureCertificationCheckpoint();
-                status = (certificationCheckpointData != null && certificationCheckpointData.length > 0) ? 1 : 3;
+                status = (certificationCheckpointData != null && certificationCheckpointData.length > 0) ? 1 : 4;
             } else if (action == 2) {
                 if (certificationCheckpointData == null || certificationCheckpointData.length == 0) {
                     status = 3;
