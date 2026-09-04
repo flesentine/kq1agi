@@ -242,6 +242,20 @@ class MockWorker {
   assert.equal(freshHost.cycle, checkpoint2.cycle);
   freshHost.terminate();
 
+  // A fresh worker with a different certification seed must be rejected before
+  // payload import even though the captured draw count itself would still match.
+  const wrongContextHost = new CertificationHost({
+    WorkerCtor: MockWorker,
+    barrierTimeoutMs: 500,
+    seed: 0x12345678,
+  });
+  await wrongContextHost.start(new ArrayBuffer(16));
+  const wrongContextAck = Atomics.load(wrongContextHost.truth.digest, CertificationLayout.DIGEST.CHECKPOINT_ACK);
+  const wrongContext = await wrongContextHost.restoreCheckpointProbe(serializedCheckpoint);
+  assert.equal(wrongContext.status, 'CHECKPOINT_CONTEXT_MISMATCH');
+  assert.equal(Atomics.load(wrongContextHost.truth.digest, CertificationLayout.DIGEST.CHECKPOINT_ACK), wrongContextAck);
+  wrongContextHost.terminate();
+
   // Comparator still catches semantic drift at an already-synchronized barrier.
   host.edited.digest[2] ^= 1;
   result = host.compare();
