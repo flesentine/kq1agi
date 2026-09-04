@@ -204,6 +204,18 @@ function canonicalConfig(config) {
   };
 }
 
+export function canonicalizeEditConfigV1(config) {
+  const canonical = canonicalConfig(config ?? {});
+  return Object.freeze({
+    ...canonical,
+    rooms: Object.freeze(canonical.rooms.map(room => Object.freeze({
+      ...room,
+      masks: Object.freeze([...room.masks]),
+    }))),
+    visualPins: Object.freeze(canonical.visualPins.map(pin => Object.freeze([...pin]))),
+  });
+}
+
 function fallbackHash(bytes) {
   let hash = 0x811c9dc5;
   for (const byte of bytes) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
