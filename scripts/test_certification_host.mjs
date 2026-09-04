@@ -256,6 +256,14 @@ class MockWorker {
   assert.equal(Atomics.load(wrongContextHost.truth.digest, CertificationLayout.DIGEST.CHECKPOINT_ACK), wrongContextAck);
   wrongContextHost.terminate();
 
+  const wrongGameHost = new CertificationHost({ WorkerCtor: MockWorker, barrierTimeoutMs: 500 });
+  await wrongGameHost.start(new ArrayBuffer(17));
+  const wrongGameAck = Atomics.load(wrongGameHost.truth.digest, CertificationLayout.DIGEST.CHECKPOINT_ACK);
+  const wrongGame = await wrongGameHost.restoreCheckpointProbe(serializedCheckpoint);
+  assert.equal(wrongGame.status, 'CHECKPOINT_CONTEXT_MISMATCH');
+  assert.equal(Atomics.load(wrongGameHost.truth.digest, CertificationLayout.DIGEST.CHECKPOINT_ACK), wrongGameAck);
+  wrongGameHost.terminate();
+
   // Comparator still catches semantic drift at an already-synchronized barrier.
   host.edited.digest[2] ^= 1;
   result = host.compare();
