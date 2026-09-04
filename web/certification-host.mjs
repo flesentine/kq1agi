@@ -203,6 +203,8 @@ function canonicalCheckpointContext(context) {
     gameBytes: Number.isSafeInteger(Number(context?.gameBytes)) ? Number(context.gameBytes) : -1,
     editConfigHash: String(context?.editConfigHash ?? ''),
     recordingHash: String(context?.recordingHash ?? ''),
+    randomReplaySpec: String(context?.randomReplaySpec ?? ''),
+    recordedExternalTiming: context?.recordedExternalTiming === true,
   };
 }
 
@@ -228,13 +230,17 @@ function canonicalCheckpointForHash(checkpoint) {
   };
 }
 
-export async function hashCertificationCheckpointV1(checkpoint) {
-  const bytes = new TextEncoder().encode(JSON.stringify(canonicalCheckpointForHash(checkpoint)));
+async function sha256Bytes(bytes, label = 'Phase -1H') {
   if (!globalThis.crypto?.subtle?.digest) {
-    throw new Error('Phase -1H checkpoint authentication requires SubtleCrypto SHA-256.');
+    throw new Error(label + ' requires SubtleCrypto SHA-256.');
   }
   const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes));
   return 'sha256:' + Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export async function hashCertificationCheckpointV1(checkpoint) {
+  const bytes = new TextEncoder().encode(JSON.stringify(canonicalCheckpointForHash(checkpoint)));
+  return sha256Bytes(bytes, 'Phase -1H checkpoint authentication');
 }
 
 function sameCheckpointContext(a, b) {
@@ -321,9 +327,10 @@ export class CertificationHost {
     const WorkerCtor = options.WorkerCtor ?? globalThis.Worker;
     if (!WorkerCtor) throw new Error('CertificationHost requires a Worker constructor.');
     this.seed = (options.seed ?? DEFAULTS.seed) | 0;
+    this.checkpointContextInput = Object.freeze({ ...(options.checkpointContext ?? {}) });
     this.checkpointContext = Object.freeze(canonicalCheckpointContext({
+      ...this.checkpointContextInput,
       seed: this.seed,
-      ...(options.checkpointContext ?? {}),
     }));
     this.barrierTimeoutMs = options.barrierTimeoutMs ?? DEFAULTS.barrierTimeoutMs;
     this.maxBarrierPulses = options.maxBarrierPulses ?? DEFAULTS.maxBarrierPulses;
@@ -416,6 +423,23 @@ export class CertificationHost {
 
   async start(encodedGameFileBuffer) {
     if (this.started) throw new Error('CertificationHost.start() may only be called once.');
+    if (!(encodedGameFileBuffer instanceof ArrayBuffer)) throw new TypeError('encodedGameFileBuffer must be an ArrayBuffer');
+    const actualGameHash = await sha256Bytes(new Uint8Array(encodedGameFileBuffer), 'Phase -1H GAMEFILES identity');
+    const declaredGameHash = String(this.checkpointContextInput.gameHash ?? '');
+    const declaredGameBytes = Number(this.checkpointContextInput.gameBytes);
+    if (declaredGameHash && declaredGameHash !== actualGameHash) {
+      throw new Error('Checkpoint context GAMEFILES hash does not match the started game.');
+    }
+    if (Number.isSafeInteger(declaredGameBytes) && declaredGameBytes >= 0
+        && declaredGameBytes !== encodedGameFileBuffer.byteLength) {
+      throw new Error('Checkpoint context GAMEFILES byte length does not match the started game.');
+    }
+    this.checkpointContext = Object.freeze(canonicalCheckpointContext({
+      ...this.checkpointContextInput,
+      seed: this.seed,
+      gameHash: actualGameHash,
+      gameBytes: encodedGameFileBuffer.byteLength,
+    }));
     this.started = true;
     const truthGame = cloneArrayBuffer(encodedGameFileBuffer);
     const editedGame = cloneArrayBuffer(encodedGameFileBuffer);
