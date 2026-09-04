@@ -60,11 +60,13 @@ jobs:
           git -C agile-gdx-truth add -N \
             core/src/main/java/com/agifans/agile/CertificationRandom.java \
             core/src/main/java/com/agifans/agile/CertificationCheckpointStore.java \
+            core/src/main/java/com/agifans/agile/CertificationCheckpointRandom.java \
             html/src/main/java/com/agifans/agile/gwt/CertificationSavedGameStore.java
           git -C agile-gdx-truth diff --check
           git -C agile-gdx-truth diff --name-only | sort | tee /tmp/truth-files.txt
           printf '%s\n' \
             core/src/main/java/com/agifans/agile/CertificationCheckpointStore.java \
+            core/src/main/java/com/agifans/agile/CertificationCheckpointRandom.java \
             core/src/main/java/com/agifans/agile/CertificationRandom.java \
             core/src/main/java/com/agifans/agile/Commands.java \
             core/src/main/java/com/agifans/agile/Interpreter.java \
