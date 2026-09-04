@@ -28,6 +28,9 @@ const DIGEST = Object.freeze({
   QUIT: 7,
   SNAPSHOT_REQUEST: 8,
   SNAPSHOT_ACK: 9,
+  CHECKPOINT_REQUEST: 10,
+  CHECKPOINT_ACK: 11,
+  CHECKPOINT_STATUS: 12,
   SEMANTIC_SLOTS: 8,
 });
 
@@ -36,7 +39,7 @@ const DEFAULTS = Object.freeze({
   height: 200,
   keyCapacity: 256,
   traceSlots: 16,
-  digestSlots: 10,
+  digestSlots: 13,
   variableSlots: VAR.VARIABLE_SLOTS,
   seed: 0x4b513142,
   barrierTimeoutMs: 3000,
@@ -57,7 +60,7 @@ export function createLaneBuffers(options = {}) {
   const traceSlots = options.traceSlots ?? DEFAULTS.traceSlots;
   const digestSlots = options.digestSlots ?? DEFAULTS.digestSlots;
   const variableSlots = options.variableSlots ?? DEFAULTS.variableSlots;
-  if (digestSlots < 10) throw new Error('Certification digest needs at least 10 Uint32 slots.');
+  if (digestSlots < 13) throw new Error('Certification digest needs at least 13 Uint32 slots.');
   if (variableSlots < VAR.VARIABLE_SLOTS) {
     throw new Error(`Certification shared state needs at least ${VAR.VARIABLE_SLOTS} Int32 slots.`);
   }
@@ -131,6 +134,34 @@ function readSemanticDigest(lane) {
   return Array.from(lane.digest.slice(0, DIGEST.SEMANTIC_SLOTS), value => value >>> 0);
 }
 
+function copyU32(view) {
+  return Array.from(view, value => value >>> 0);
+}
+
+function restoreU32(view, values) {
+  if (!Array.isArray(values) || values.length !== view.length) {
+    throw new Error('Checkpoint transport length mismatch: expected ' + view.length + ', got ' + (values?.length ?? 'missing') + '.');
+  }
+  for (let i = 0; i < view.length; i += 1) Atomics.store(view, i, Number(values[i]) >>> 0);
+}
+
+function snapshotLaneTransport(lane) {
+  return Object.freeze({
+    queue: Object.freeze(copyU32(lane.queue)),
+    keys: Object.freeze(copyU32(lane.keys)),
+    oldKeys: Object.freeze(copyU32(lane.oldKeys)),
+    vars: Object.freeze(copyU32(lane.vars)),
+    pixels: Object.freeze(copyU32(new Uint32Array(lane.pixelDataSAB))),
+  });
+}
+
+function restoreLaneTransport(lane, snapshot) {
+  restoreU32(lane.queue, snapshot?.queue);
+  restoreU32(lane.keys, snapshot?.keys);
+  restoreU32(lane.oldKeys, snapshot?.oldKeys);
+  restoreU32(lane.vars, snapshot?.vars);
+  restoreU32(new Uint32Array(lane.pixelDataSAB), snapshot?.pixels);
+}
 function firstDifference(a, b) {
   const n = Math.max(a.length, b.length);
   for (let i = 0; i < n; i += 1) {
@@ -223,6 +254,7 @@ export class CertificationHost {
     // this prevents that completed barrier from being skipped by releasing a new cycle.
     this.comparedCycle = 0;
     this.snapshotEpoch = 0;
+    this.checkpointEpoch = 0;
     this.pendingSoundCompletions = [];
     this.pendingExternalDivergence = null;
     this.started = false;
