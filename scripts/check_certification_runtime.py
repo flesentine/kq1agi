@@ -68,6 +68,9 @@ def verify_lane(root: Path, label: str) -> dict:
     require(commands, 'showPicture(false);', f'{label} checkpoint post-restore picture rebuild')
     require(interpreter, 'captureCertificationCheckpoint()', f'{label} checkpoint interpreter bridge')
     require(interpreter, 'CertificationCheckpointOverlay', f'{label} transient checkpoint overlay')
+    require(interpreter, 'CERTIFICATION_CHECKPOINT_MAGIC', f'{label} serialized checkpoint magic')
+    require(interpreter, 'encodeCertificationCheckpoint', f'{label} serialized checkpoint encoder')
+    require(interpreter, 'decodeCertificationCheckpoint', f'{label} serialized checkpoint decoder')
     require(interpreter, 'state.animationTicks = overlay.animationTicks', f'{label} animation-phase restore')
     require(interpreter, 'state.currentInput = (overlay.currentInput == null ? null : new StringBuilder(overlay.currentInput))', f'{label} input-buffer restore')
     require(interpreter, 'restoreCheckpointDrawCount(overlay.randomDrawCount)', f'{label} random-position restore')
@@ -119,6 +122,10 @@ def verify_lane(root: Path, label: str) -> dict:
     require(worker, 'certificationDigest.get(10)', f'{label} checkpoint request')
     require(worker, 'certificationDigest.set(11, request)', f'{label} checkpoint acknowledgement')
     require(worker, 'certificationDigest.set(12, status)', f'{label} checkpoint status')
+    require(worker, 'certificationCheckpointSAB', f'{label} checkpoint shared payload input')
+    require(worker, 'certificationCheckpointTransport = new SharedArray', f'{label} checkpoint shared payload transport')
+    require(worker, 'certificationCheckpointTransport.set(0, certificationCheckpointData.length)', f'{label} checkpoint payload export')
+    require(worker, 'certificationCheckpointData = new byte[checkpointLength]', f'{label} checkpoint payload import')
     require(worker, 'certificationDigest.set(7, 1)', f'{label} shared quit marker')
     require(worker, 'int quitSnapshotAck = certificationDigest.get(9);', f'{label} quit snapshot baseline')
     require(worker, 'while (certificationDigest.get(9) == quitSnapshotAck)', f'{label} final quit snapshot wait')
@@ -166,6 +173,7 @@ for marker in [
     'CORE_VARIABLE_SLOTS: 518', 'VARIABLE_SLOTS: 8353', 'variableSlots: VAR.VARIABLE_SLOTS',
     'QUIT: 7', 'SNAPSHOT_REQUEST: 8', 'SNAPSHOT_ACK: 9',
     'CHECKPOINT_REQUEST: 10', 'CHECKPOINT_ACK: 11', 'CHECKPOINT_STATUS: 12', 'digestSlots: 13',
+    'checkpointSlots: 32768', 'certificationCheckpointSAB',
 ]:
     require(host, marker, 'certification host layout')
 
@@ -189,6 +197,12 @@ for marker, label in [
     ('captureCheckpointProbe()', 'checkpoint capture gate'),
     ('restoreCheckpointProbe(checkpoint)', 'checkpoint restore verifier'),
     ("status: 'CHECKPOINT_NOT_EXACT'", 'checkpoint per-lane exactness rejection'),
+    ('hashCertificationCheckpointV1', 'checkpoint content hash'),
+    ("status: 'CHECKPOINT_HASH_MISMATCH'", 'checkpoint tamper rejection'),
+    ('truthWorkerPayload: readWorkerCheckpointPayload', 'truth worker checkpoint export'),
+    ('editedWorkerPayload: readWorkerCheckpointPayload', 'edited worker checkpoint export'),
+    ('writeWorkerCheckpointPayload(this.truth', 'truth worker checkpoint import'),
+    ('writeWorkerCheckpointPayload(this.edited', 'edited worker checkpoint import'),
 ]:
     require(host, marker, f'host {label}')
 
@@ -212,6 +226,9 @@ report = {
         'semantic_comparator': 'PASS',
         'checkpoint_transport_snapshot': 'PASS',
         'checkpoint_per_lane_roundtrip_verification': 'PASS',
+        'checkpoint_serialized_worker_payload': 'PASS',
+        'checkpoint_hash_authentication': 'PASS',
+        'checkpoint_fresh_worker_import_transport': 'PASS',
     },
     'comparison_scope': {
         'status': 'SEMANTIC_V1',
