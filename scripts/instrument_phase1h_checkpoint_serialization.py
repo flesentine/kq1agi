@@ -55,6 +55,7 @@ old_overlay_tail = r'''    private CertificationCheckpointOverlay certificationC
         overlay.lastInput = state.lastInput;
         overlay.simpleName = state.simpleName;
         overlay.randomDrawCount = getCertificationRandomDrawCount();
+        overlay.scriptMax = state.scriptBuffer.maxScript;
         return overlay;
     }
 
@@ -93,6 +94,7 @@ old_overlay_tail = r'''    private CertificationCheckpointOverlay certificationC
         state.currentInput = (overlay.currentInput == null ? null : new StringBuilder(overlay.currentInput));
         state.lastInput = overlay.lastInput;
         state.simpleName = overlay.simpleName;
+        state.scriptBuffer.maxScript = overlay.scriptMax;
         if (overlay.randomDrawCount >= 0) {
             if (!(state.random instanceof CertificationCheckpointRandom)) {
                 throw new IllegalStateException("Certification random source is not checkpointable");
@@ -163,6 +165,7 @@ new_overlay_tail = r'''    private static final int CERTIFICATION_CHECKPOINT_MAG
         overlay.lastInput = state.lastInput;
         overlay.simpleName = state.simpleName;
         overlay.randomDrawCount = getCertificationRandomDrawCount();
+        overlay.scriptMax = state.scriptBuffer.maxScript;
         return overlay;
     }
 
@@ -201,6 +204,7 @@ new_overlay_tail = r'''    private static final int CERTIFICATION_CHECKPOINT_MAG
         state.currentInput = (overlay.currentInput == null ? null : new StringBuilder(overlay.currentInput));
         state.lastInput = overlay.lastInput;
         state.simpleName = overlay.simpleName;
+        state.scriptBuffer.maxScript = overlay.scriptMax;
         if (overlay.randomDrawCount >= 0) {
             if (!(state.random instanceof CertificationCheckpointRandom)) {
                 throw new IllegalStateException("Certification random source is not checkpointable");
