@@ -35,6 +35,9 @@ def verify_lane(root: Path, label: str) -> dict:
     worker = read(root, 'html/src/main/java/com/agifans/agile/worker/AgileWebWorker.java')
     random_java = read(root, 'core/src/main/java/com/agifans/agile/CertificationRandom.java')
     save_store = read(root, 'html/src/main/java/com/agifans/agile/gwt/CertificationSavedGameStore.java')
+    checkpoint_store = read(root, 'core/src/main/java/com/agifans/agile/CertificationCheckpointStore.java')
+    saved_games = read(root, 'core/src/main/java/com/agifans/agile/SavedGames.java')
+    commands = read(root, 'core/src/main/java/com/agifans/agile/Commands.java')
     variables = read(root, 'html/src/main/java/com/agifans/agile/gwt/GwtVariableData.java')
 
     require(interpreter, 'case 0: return 2;', f'{label} trace v2')
@@ -46,17 +49,27 @@ def verify_lane(root: Path, label: str) -> dict:
     require(save_store, 'class CertificationSavedGameStore extends GwtSavedGameStore', f'{label} isolated save store')
     require(save_store, 'Map<Integer, SavedGame>', f'{label} in-memory saved games')
     require(save_store, 'System.arraycopy', f'{label} GWT-safe save copies')
+    require(checkpoint_store, 'class CertificationCheckpointStore implements SavedGameStore', f'{label} checkpoint store')
+    require(checkpoint_store, '__KQ1_CERT_CHECKPOINT__', f'{label} checkpoint reserved identity')
+    require(saved_games, 'captureCertificationCheckpoint()', f'{label} checkpoint capture backbone')
+    require(saved_games, 'restoreCertificationCheckpoint(byte[] checkpointData)', f'{label} checkpoint restore backbone')
+    require(commands, 'captureCertificationCheckpoint()', f'{label} checkpoint command bridge')
+    require(interpreter, 'captureCertificationCheckpoint()', f'{label} checkpoint interpreter bridge')
     require(worker, 'certificationDigestSAB', f'{label} digest transport')
     require(worker, 'certificationMode', f'{label} certification mode')
     require(worker, 'certificationSeed', f'{label} certification seed')
     require(worker, 'CertificationReady', f'{label} ready handshake')
     require(worker, 'new CertificationSavedGameStore()', f'{label} saved-game isolation')
     require(worker, 'certificationDigest.set(0, 1)', f'{label} digest schema')
-    require(worker, 'certificationDigestBytes >= 40', f'{label} snapshot digest transport size')
+    require(worker, 'certificationDigestBytes >= 52', f'{label} checkpoint digest transport size')
     require(worker, 'publishCertificationSnapshotIfRequested()', f'{label} idle snapshot poll')
     require(worker, 'certificationDigest.get(8)', f'{label} snapshot request epoch')
     require(worker, 'certificationDigest.set(9, request)', f'{label} snapshot acknowledgement epoch')
     require(worker, 'CertificationSnapshotReady', f'{label} ordered snapshot acknowledgement')
+    require(worker, 'serviceCertificationCheckpointProbe()', f'{label} checkpoint idle probe')
+    require(worker, 'certificationDigest.get(10)', f'{label} checkpoint request')
+    require(worker, 'certificationDigest.set(11, request)', f'{label} checkpoint acknowledgement')
+    require(worker, 'certificationDigest.set(12, status)', f'{label} checkpoint status')
     require(worker, 'certificationDigest.set(7, 1)', f'{label} shared quit marker')
     require(worker, 'int quitSnapshotAck = certificationDigest.get(9);', f'{label} quit snapshot baseline')
     require(worker, 'while (certificationDigest.get(9) == quitSnapshotAck)', f'{label} final quit snapshot wait')
@@ -90,6 +103,7 @@ def verify_lane(root: Path, label: str) -> dict:
         'common_barrier_snapshot': 'PASS',
         'shared_quit_marker': 'PASS',
         'final_quit_snapshot': 'PASS',
+        'checkpoint_roundtrip_probe': 'PASS',
     }
 
 
@@ -101,7 +115,8 @@ for marker in [
     'TOTAL_TICKS: 512', 'MOUSE_BUTTON: 513', 'MOUSE_X: 514', 'MOUSE_Y: 515',
     'OLD_MOUSE_BUTTON: 516', 'IN_TICK: 517', 'FLAGS_OFFSET: 256',
     'CORE_VARIABLE_SLOTS: 518', 'VARIABLE_SLOTS: 8353', 'variableSlots: VAR.VARIABLE_SLOTS',
-    'QUIT: 7', 'SNAPSHOT_REQUEST: 8', 'SNAPSHOT_ACK: 9', 'digestSlots: 10',
+    'QUIT: 7', 'SNAPSHOT_REQUEST: 8', 'SNAPSHOT_ACK: 9',
+    'CHECKPOINT_REQUEST: 10', 'CHECKPOINT_ACK: 11', 'CHECKPOINT_STATUS: 12', 'digestSlots: 13',
 ]:
     require(host, marker, 'certification host layout')
 
@@ -122,6 +137,9 @@ for marker, label in [
     ("status: 'COMPLETE', scope: finalResult.scope", 'certified completion result'),
     ("status: 'MATCH', scope: 'semantic-v1'", 'scoped MATCH result'),
     ("'random-stream'", 'PRNG divergence result'),
+    ('captureCheckpointProbe()', 'checkpoint capture gate'),
+    ('restoreCheckpointProbe(checkpoint)', 'checkpoint restore verifier'),
+    ("status: 'CHECKPOINT_NOT_EXACT'", 'checkpoint per-lane exactness rejection'),
 ]:
     require(host, marker, f'host {label}')
 
@@ -143,6 +161,8 @@ report = {
         'shared_quit_marker': 'PASS',
         'final_quit_snapshot': 'PASS',
         'semantic_comparator': 'PASS',
+        'checkpoint_transport_snapshot': 'PASS',
+        'checkpoint_per_lane_roundtrip_verification': 'PASS',
     },
     'comparison_scope': {
         'status': 'SEMANTIC_V1',
