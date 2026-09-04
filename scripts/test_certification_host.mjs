@@ -11,6 +11,7 @@ class MockWorker {
     this.terminated = false;
     this.hold = false;
     this.digestXor = 0;
+    this.checkpointCaptureAvailable = true;
     MockWorker.instances.push(this);
   }
 
@@ -63,7 +64,7 @@ class MockWorker {
           const checkpointAck = Atomics.load(this.digest, 11) >>> 0;
           if (checkpointRequest !== 0 && checkpointRequest !== checkpointAck) {
             const action = checkpointRequest & 3;
-            Atomics.store(this.digest, 12, action === 1 ? 1 : action === 2 ? 2 : 3);
+            Atomics.store(this.digest, 12, action === 1 ? (this.checkpointCaptureAvailable ? 1 : 4) : action === 2 ? 2 : 3);
             Atomics.store(this.digest, 11, checkpointRequest);
           }
         }
@@ -170,6 +171,16 @@ class MockWorker {
   assert.ok(host.logicalTick >= 60);
   assert.equal(Atomics.load(host.truth.vars, 11), 1);
   assert.equal(result.status, 'MATCH');
+
+  // A valid barrier before the first reconstructable Picture is not a
+  // checkpoint error; the host reports it as explicitly unavailable.
+  truthWorker.checkpointCaptureAvailable = false;
+  editedWorker.checkpointCaptureAvailable = false;
+  const unavailable = await host.captureCheckpointProbe();
+  assert.equal(unavailable.status, 'CHECKPOINT_CAPTURE_UNAVAILABLE');
+  assert.equal(unavailable.reason, 'no-reconstructable-picture');
+  truthWorker.checkpointCaptureAvailable = true;
+  editedWorker.checkpointCaptureAvailable = true;
 
   // Phase -1H captures only from a certified barrier. Advance after capture,
   // then restore worker-local + host transport state and require the exact captured
