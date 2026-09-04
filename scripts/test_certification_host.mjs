@@ -58,6 +58,14 @@ class MockWorker {
               data: { name: 'CertificationSnapshotReady', object: { epoch: request } },
             }));
           }
+
+          const checkpointRequest = Atomics.load(this.digest, 10) >>> 0;
+          const checkpointAck = Atomics.load(this.digest, 11) >>> 0;
+          if (checkpointRequest !== 0 && checkpointRequest !== checkpointAck) {
+            const action = checkpointRequest & 3;
+            Atomics.store(this.digest, 12, action === 1 ? 1 : action === 2 ? 2 : 3);
+            Atomics.store(this.digest, 11, checkpointRequest);
+          }
         }
       }, 0);
     }
@@ -84,8 +92,8 @@ class MockWorker {
   assert.equal(lane.variableSAB.byteLength, 8353 * 4);
   assert.equal(lane.variableSlots, 8353);
   assert.equal(lane.keyPressQueueSAB.byteLength, 8 + 257 * 4);
-  assert.equal(lane.certificationDigestSAB.byteLength, 10 * 4);
-  assert.throws(() => createLaneBuffers({ digestSlots: 9 }), /at least 10/);
+  assert.equal(lane.certificationDigestSAB.byteLength, 13 * 4);
+  assert.throws(() => createLaneBuffers({ digestSlots: 12 }), /at least 13/);
   assert.throws(() => createLaneBuffers({ variableSlots: 8352 }), /at least 8353/);
 }
 
@@ -162,6 +170,27 @@ class MockWorker {
   assert.ok(host.logicalTick >= 60);
   assert.equal(Atomics.load(host.truth.vars, 11), 1);
   assert.equal(result.status, 'MATCH');
+
+  // Phase -1H captures only from a certified barrier. Advance after capture,
+  // then restore worker-local + host transport state and require the exact captured
+  // lane digest, not merely equality between the two restored lanes.
+  const checkpoint = await host.captureCheckpointProbe();
+  assert.equal(checkpoint.status, 'CHECKPOINT_CAPTURED');
+  const checkpointTick = checkpoint.logicalTick;
+  result = await host.step();
+  assert.ok(host.logicalTick >= checkpointTick);
+  const restored = await host.restoreCheckpointProbe(checkpoint);
+  assert.equal(restored.status, 'CHECKPOINT_ROUNDTRIP_MATCH');
+  assert.equal(host.logicalTick, checkpointTick);
+
+  const checkpoint2 = await host.captureCheckpointProbe();
+  assert.equal(checkpoint2.status, 'CHECKPOINT_CAPTURED');
+  editedWorker.digestXor = 1;
+  const notExact = await host.restoreCheckpointProbe(checkpoint2);
+  assert.equal(notExact.status, 'CHECKPOINT_NOT_EXACT');
+  assert.equal(notExact.lane, 'edited');
+  assert.equal(notExact.category, 'semantic-digest');
+  editedWorker.digestXor = 0;
 
   // Comparator still catches semantic drift at an already-synchronized barrier.
   host.edited.digest[2] ^= 1;
@@ -254,4 +283,7 @@ assert.equal(CertificationLayout.VAR.VARIABLE_SLOTS, 8353);
 assert.equal(CertificationLayout.VAR.IN_TICK, 517);
 assert.equal(CertificationLayout.DIGEST.SNAPSHOT_REQUEST, 8);
 assert.equal(CertificationLayout.DIGEST.SNAPSHOT_ACK, 9);
+assert.equal(CertificationLayout.DIGEST.CHECKPOINT_REQUEST, 10);
+assert.equal(CertificationLayout.DIGEST.CHECKPOINT_ACK, 11);
+assert.equal(CertificationLayout.DIGEST.CHECKPOINT_STATUS, 12);
 console.log('certification host tests: PASS');
