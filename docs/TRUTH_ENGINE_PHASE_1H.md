@@ -27,17 +27,21 @@ At that barrier the host captures losslessly:
 - logical tick, interpreter cycle and compared-cycle counters; and
 - pending deterministic sound-completion timing.
 
-Each worker separately captures a certification-only, noninteractive AGI save/restore reconstruction payload into worker-local memory. This uses a temporary in-memory SavedGameStore and never touches OPFS or the player's certification-session saved games.
+Each worker separately captures a certification-only, noninteractive AGI save/restore reconstruction payload. This uses a temporary in-memory SavedGameStore and never touches OPFS or the player's certification-session saved games.
 
 The real compiled-worker qualification exposed the first expected gap in that reconstruction: AGILE's Sierra save payload restored semantic digest partitions 1–3 exactly but changed partition 0. Phase -1H therefore layers a worker-local transient overlay over the save backbone. The overlay captures the digest-visible core GameState fields that Sierra persistence intentionally normalizes or omits, including controllers, input/menu/picture scalars, animation phase, text colours/attributes, current input text, and related control state.
 
-## Destructive round-trip verification
+## Serialized checkpoint and round-trip verification
 
-The first implementation keeps the worker checkpoint payload inside the worker. This is intentional: before defining a cross-worker serialized checkpoint format, the project must prove that the reconstruction is exact enough to restore the same certification state at all.
+The initial probe kept the reconstruction payload worker-local until real compiled-worker qualification proved the reconstruction exact. The next Phase -1H slice now serializes the Sierra reconstruction bytes and transient/RNG overlay into one deterministic `KQ1H` v1 binary envelope.
+
+Each lane exports that envelope through a dedicated SharedArrayBuffer. The host copies both lane payloads into the checkpoint object, snapshots the host/shared transports, and computes an authenticated checkpoint identity over the canonical content. Restore verifies that identity before making any worker or shared-memory mutation.
+
+Because restore imports the worker envelope from the host-owned checkpoint transport, it no longer depends on a payload left behind in the worker that created the checkpoint. A JSON-serialized checkpoint can therefore be imported into newly started ORIGINAL and EDITED workers.
 
 On restore:
 
-1. each worker restores its worker-local reconstruction payload while idle;
+1. the host verifies the checkpoint content hash and writes each serialized worker envelope into the fresh worker's checkpoint transport;
 2. the certification wrapper runs the same post-restore reconstruction as AGILE's normal `restore.game` command: sound reset, menu enable, script-event replay, picture rebuild/show, and status-line update;
 3. the worker reapplies the transient checkpoint overlay and rewinds the certification random source to its captured draw position;
 4. the host restores the exact shared transport buffers and host logical metadata;
@@ -47,6 +51,8 @@ On restore:
 
 Comparing only the two restored lanes would be unsafe because both lanes could restore to the same wrong state.
 
+Fresh-worker restore is held to the same per-lane exactness rule as same-worker restore. A new worker pair must reproduce each lane's captured trace/digest before suffix replay can rely on the checkpoint.
+
 ## Result meanings
 
 - `CHECKPOINT_CAPTURED` — a probe payload and host transport snapshot were captured at an authoritative MATCH barrier.
@@ -54,6 +60,7 @@ Comparing only the two restored lanes would be unsafe because both lanes could r
 - `CHECKPOINT_CAPTURE_UNAVAILABLE` — the barrier is valid but the save-game reconstruction backbone cannot represent it yet (v1: no current Picture before the first `draw.pic`).
 - `CHECKPOINT_CAPTURE_ERROR` — one or both workers threw while creating the reconstruction payload.
 - `CHECKPOINT_RESTORE_ERROR` — one or both workers could not restore the payload.
+- `CHECKPOINT_HASH_MISMATCH` — checkpoint content no longer matches its authenticated identity; restore is rejected before mutation.
 - `CHECKPOINT_NOT_EXACT` — restore completed, but at least one lane's trace/digest differs from its captured barrier.
 - `CHECKPOINT_ROUNDTRIP_MATCH` — both lanes individually restored to their captured semantic-v1 state and still match each other.
 
@@ -69,7 +76,7 @@ The semantic digest SharedArrayBuffer grows from 10 to 13 Uint32 slots:
 - slot 11: checkpoint acknowledgement; and
 - slot 12: checkpoint status.
 
-Action 1 captures the worker-local reconstruction payload. Action 2 restores it. The worker services these requests from the same idle busy-wait path used by the existing certification snapshot barrier, so correctness does not depend on postMessage callbacks that cannot run while AGILE is waiting on `IN_TICK`.
+Action 1 captures and exports the serialized reconstruction envelope. Action 2 imports the host-supplied envelope and restores it. A separate bounded checkpoint SharedArrayBuffer carries the payload bytes. The worker services these requests from the same idle busy-wait path used by the existing certification snapshot barrier, so correctness does not depend on postMessage callbacks that cannot run while AGILE is waiting on `IN_TICK`.
 
 ## Production safety
 
@@ -79,7 +86,7 @@ No game resources or checkpoint payloads are committed or uploaded.
 
 ## Acceptance criteria for this slice
 
-- Certification host unit tests cover exact and deliberately inexact checkpoint round trips.
+- Certification host unit tests cover exact and deliberately inexact checkpoint round trips, hash-tamper rejection, JSON serialization, and fresh-worker import.
 - Both pristine ORIGINAL and current EDITED certification workers compile with the checkpoint probe.
 - The runtime contract checker verifies the checkpoint store, worker shared-memory handshake and host per-lane exactness gate.
 - Browser certification packaging includes the Phase -1H documentation and probe-instrumented workers.
@@ -88,4 +95,4 @@ No game resources or checkpoint payloads are committed or uploaded.
 
 ## Next implementation step
 
-Re-run the probe against the exact compiled workers with the public qualification game. Once real checkpoints reliably return `CHECKPOINT_ROUNDTRIP_MATCH`, prove suffix continuation equivalence from the restored barrier, then define an authenticated cross-worker checkpoint serialization and allow replay to begin from that checkpoint.
+Compile and qualify the serialized checkpoint against the exact browser artifact. The required proof is: capture on one worker pair, JSON-serialize the authenticated checkpoint, terminate that pair, start fresh ORIGINAL/EDITED workers with the same frozen game/EditConfig/replay identity, import the checkpoint, and reproduce the same deterministic suffix. Only after that passes should Phase -1H expose checkpoint-started replay to the minimizers.
