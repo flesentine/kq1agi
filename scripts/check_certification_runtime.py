@@ -54,6 +54,8 @@ def verify_lane(root: Path, label: str) -> dict:
     require(saved_games, 'captureCertificationCheckpoint()', f'{label} checkpoint capture backbone')
     require(saved_games, 'restoreCertificationCheckpoint(byte[] checkpointData)', f'{label} checkpoint restore backbone')
     require(commands, 'captureCertificationCheckpoint()', f'{label} checkpoint command bridge')
+    require(commands, 'replayScriptEvents();', f'{label} checkpoint post-restore script replay')
+    require(commands, 'showPicture(false);', f'{label} checkpoint post-restore picture rebuild')
     require(interpreter, 'captureCertificationCheckpoint()', f'{label} checkpoint interpreter bridge')
     require(worker, 'certificationDigestSAB', f'{label} digest transport')
     require(worker, 'certificationMode', f'{label} certification mode')
