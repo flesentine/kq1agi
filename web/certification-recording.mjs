@@ -234,21 +234,27 @@ function replaySleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function terminalReplaySummary(result, certifiedBarriers, consumedTicks) {
+function terminalReplaySummary(result, certifiedBarriers, consumedTicks, replayStartTick = 0) {
+  const replayMeta = {
+    certifiedBarriers,
+    consumedTicks,
+    replayStartTick: replayStartTick >>> 0,
+    skippedPrefixTicks: replayStartTick >>> 0,
+  };
   if (result?.status === 'DIVERGED') {
     return {
-      status: 'DIVERGED', certifiedBarriers, consumedTicks,
+      status: 'DIVERGED', ...replayMeta,
       result, firstDivergence: result,
     };
   }
   if (result?.status === 'COMPLETE') {
-    return { status: 'COMPLETE', certifiedBarriers, consumedTicks, result };
+    return { status: 'COMPLETE', ...replayMeta, result };
   }
   if (result?.status === 'REPLAY_TIMING_MISS') {
-    return { status: 'REPLAY_TIMING_MISS', certifiedBarriers, consumedTicks, result };
+    return { status: 'REPLAY_TIMING_MISS', ...replayMeta, result };
   }
   if (result?.status === 'REPLAY_CONTRACT_MISS') {
-    return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result };
+    return { status: 'REPLAY_CONTRACT_MISS', ...replayMeta, result };
   }
   return null;
 }
@@ -339,10 +345,19 @@ export async function runCertificationReplaySession(host, recording, options = {
     const checkpointTick = Number(checkpoint.logicalTick);
     if (!Number.isSafeInteger(checkpointTick)
         || checkpointTick < 0
-        || checkpointTick > replayRecording.finalTick) {
+        || checkpointTick >= replayRecording.finalTick) {
       const miss = replayContractMiss(host, 'checkpoint-tick', {
         checkpointTick: checkpoint.logicalTick,
         finalTick: replayRecording.finalTick,
+      });
+      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+    }
+    const resumeBeforeTick = checkpointTick + 1;
+    if (!releaseSet.has(resumeBeforeTick)) {
+      const miss = replayContractMiss(host, 'checkpoint-resume-boundary', {
+        checkpointTick,
+        resumeBeforeTick,
+        recordedRelease: false,
       });
       return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
     }
@@ -381,7 +396,7 @@ export async function runCertificationReplaySession(host, recording, options = {
   const processSettledResult = (result, targetTick, meta = {}) => {
     lastResult = result;
     if (result?.status === 'MATCH') certifiedBarriers += 1;
-    const terminal = terminalReplaySummary(result, certifiedBarriers, consumedTicks);
+    const terminal = terminalReplaySummary(result, certifiedBarriers, consumedTicks, replayStartTick);
     onUpdate({ certifiedBarriers, consumedTicks, targetTick, result, ...meta });
     return terminal;
   };
@@ -501,7 +516,7 @@ export async function runCertificationReplaySession(host, recording, options = {
     });
     lastResult = result;
 
-    const terminal = terminalReplaySummary(result, certifiedBarriers, consumedTicks);
+    const terminal = terminalReplaySummary(result, certifiedBarriers, consumedTicks, replayStartTick);
     if (terminal) {
       onUpdate({ certifiedBarriers, consumedTicks, targetTick, releaseExpected, result });
       return terminal;
@@ -557,7 +572,7 @@ export async function runCertificationReplaySession(host, recording, options = {
     const settleResult = await host.settleCurrentCycle();
     lastResult = settleResult;
     if (settleResult?.status === 'MATCH') certifiedBarriers += 1;
-    const terminal = terminalReplaySummary(settleResult, certifiedBarriers, consumedTicks);
+    const terminal = terminalReplaySummary(settleResult, certifiedBarriers, consumedTicks, replayStartTick);
     if (terminal) {
       onUpdate({ certifiedBarriers, consumedTicks, targetTick: replayRecording.finalTick, result: settleResult, finalSettle: true });
       return terminal;
