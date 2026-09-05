@@ -18,7 +18,9 @@ Phase -1I.0 therefore permits checkpoint capture only immediately **before a rec
 
 A restored checkpoint is accepted as a replay cursor only when `checkpoint.logicalTick + 1` is a recorded release tick in the same authenticated recording.
 
-This avoids inventing an arbitrary idle state and avoids replaying same-tick transport twice.
+A second cold-browser review exposed an additional hidden-state requirement: after a valid Phase -1H restore, AGILE could leave `currentPicture` absent even though semantic-v1 and the visible framebuffer were exact. That made the resumed worker unable to capture a second checkpoint. The Phase -1I hardening therefore upgrades the worker payload to KQ1H v2 and preserves the exact current-picture visual/priority drawing context and pen/colour state. Restored replay sessions must remain checkpointable again.
+
+This avoids inventing an arbitrary idle state, avoids replaying same-tick transport twice, and preserves checkpoint chaining.
 
 ## Replay API
 
@@ -71,6 +73,7 @@ Until that proof exists, minimizer candidate runners stay on the full replay ora
 - Events at `checkpoint.logicalTick` are not applied again.
 - Rejected checkpoint restore or cursor validation consumes zero suffix pulses.
 - A checkpoint-started replay reaches the same final state/result as the equivalent full replay.
+- A resumed replay can pause at a later recorded release boundary, capture a second checkpoint, restore that second checkpoint into fresh workers, and still reproduce the same final state.
 - Replay summaries expose skipped-prefix and consumed-suffix tick counts.
 - Phase -1E/-1F/-1G candidate execution remains unchanged in this slice.
 
