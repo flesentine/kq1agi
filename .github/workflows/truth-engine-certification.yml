@@ -9,6 +9,7 @@ on:
       - 'scripts/**'
       - 'web/certification-host.mjs'
       - 'docs/TRUTH_ENGINE_PHASE_1B.md'
+      - 'docs/TRUTH_ENGINE_PHASE_1I.md'
   push:
     branches: [main]
     paths:
@@ -16,6 +17,7 @@ on:
       - 'scripts/**'
       - 'web/certification-host.mjs'
       - 'docs/TRUTH_ENGINE_PHASE_1B.md'
+      - 'docs/TRUTH_ENGINE_PHASE_1I.md'
 
 permissions:
   contents: read
@@ -39,7 +41,9 @@ jobs:
           node-version: '22'
 
       - name: Test deterministic certification host
-        run: node scripts/test_certification_host.mjs
+        run: |
+          node scripts/test_certification_host.mjs
+          node scripts/test_certification_recording.mjs
 
       - name: Fetch exact AGILE source for both lanes
         run: |
@@ -71,6 +75,7 @@ jobs:
             core/src/main/java/com/agifans/agile/CertificationRandom.java \
             core/src/main/java/com/agifans/agile/Commands.java \
             core/src/main/java/com/agifans/agile/Interpreter.java \
+            core/src/main/java/com/agifans/agile/agilib/Picture.java \
             core/src/main/java/com/agifans/agile/SavedGames.java \
             html/src/main/java/com/agifans/agile/gwt/CertificationSavedGameStore.java \
             html/src/main/java/com/agifans/agile/worker/AgileWebWorker.java \

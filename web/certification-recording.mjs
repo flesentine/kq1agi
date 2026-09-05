@@ -234,21 +234,27 @@ function replaySleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function terminalReplaySummary(result, certifiedBarriers, consumedTicks) {
+function terminalReplaySummary(result, certifiedBarriers, consumedTicks, replayStartTick = 0) {
+  const replayMeta = {
+    certifiedBarriers,
+    consumedTicks,
+    replayStartTick: replayStartTick >>> 0,
+    skippedPrefixTicks: replayStartTick >>> 0,
+  };
   if (result?.status === 'DIVERGED') {
     return {
-      status: 'DIVERGED', certifiedBarriers, consumedTicks,
+      status: 'DIVERGED', ...replayMeta,
       result, firstDivergence: result,
     };
   }
   if (result?.status === 'COMPLETE') {
-    return { status: 'COMPLETE', certifiedBarriers, consumedTicks, result };
+    return { status: 'COMPLETE', ...replayMeta, result };
   }
   if (result?.status === 'REPLAY_TIMING_MISS') {
-    return { status: 'REPLAY_TIMING_MISS', certifiedBarriers, consumedTicks, result };
+    return { status: 'REPLAY_TIMING_MISS', ...replayMeta, result };
   }
   if (result?.status === 'REPLAY_CONTRACT_MISS') {
-    return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result };
+    return { status: 'REPLAY_CONTRACT_MISS', ...replayMeta, result };
   }
   return null;
 }
@@ -315,11 +321,15 @@ export async function runCertificationReplaySession(host, recording, options = {
   const events = [...replayRecording.events];
   const releaseSet = new Set(replayRecording.releaseTicks);
   const transport = buildTransportSchedule(events);
+  const checkpoint = options.checkpoint ?? null;
+  const requestedPauseBeforeTick = options.pauseBeforeTick == null
+    ? null : Math.max(1, asInt(options.pauseBeforeTick));
   let certifiedBarriers = 0;
   let consumedTicks = 0;
   let lastResult = null;
   let pacedTargetTick = 0;
   let nextPulseAt = replayNow();
+  let replayStartTick = host.logicalTick >>> 0;
 
   if (transport.error) {
     const miss = replayContractMiss(host, transport.error.reason, transport.error);
@@ -327,10 +337,66 @@ export async function runCertificationReplaySession(host, recording, options = {
   }
   const eventsByTick = transport.byTick;
 
+  if (checkpoint) {
+    if (typeof host.restoreCheckpointProbe !== 'function') {
+      const miss = replayContractMiss(host, 'checkpoint-restore-host');
+      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+    }
+    const checkpointTick = Number(checkpoint.logicalTick);
+    if (!Number.isSafeInteger(checkpointTick)
+        || checkpointTick < 0
+        || checkpointTick >= replayRecording.finalTick) {
+      const miss = replayContractMiss(host, 'checkpoint-tick', {
+        checkpointTick: checkpoint.logicalTick,
+        finalTick: replayRecording.finalTick,
+      });
+      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+    }
+    const resumeBeforeTick = checkpointTick + 1;
+    if (!releaseSet.has(resumeBeforeTick)) {
+      const miss = replayContractMiss(host, 'checkpoint-resume-boundary', {
+        checkpointTick,
+        resumeBeforeTick,
+        recordedRelease: false,
+      });
+      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+    }
+    const restored = await host.restoreCheckpointProbe(checkpoint);
+    if (restored?.status !== 'CHECKPOINT_ROUNDTRIP_MATCH') {
+      const miss = replayContractMiss(host, 'checkpoint-restore', {
+        checkpointStatus: restored?.status ?? 'unknown',
+        checkpointResult: restored ?? null,
+      });
+      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+    }
+    if ((host.logicalTick >>> 0) !== (checkpointTick >>> 0)) {
+      const miss = replayContractMiss(host, 'checkpoint-position', {
+        expectedTick: checkpointTick >>> 0,
+        actualTick: host.logicalTick >>> 0,
+      });
+      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+    }
+    replayStartTick = host.logicalTick >>> 0;
+  }
+
+  if (requestedPauseBeforeTick != null) {
+    if (requestedPauseBeforeTick > replayRecording.finalTick
+        || !releaseSet.has(requestedPauseBeforeTick)
+        || requestedPauseBeforeTick <= (host.logicalTick >>> 0)) {
+      const miss = replayContractMiss(host, 'checkpoint-pause-boundary', {
+        pauseBeforeTick: requestedPauseBeforeTick,
+        startTick: host.logicalTick >>> 0,
+        finalTick: replayRecording.finalTick,
+        recordedRelease: releaseSet.has(requestedPauseBeforeTick),
+      });
+      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+    }
+  }
+
   const processSettledResult = (result, targetTick, meta = {}) => {
     lastResult = result;
     if (result?.status === 'MATCH') certifiedBarriers += 1;
-    const terminal = terminalReplaySummary(result, certifiedBarriers, consumedTicks);
+    const terminal = terminalReplaySummary(result, certifiedBarriers, consumedTicks, replayStartTick);
     onUpdate({ certifiedBarriers, consumedTicks, targetTick, result, ...meta });
     return terminal;
   };
@@ -364,16 +430,21 @@ export async function runCertificationReplaySession(host, recording, options = {
     return null;
   };
 
-  const initial = eventsByTick.get(host.logicalTick);
-  if (initial?.busy.length) {
-    const miss = replayContractMiss(host, 'transport-phase', {
-      expectedPhase: 'busy', eventTick: host.logicalTick,
-      detail: 'Busy transport cannot precede the first released interpreter cycle.',
-    });
-    return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+  // A restored checkpoint already contains every host/worker transport mutation
+  // through checkpoint.logicalTick. Reapplying same-tick idle events here would
+  // duplicate input/sound state, so only a from-start replay consumes tick-0 events.
+  if (!checkpoint) {
+    const initial = eventsByTick.get(host.logicalTick);
+    if (initial?.busy.length) {
+      const miss = replayContractMiss(host, 'transport-phase', {
+        expectedPhase: 'busy', eventTick: host.logicalTick,
+        detail: 'Busy transport cannot precede the first released interpreter cycle.',
+      });
+      return { status: 'REPLAY_CONTRACT_MISS', certifiedBarriers, consumedTicks, result: miss };
+    }
+    const initialIdle = await applyIdleEventsAt(host.logicalTick);
+    if (initialIdle) return initialIdle;
   }
-  const initialIdle = await applyIdleEventsAt(host.logicalTick);
-  if (initialIdle) return initialIdle;
 
   while (host.logicalTick < replayRecording.finalTick) {
     if (shouldStop()) return { status: 'STOPPED', certifiedBarriers, consumedTicks, result: lastResult };
@@ -388,6 +459,24 @@ export async function runCertificationReplaySession(host, recording, options = {
     if (releaseExpected) {
       const releaseBarrier = await settleAtCurrentTick('recorded-release', targetTick, { releaseExpected: true });
       if (releaseBarrier) return releaseBarrier;
+
+      // This is an authoritative checkpoint boundary: the recording proves the
+      // previous interpreter cycle completed before targetTick, while none of
+      // targetTick's release/transport has been applied yet. Phase -1I pauses here
+      // so captureCheckpointProbe() can snapshot a state that is actually present
+      // in the frozen replay contract rather than manufacturing an arbitrary idle.
+      if (requestedPauseBeforeTick === targetTick) {
+        return {
+          status: 'REPLAY_PAUSED',
+          certifiedBarriers,
+          consumedTicks,
+          result: lastResult,
+          pauseBeforeTick: targetTick,
+          checkpointTick: host.logicalTick >>> 0,
+          replayStartTick,
+          skippedPrefixTicks: replayStartTick,
+        };
+      }
       await beforePulse(host);
     }
 
@@ -427,7 +516,7 @@ export async function runCertificationReplaySession(host, recording, options = {
     });
     lastResult = result;
 
-    const terminal = terminalReplaySummary(result, certifiedBarriers, consumedTicks);
+    const terminal = terminalReplaySummary(result, certifiedBarriers, consumedTicks, replayStartTick);
     if (terminal) {
       onUpdate({ certifiedBarriers, consumedTicks, targetTick, releaseExpected, result });
       return terminal;
@@ -483,7 +572,7 @@ export async function runCertificationReplaySession(host, recording, options = {
     const settleResult = await host.settleCurrentCycle();
     lastResult = settleResult;
     if (settleResult?.status === 'MATCH') certifiedBarriers += 1;
-    const terminal = terminalReplaySummary(settleResult, certifiedBarriers, consumedTicks);
+    const terminal = terminalReplaySummary(settleResult, certifiedBarriers, consumedTicks, replayStartTick);
     if (terminal) {
       onUpdate({ certifiedBarriers, consumedTicks, targetTick: replayRecording.finalTick, result: settleResult, finalSettle: true });
       return terminal;
@@ -518,6 +607,8 @@ export async function runCertificationReplaySession(host, recording, options = {
     consumedTicks,
     result: lastResult,
     finalTick: host.logicalTick,
+    replayStartTick,
+    skippedPrefixTicks: replayStartTick,
   };
 }
 

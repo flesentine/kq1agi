@@ -39,6 +39,7 @@ def verify_lane(root: Path, label: str) -> dict:
     checkpoint_random = read(root, 'core/src/main/java/com/agifans/agile/CertificationCheckpointRandom.java')
     saved_games = read(root, 'core/src/main/java/com/agifans/agile/SavedGames.java')
     commands = read(root, 'core/src/main/java/com/agifans/agile/Commands.java')
+    picture = read(root, 'core/src/main/java/com/agifans/agile/agilib/Picture.java')
     variables = read(root, 'html/src/main/java/com/agifans/agile/gwt/GwtVariableData.java')
 
     require(interpreter, 'case 0: return 2;', f'{label} trace v2')
@@ -67,6 +68,16 @@ def verify_lane(root: Path, label: str) -> dict:
     require(commands, 'replayScriptEvents();', f'{label} checkpoint post-restore script replay')
     require(commands, 'showPicture(false);', f'{label} checkpoint post-restore picture rebuild')
     require(commands, 'restoreCertificationResourceLoadState', f'{label} checkpoint resource-state bridge')
+    require(picture, 'Picture clone = new Picture(jagiPicture);', f'{label} current-picture clone identity preservation')
+    require(picture, 'clone.index = index;', f'{label} current-picture resource index preservation')
+    require(picture, 'clone.isLoaded = isLoaded;', f'{label} current-picture resource loaded-state preservation')
+    require(commands, 'restoreCertificationCurrentPicture', f'{label} hidden current-picture restore bridge')
+    require(commands, 'state.drawObjects();', f'{label} hidden current-picture animated-object rebuild')
+    require(picture, 'restoreCertificationDrawingState', f'{label} hidden current-picture drawing state')
+    require(picture, 'certificationPicColorSet', f'{label} hidden current-picture colour state')
+    require(interpreter, 'CERTIFICATION_CHECKPOINT_VERSION = 2', f'{label} checkpoint worker envelope v2')
+    require(interpreter, 'overlay.currentPictureVisualPixels', f'{label} hidden current-picture visual payload')
+    require(interpreter, 'overlay.currentPicturePriorityPixels', f'{label} hidden current-picture priority payload')
     require(commands, 'soundPlayer.loadSound(state.sounds[i])', f'{label} checkpoint sound-cache rebuild')
     require(interpreter, 'captureCertificationCheckpoint()', f'{label} checkpoint interpreter bridge')
     require(interpreter, 'CertificationCheckpointOverlay', f'{label} transient checkpoint overlay')
@@ -110,6 +121,7 @@ def verify_lane(root: Path, label: str) -> dict:
         ('state.scriptBuffer.maxScript = overlay.scriptMax', 'scriptBuffer.maxScript'),
         ('state.scanStart[i] = overlay.scanStart[i]', 'scanStart'),
         ('commands.restoreCertificationResourceLoadState(', 'resource loaded state'),
+        ('commands.restoreCertificationCurrentPicture(', 'current picture hidden state'),
     ]:
         require(interpreter, checkpoint_marker, f'{label} checkpoint overlay {checkpoint_name}')
     require(worker, 'certificationDigestSAB', f'{label} digest transport')
@@ -178,7 +190,7 @@ for marker in [
     'CORE_VARIABLE_SLOTS: 518', 'VARIABLE_SLOTS: 8353', 'variableSlots: VAR.VARIABLE_SLOTS',
     'QUIT: 7', 'SNAPSHOT_REQUEST: 8', 'SNAPSHOT_ACK: 9',
     'CHECKPOINT_REQUEST: 10', 'CHECKPOINT_ACK: 11', 'CHECKPOINT_STATUS: 12', 'digestSlots: 13',
-    'checkpointSlots: 32768', 'certificationCheckpointSAB',
+    'checkpointSlots: 524288', 'certificationCheckpointSAB',
 ]:
     require(host, marker, 'certification host layout')
 

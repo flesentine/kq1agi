@@ -92,6 +92,35 @@ class FakeHost {
     };
   }
   getReplayRandomDrawCounts() { return { truth: 1, edited: 1 }; }
+  async restoreCheckpointProbe(checkpoint) {
+    if (checkpoint?.restoreStatus && checkpoint.restoreStatus !== 'CHECKPOINT_ROUNDTRIP_MATCH') {
+      return { status: checkpoint.restoreStatus };
+    }
+    this.logicalTick = Number(checkpoint.logicalTick) >>> 0;
+    this.cycle = Number(checkpoint.cycle) >>> 0;
+    this.comparedCycle = Number(checkpoint.comparedCycle) >>> 0;
+    this.keys = (checkpoint.keys ?? []).map(item => [...item]);
+    this.queue = (checkpoint.queue ?? []).map(item => [...item]);
+    this.mouse = (checkpoint.mouse ?? []).map(item => [...item]);
+    this.soundEnds = (checkpoint.soundEnds ?? []).map(item => [...item]);
+    return {
+      status: 'CHECKPOINT_ROUNDTRIP_MATCH',
+      tick: this.logicalTick,
+      cycle: this.cycle,
+    };
+  }
+}
+
+function fakeCheckpointFrom(host) {
+  return Object.freeze({
+    logicalTick: host.logicalTick >>> 0,
+    cycle: host.cycle >>> 0,
+    comparedCycle: host.comparedCycle >>> 0,
+    keys: host.keys.map(item => [...item]),
+    queue: host.queue.map(item => [...item]),
+    mouse: host.mouse.map(item => [...item]),
+    soundEnds: host.soundEnds.map(item => [...item]),
+  });
 }
 
 const host = new FakeHost();
@@ -109,6 +138,76 @@ assert.deepEqual(host.settles.map(item => item.slice(0, 2)), [
   [2, 'recorded-release'],
   [3, 'final-cycle'],
 ]);
+
+
+// Phase -1I may pause only immediately before a recorded release. At that point
+// the previous cycle is authoritatively settled and no transport for the next tick
+// has been applied. Restoring that checkpoint must consume only the suffix and must
+// not replay same-tick idle transport (sound-end at tick 2 in this fixture).
+const pauseHost = new FakeHost();
+const paused = await runCertificationReplaySession(pauseHost, frozen, {
+  pulseIntervalMs: 0,
+  pauseBeforeTick: 3,
+});
+assert.equal(paused.status, 'REPLAY_PAUSED');
+assert.equal(paused.pauseBeforeTick, 3);
+assert.equal(paused.checkpointTick, 2);
+assert.equal(paused.consumedTicks, 2);
+assert.equal(pauseHost.logicalTick, 2);
+assert.deepEqual(pauseHost.soundEnds, [[2, 7]]);
+const fakeCheckpoint = fakeCheckpointFrom(pauseHost);
+
+const resumedHost = new FakeHost();
+const resumed = await runCertificationReplaySession(resumedHost, frozen, {
+  pulseIntervalMs: 0,
+  checkpoint: fakeCheckpoint,
+});
+assert.equal(resumed.status, 'REPLAY_MATCH');
+assert.equal(resumed.replayStartTick, 2);
+assert.equal(resumed.skippedPrefixTicks, 2);
+assert.equal(resumed.consumedTicks, 1);
+assert.equal(resumed.finalTick, 3);
+assert.deepEqual(resumedHost.keys, host.keys);
+assert.deepEqual(resumedHost.queue, host.queue);
+assert.deepEqual(resumedHost.mouse, host.mouse);
+assert.deepEqual(resumedHost.soundEnds, host.soundEnds);
+assert.equal(resumedHost.cycle, host.cycle);
+assert.equal(resumedHost.comparedCycle, host.comparedCycle);
+
+// A non-release boundary is not a valid Phase -1I checkpoint pause point.
+const invalidPauseHost = new FakeHost();
+const invalidPause = await runCertificationReplaySession(invalidPauseHost, frozen, {
+  pulseIntervalMs: 0,
+  pauseBeforeTick: 2,
+});
+assert.equal(invalidPause.status, 'REPLAY_CONTRACT_MISS');
+assert.equal(invalidPause.result.reason, 'checkpoint-pause-boundary');
+assert.equal(invalidPauseHost.logicalTick, 0);
+
+// Phase -1H remains authoritative. If restore authentication/context/exactness fails,
+// no suffix pulse is allowed to execute.
+const rejectedRestoreHost = new FakeHost();
+const rejectedRestore = await runCertificationReplaySession(rejectedRestoreHost, frozen, {
+  pulseIntervalMs: 0,
+  checkpoint: { logicalTick: 2, restoreStatus: 'CHECKPOINT_HASH_MISMATCH' },
+});
+assert.equal(rejectedRestore.status, 'REPLAY_CONTRACT_MISS');
+assert.equal(rejectedRestore.result.reason, 'checkpoint-restore');
+assert.equal(rejectedRestore.result.checkpointStatus, 'CHECKPOINT_HASH_MISMATCH');
+assert.equal(rejectedRestoreHost.logicalTick, 0);
+
+
+// Even an otherwise-valid checkpoint is not a replay cursor unless its next logical
+// tick is a recorded release. This prevents skipping same-tick transport from an
+// unrelated Phase -1H barrier.
+const invalidResumeHost = new FakeHost();
+const invalidResume = await runCertificationReplaySession(invalidResumeHost, frozen, {
+  pulseIntervalMs: 0,
+  checkpoint: { ...fakeCheckpoint, logicalTick: 1 },
+});
+assert.equal(invalidResume.status, 'REPLAY_CONTRACT_MISS');
+assert.equal(invalidResume.result.reason, 'checkpoint-resume-boundary');
+assert.equal(invalidResumeHost.logicalTick, 0);
 
 // Busy provenance is not a wall-clock deadline. If this machine has already
 // finished the replay cycle by the deterministic tick boundary, inject the recorded

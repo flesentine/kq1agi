@@ -19,6 +19,26 @@ def one(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 itext = interpreter.read_text()
+if 'int currentPictureIndex;' not in itext:
+    itext = one(
+        itext,
+        '''        boolean[] soundLoaded;
+    }
+''',
+        '''        boolean[] soundLoaded;
+        int currentPictureIndex;
+        int[] currentPictureVisualPixels;
+        int[] currentPicturePriorityPixels;
+        boolean currentPicturePicColorSet;
+        int currentPicturePicColor;
+        boolean currentPicturePriColorSet;
+        int currentPicturePriColor;
+        int currentPicturePenStyle;
+    }
+''',
+        'checkpoint current-picture overlay fields',
+    )
+
 old_overlay_tail = r'''    private CertificationCheckpointOverlay certificationCheckpointOverlay;
 
     private CertificationCheckpointOverlay captureCertificationCheckpointOverlay() {
@@ -138,7 +158,7 @@ old_overlay_tail = r'''    private CertificationCheckpointOverlay certificationC
 '''
 
 new_overlay_tail = r'''    private static final int CERTIFICATION_CHECKPOINT_MAGIC = 0x4B513148; // KQ1H
-    private static final int CERTIFICATION_CHECKPOINT_VERSION = 1;
+    private static final int CERTIFICATION_CHECKPOINT_VERSION = 2;
 
     private static class CertificationCheckpointCursor {
         int pos;
@@ -196,6 +216,35 @@ new_overlay_tail = r'''    private static final int CERTIFICATION_CHECKPOINT_MAG
             overlay.viewLoaded[i] = state.views[i] != null && state.views[i].isLoaded;
             overlay.soundLoaded[i] = state.sounds[i] != null && state.sounds[i].isLoaded;
         }
+
+        if (state.currentPicture == null) {
+            overlay.currentPictureIndex = -1;
+            overlay.currentPictureVisualPixels = new int[0];
+            overlay.currentPicturePriorityPixels = new int[0];
+            overlay.currentPicturePicColorSet = false;
+            overlay.currentPicturePicColor = 0;
+            overlay.currentPicturePriColorSet = false;
+            overlay.currentPicturePriColor = 0;
+            overlay.currentPicturePenStyle = 0;
+        } else {
+            overlay.currentPictureIndex = state.currentPicture.index;
+            if (overlay.currentPictureIndex < 0
+                    || overlay.currentPictureIndex >= state.pictures.length
+                    || state.pictures[overlay.currentPictureIndex] == null) {
+                throw new IllegalStateException("Invalid certification current-picture resource identity");
+            }
+            int[] currentVisual = state.currentPicture.getVisualPixels();
+            int[] currentPriority = state.currentPicture.getPriorityPixels();
+            overlay.currentPictureVisualPixels = new int[currentVisual.length];
+            overlay.currentPicturePriorityPixels = new int[currentPriority.length];
+            System.arraycopy(currentVisual, 0, overlay.currentPictureVisualPixels, 0, currentVisual.length);
+            System.arraycopy(currentPriority, 0, overlay.currentPicturePriorityPixels, 0, currentPriority.length);
+            overlay.currentPicturePicColorSet = state.currentPicture.certificationPicColorSet();
+            overlay.currentPicturePicColor = state.currentPicture.certificationPicColor();
+            overlay.currentPicturePriColorSet = state.currentPicture.certificationPriColorSet();
+            overlay.currentPicturePriColor = state.currentPicture.certificationPriColor();
+            overlay.currentPicturePenStyle = state.currentPicture.certificationPenStyle();
+        }
         return overlay;
     }
 
@@ -241,6 +290,15 @@ new_overlay_tail = r'''    private static final int CERTIFICATION_CHECKPOINT_MAG
         for (int i = 0; i < state.scanStart.length; i++) state.scanStart[i] = overlay.scanStart[i];
         commands.restoreCertificationResourceLoadState(
                 overlay.logicLoaded, overlay.pictureLoaded, overlay.viewLoaded, overlay.soundLoaded);
+        commands.restoreCertificationCurrentPicture(
+                overlay.currentPictureIndex,
+                overlay.currentPictureVisualPixels,
+                overlay.currentPicturePriorityPixels,
+                overlay.currentPicturePicColorSet,
+                overlay.currentPicturePicColor,
+                overlay.currentPicturePriColorSet,
+                overlay.currentPicturePriColor,
+                overlay.currentPicturePenStyle);
         if (overlay.randomDrawCount >= 0) {
             if (!(state.random instanceof CertificationCheckpointRandom)) {
                 throw new IllegalStateException("Certification random source is not checkpointable");
@@ -307,7 +365,7 @@ new_overlay_tail = r'''    private static final int CERTIFICATION_CHECKPOINT_MAG
         // Sierra saves are below 20 KiB. The extra envelope is intentionally bounded
         // and uses UTF-16 code units for exact Java String round trips without locale
         // or browser text-encoding dependencies.
-        byte[] buffer = new byte[saveData.length + 65536];
+        byte[] buffer = new byte[saveData.length + 524288];
         int pos = 0;
         pos = certificationCheckpointWriteInt(buffer, pos, CERTIFICATION_CHECKPOINT_MAGIC);
         pos = certificationCheckpointWriteInt(buffer, pos, CERTIFICATION_CHECKPOINT_VERSION);
@@ -358,6 +416,21 @@ new_overlay_tail = r'''    private static final int CERTIFICATION_CHECKPOINT_MAG
                     | (overlay.soundLoaded[i] ? 8 : 0);
             pos = certificationCheckpointWriteInt(buffer, pos, loadedBits);
         }
+
+        pos = certificationCheckpointWriteInt(buffer, pos, overlay.currentPictureIndex);
+        pos = certificationCheckpointWriteInt(buffer, pos, overlay.currentPictureVisualPixels.length);
+        for (int value : overlay.currentPictureVisualPixels) {
+            pos = certificationCheckpointWriteInt(buffer, pos, value);
+        }
+        pos = certificationCheckpointWriteInt(buffer, pos, overlay.currentPicturePriorityPixels.length);
+        for (int value : overlay.currentPicturePriorityPixels) {
+            pos = certificationCheckpointWriteInt(buffer, pos, value);
+        }
+        pos = certificationCheckpointWriteInt(buffer, pos, overlay.currentPicturePicColorSet ? 1 : 0);
+        pos = certificationCheckpointWriteInt(buffer, pos, overlay.currentPicturePicColor);
+        pos = certificationCheckpointWriteInt(buffer, pos, overlay.currentPicturePriColorSet ? 1 : 0);
+        pos = certificationCheckpointWriteInt(buffer, pos, overlay.currentPicturePriColor);
+        pos = certificationCheckpointWriteInt(buffer, pos, overlay.currentPicturePenStyle);
 
         byte[] exact = new byte[pos];
         System.arraycopy(buffer, 0, exact, 0, pos);
@@ -439,6 +512,31 @@ new_overlay_tail = r'''    private static final int CERTIFICATION_CHECKPOINT_MAG
             overlay.viewLoaded[i] = (loadedBits & 4) != 0;
             overlay.soundLoaded[i] = (loadedBits & 8) != 0;
         }
+
+        overlay.currentPictureIndex = certificationCheckpointReadInt(data, cursor);
+        int currentVisualLength = certificationCheckpointReadInt(data, cursor);
+        int expectedPicturePixels = overlay.currentPictureIndex < 0 ? 0 : (160 * 168);
+        if (currentVisualLength != expectedPicturePixels) {
+            throw new IllegalArgumentException("Certification current-picture visual size mismatch");
+        }
+        overlay.currentPictureVisualPixels = new int[currentVisualLength];
+        for (int i = 0; i < currentVisualLength; i++) {
+            overlay.currentPictureVisualPixels[i] = certificationCheckpointReadInt(data, cursor);
+        }
+        int currentPriorityLength = certificationCheckpointReadInt(data, cursor);
+        if (currentPriorityLength != expectedPicturePixels) {
+            throw new IllegalArgumentException("Certification current-picture priority size mismatch");
+        }
+        overlay.currentPicturePriorityPixels = new int[currentPriorityLength];
+        for (int i = 0; i < currentPriorityLength; i++) {
+            overlay.currentPicturePriorityPixels[i] = certificationCheckpointReadInt(data, cursor);
+        }
+        overlay.currentPicturePicColorSet = certificationCheckpointReadInt(data, cursor) != 0;
+        overlay.currentPicturePicColor = certificationCheckpointReadInt(data, cursor);
+        overlay.currentPicturePriColorSet = certificationCheckpointReadInt(data, cursor) != 0;
+        overlay.currentPicturePriColor = certificationCheckpointReadInt(data, cursor);
+        overlay.currentPicturePenStyle = certificationCheckpointReadInt(data, cursor);
+
         if (cursor.pos != data.length) throw new IllegalArgumentException("Trailing certification checkpoint data");
         decoded.overlay = overlay;
         return decoded;

@@ -8,6 +8,7 @@ if len(sys.argv) != 2:
 root = Path(sys.argv[1]).resolve()
 saved_games = root / 'core/src/main/java/com/agifans/agile/SavedGames.java'
 commands = root / 'core/src/main/java/com/agifans/agile/Commands.java'
+picture = root / 'core/src/main/java/com/agifans/agile/agilib/Picture.java'
 interpreter = root / 'core/src/main/java/com/agifans/agile/Interpreter.java'
 worker = root / 'html/src/main/java/com/agifans/agile/worker/AgileWebWorker.java'
 store = root / 'core/src/main/java/com/agifans/agile/CertificationCheckpointStore.java'
@@ -15,7 +16,7 @@ checkpoint_random = root / 'core/src/main/java/com/agifans/agile/CertificationCh
 certification_random = root / 'core/src/main/java/com/agifans/agile/CertificationRandom.java'
 replay_random = root / 'core/src/main/java/com/agifans/agile/CertificationReplayRandom.java'
 
-for path in (saved_games, commands, interpreter, worker):
+for path in (saved_games, commands, picture, interpreter, worker):
     if not path.exists():
         raise RuntimeError(f'missing Phase -1H source: {path}')
 
@@ -110,6 +111,79 @@ if replay_random.exists():
             'replay random checkpoint restore',
         )
     replay_random.write_text(replay_text)
+
+picture_text = picture.read_text()
+if 'Picture clone = new Picture(jagiPicture);' not in picture_text:
+    picture_text = one(
+        picture_text,
+        '''    public Picture clone() {
+        // It doesn't matter that we're using the same JAGI Picture. The actual
+        // drawing state is in the PictureContext, which will be a different
+        // instance. The JAGI Picture contains only the Vector of picture codes.
+        return new Picture(jagiPicture);
+    }
+''',
+        '''    public Picture clone() {
+        // Certification checkpoints need the clone to retain the Resource identity
+        // of the master PICTURE it came from. Upstream AGILE drops Resource.index
+        // here even though currentPicture is that clone.
+        Picture clone = new Picture(jagiPicture);
+        clone.index = index;
+        clone.isLoaded = isLoaded;
+        return clone;
+    }
+''',
+        'picture clone resource identity',
+    )
+if 'restoreCertificationDrawingState' not in picture_text:
+    picture_text = one(
+        picture_text,
+        '''        return jagiPictureContext.getPriorityData();
+    }
+''',
+        '''        return jagiPictureContext.getPriorityData();
+    }
+
+    public boolean certificationPicColorSet() {
+        return jagiPictureContext.picColor != null;
+    }
+
+    public int certificationPicColor() {
+        return jagiPictureContext.picColor == null ? 0 : jagiPictureContext.picColor.intValue();
+    }
+
+    public boolean certificationPriColorSet() {
+        return jagiPictureContext.priColor != null;
+    }
+
+    public int certificationPriColor() {
+        return jagiPictureContext.priColor == null ? 0 : jagiPictureContext.priColor.byteValue();
+    }
+
+    public int certificationPenStyle() {
+        return jagiPictureContext.penStyle;
+    }
+
+    public void restoreCertificationDrawingState(
+            int[] visualPixels, int[] priorityPixels,
+            boolean picColorSet, int picColor,
+            boolean priColorSet, int priColor,
+            int penStyle) {
+        if (visualPixels == null || priorityPixels == null
+                || visualPixels.length != 160 * 168
+                || priorityPixels.length != 160 * 168) {
+            throw new IllegalArgumentException("Certification current-picture pixel size mismatch");
+        }
+        System.arraycopy(visualPixels, 0, jagiPictureContext.getPictureData(), 0, visualPixels.length);
+        System.arraycopy(priorityPixels, 0, jagiPictureContext.getPriorityData(), 0, priorityPixels.length);
+        jagiPictureContext.picColor = picColorSet ? Integer.valueOf(picColor) : null;
+        jagiPictureContext.priColor = priColorSet ? Byte.valueOf((byte)priColor) : null;
+        jagiPictureContext.penStyle = (byte)penStyle;
+    }
+''',
+        'picture certification drawing state',
+    )
+picture.write_text(picture_text)
 
 store.write_text(r'''package com.agifans.agile;
 
@@ -274,6 +348,37 @@ if 'captureCertificationCheckpoint()' not in c:
                 if (soundLoaded[i]) soundPlayer.loadSound(state.sounds[i]);
             }
         }
+    }
+
+    public void restoreCertificationCurrentPicture(
+            int pictureIndex, int[] visualPixels, int[] priorityPixels,
+            boolean picColorSet, int picColor,
+            boolean priColorSet, int priColor,
+            int penStyle) {
+        if (pictureIndex < 0) {
+            state.currentPicture = null;
+            return;
+        }
+        if (pictureIndex >= state.pictures.length || state.pictures[pictureIndex] == null) {
+            throw new IllegalArgumentException("Certification current-picture index mismatch");
+        }
+        if (visualPixels == null || priorityPixels == null
+                || visualPixels.length != 160 * 168
+                || priorityPixels.length != 160 * 168) {
+            throw new IllegalArgumentException("Certification current-picture payload mismatch");
+        }
+        Picture restoredPicture = state.pictures[pictureIndex].clone();
+        restoredPicture.index = pictureIndex;
+        restoredPicture.restoreCertificationDrawingState(
+                visualPixels, priorityPixels,
+                picColorSet, picColor, priColorSet, priColor, penStyle);
+        state.currentPicture = restoredPicture;
+
+        // Rebuild the interpreter's non-shared picture working buffers and animated
+        // object save areas from the exact current-picture context. Host framebuffer
+        // bytes are restored separately after the worker round-trip.
+        updatePixelArrays();
+        state.drawObjects();
     }
 
     public boolean restoreCertificationCheckpoint(byte[] checkpointData) {

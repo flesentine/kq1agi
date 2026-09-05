@@ -109,7 +109,7 @@ class MockWorker {
   assert.equal(lane.variableSlots, 8353);
   assert.equal(lane.keyPressQueueSAB.byteLength, 8 + 257 * 4);
   assert.equal(lane.certificationDigestSAB.byteLength, 13 * 4);
-  assert.equal(lane.certificationCheckpointSAB.byteLength, 32768 * 4);
+  assert.equal(lane.certificationCheckpointSAB.byteLength, 524288 * 4);
   assert.throws(() => createLaneBuffers({ digestSlots: 12 }), /at least 13/);
   assert.throws(() => createLaneBuffers({ checkpointSlots: 4095 }), /at least 4096/);
   assert.throws(() => createLaneBuffers({ variableSlots: 8352 }), /at least 8353/);

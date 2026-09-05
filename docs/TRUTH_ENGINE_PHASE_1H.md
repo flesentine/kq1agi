@@ -33,7 +33,7 @@ The real compiled-worker qualification exposed the first expected gap in that re
 
 ## Serialized checkpoint and round-trip verification
 
-The initial probe kept the reconstruction payload worker-local until real compiled-worker qualification proved the reconstruction exact. The next Phase -1H slice now serializes the Sierra reconstruction bytes and transient/RNG overlay into one deterministic `KQ1H` v1 binary envelope.
+The initial probe kept the reconstruction payload worker-local until real compiled-worker qualification proved the reconstruction exact. Phase -1H originally serialized the Sierra reconstruction bytes and transient/RNG overlay as `KQ1H` v1. Phase -1I chained-checkpoint qualification exposed one additional hidden reconstruction dependency: AGILE's `currentPicture` drawing context can be absent after Sierra restore even when semantic-v1 and the visible framebuffer are exact. The certification worker envelope is therefore now `KQ1H` v2 and also carries the exact current-picture visual pixels, priority pixels, picture resource identity, and drawing colour/pen state so a restored worker remains checkpointable and future `overlay.pic` / `add.to.pic` operations have the same hidden picture state.
 
 Each lane exports that envelope through a dedicated SharedArrayBuffer. The host copies both lane payloads into the checkpoint object, snapshots the host/shared transports, and computes a canonical SHA-256 identity over the checkpoint content. Phase -1H requires SubtleCrypto SHA-256; there is no weaker fallback for checkpoint authentication.
 
@@ -59,7 +59,7 @@ Fresh-worker restore is held to the same per-lane exactness rule as same-worker 
 
 - `CHECKPOINT_CAPTURED` — a probe payload and host transport snapshot were captured at an authoritative MATCH barrier.
 - `CHECKPOINT_BASELINE_REJECTED` — the capture point was not an authoritative MATCH barrier.
-- `CHECKPOINT_CAPTURE_UNAVAILABLE` — the barrier is valid but the save-game reconstruction backbone cannot represent it yet (v1: no current Picture before the first `draw.pic`).
+- `CHECKPOINT_CAPTURE_UNAVAILABLE` — the barrier is valid but the save-game reconstruction backbone cannot represent it yet (no current Picture before the first `draw.pic`).
 - `CHECKPOINT_CAPTURE_ERROR` — one or both workers threw while creating the reconstruction payload.
 - `CHECKPOINT_RESTORE_ERROR` — one or both workers could not restore the payload.
 - `CHECKPOINT_HASH_MISMATCH` — checkpoint content no longer matches its authenticated identity; restore is rejected before mutation.

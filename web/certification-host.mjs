@@ -40,7 +40,7 @@ const DEFAULTS = Object.freeze({
   keyCapacity: 256,
   traceSlots: 16,
   digestSlots: 13,
-  checkpointSlots: 32768,
+  checkpointSlots: 524288,
   variableSlots: VAR.VARIABLE_SLOTS,
   seed: 0x4b513142,
   barrierTimeoutMs: 3000,
