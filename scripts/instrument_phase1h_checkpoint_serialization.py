@@ -227,9 +227,11 @@ new_overlay_tail = r'''    private static final int CERTIFICATION_CHECKPOINT_MAG
             overlay.currentPicturePriColor = 0;
             overlay.currentPicturePenStyle = 0;
         } else {
-            overlay.currentPictureIndex = commands.getCertificationCurrentPictureIndex();
-            if (overlay.currentPictureIndex < 0) {
-                throw new IllegalStateException("Missing certification current-picture script identity");
+            overlay.currentPictureIndex = state.currentPicture.index;
+            if (overlay.currentPictureIndex < 0
+                    || overlay.currentPictureIndex >= state.pictures.length
+                    || state.pictures[overlay.currentPictureIndex] == null) {
+                throw new IllegalStateException("Invalid certification current-picture resource identity");
             }
             int[] currentVisual = state.currentPicture.getVisualPixels();
             int[] currentPriority = state.currentPicture.getPriorityPixels();
