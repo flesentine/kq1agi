@@ -10,7 +10,6 @@ on:
       - 'web/certification-host.mjs'
       - 'docs/TRUTH_ENGINE_PHASE_1B.md'
       - 'docs/TRUTH_ENGINE_PHASE_1I.md'
-      - 'docs/TRUTH_ENGINE_PHASE_1I.md'
   push:
     branches: [main]
     paths:
@@ -18,6 +17,7 @@ on:
       - 'scripts/**'
       - 'web/certification-host.mjs'
       - 'docs/TRUTH_ENGINE_PHASE_1B.md'
+      - 'docs/TRUTH_ENGINE_PHASE_1I.md'
 
 permissions:
   contents: read
