@@ -3,10 +3,11 @@ import {
   encodeRandomReplay,
   hashPlayRecordingV1,
 } from './certification-recording.mjs';
-import { hashCertificationCheckpointV1 } from './certification-host.mjs';
+import { CertificationLayout, hashCertificationCheckpointV1 } from './certification-host.mjs';
 
 const CHECKPOINT_SCHEMA = 'kq1agi-certification-checkpoint-v1';
 const RECORDING_SCHEMA = 'kq1agi-play-recording-v1';
+const RANDOM_DRAWS_SLOT = CertificationLayout.DIGEST.RANDOM_DRAWS;
 
 function asTick(value) {
   const n = Number(value);
@@ -144,6 +145,32 @@ export async function proveCheckpointCandidateCompatibilityV1(
     return reject('edit-config-identity');
   }
 
+  const truthRandomDraws = Number(checkpoint.truthDigest?.[RANDOM_DRAWS_SLOT]);
+  const editedRandomDraws = Number(checkpoint.editedDigest?.[RANDOM_DRAWS_SLOT]);
+  if (!Number.isSafeInteger(truthRandomDraws)
+      || truthRandomDraws < 0
+      || truthRandomDraws !== editedRandomDraws) {
+    return reject('checkpoint-random-count', {
+      truthRandomDraws,
+      editedRandomDraws,
+    });
+  }
+  if (source.random.length < truthRandomDraws
+      || candidate.random.length < truthRandomDraws) {
+    return reject('random-prefix-length', {
+      consumedRandomDraws: truthRandomDraws,
+      sourceRandomCount: source.random.length,
+      candidateRandomCount: candidate.random.length,
+    });
+  }
+  const sourceConsumedRandom = source.random.slice(0, truthRandomDraws);
+  const candidateConsumedRandom = candidate.random.slice(0, truthRandomDraws);
+  if (!sameJson(sourceConsumedRandom, candidateConsumedRandom)) {
+    return reject('random-draw-prefix', {
+      consumedRandomDraws: truthRandomDraws,
+    });
+  }
+
   const sourceBoundary = source.releaseTicks.includes(resumeBeforeTick);
   const candidateBoundary = candidate.releaseTicks.includes(resumeBeforeTick);
   if (!sourceBoundary || !candidateBoundary) {
@@ -172,6 +199,7 @@ export async function proveCheckpointCandidateCompatibilityV1(
     candidateRecordingHash: candidateResult.hash,
     sourceRandomReplaySpec,
     candidateRandomReplaySpec: encodeRandomReplay(candidateRecording),
+    consumedRandomDraws: truthRandomDraws,
     compatibilityKey: [
       expectedCheckpointHash,
       candidateResult.hash,
