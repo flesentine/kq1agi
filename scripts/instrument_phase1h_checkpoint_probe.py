@@ -328,6 +328,16 @@ if 'captureCertificationCheckpoint()' not in c:
         }
     }
 
+    public int getCertificationCurrentPictureIndex() {
+        int pictureIndex = -1;
+        for (ScriptBufferEvent event : state.scriptBuffer.events) {
+            if (event.type == ScriptBuffer.ScriptBufferEventType.DRAW_PIC) {
+                pictureIndex = event.resourceNumber;
+            }
+        }
+        return pictureIndex;
+    }
+
     public void restoreCertificationCurrentPicture(
             int pictureIndex, int[] visualPixels, int[] priorityPixels,
             boolean picColorSet, int picColor,
