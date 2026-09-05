@@ -80,3 +80,52 @@ Until that proof exists, minimizer candidate runners stay on the full replay ora
 ## Next slice
 
 Add an explicit candidate/checkpoint compatibility proof and authenticated checkpoint-context rebinding for recording-only changes that are provably after the checkpoint. Gate every accelerated candidate against the existing full-from-start replay oracle before allowing minimizers to use the shortcut by default.
+
+
+## Phase -1I.1 — candidate compatibility and authenticated rebinding
+
+Phase -1I.1 adds the proof layer required before minimizers may reuse a checkpoint captured under another recording hash.
+
+A checkpoint is eligible for a recording-only candidate only when all of the following hold:
+
+1. the source checkpoint SHA-256 is valid;
+2. the source and candidate Phase -1D recording hashes are independently valid;
+3. the checkpoint context names the exact source recording and source RNG replay specification;
+4. GAMEFILES hash/byte length are unchanged;
+5. EditConfig hash is unchanged;
+6. both recordings still begin at logical tick 1 and are not overflowed;
+7. the candidate continues past the checkpoint;
+8. `checkpoint.logicalTick + 1` remains a recorded cycle-release boundary; and
+9. the canonical replay authority through `checkpoint.logicalTick` is exactly equal:
+   - all release ticks through the checkpoint,
+   - all transport events through the checkpoint, including seq/tick/phase/payload,
+   - all RNG observations through the checkpoint, and
+   - the frozen game/EditConfig identity fields.
+
+Only after that proof may the checkpoint context be rebound. Rebinding is deliberately narrow:
+
+- `recordingHash` changes to the candidate recording hash;
+- `randomReplaySpec` changes to the candidate's full authenticated RNG stream;
+- seed, GAMEFILES identity, EditConfig identity, and recorded-external-timing mode remain exactly frozen; and
+- the complete checkpoint is SHA-256 authenticated again after the context change.
+
+This permits suffix-only recording changes, including a shorter Phase -1E prefix or Phase -1F input removal after the checkpoint, while refusing any change that could have affected the captured state.
+
+Phase -1G is still ineligible. A different EditConfig hash can alter execution from tick 1, so Phase -1I.1 never rebinds EditConfig identity.
+
+The compatibility proof also emits a deterministic `compatibilityKey` containing the original checkpoint hash, candidate recording hash, and checkpoint tick. This is the minimum identity future accelerated-candidate caches must include.
+
+### Phase -1I.1 acceptance criteria
+
+- A suffix-only input change after the checkpoint is compatible.
+- A suffix-only RNG-stream change after the checkpoint is compatible and rebinds the full candidate RNG replay specification.
+- Any transport or RNG change through the checkpoint is rejected.
+- Removing the checkpoint's next release boundary is rejected.
+- A candidate ending at or before the checkpoint is rejected.
+- GAMEFILES changes are rejected.
+- EditConfig changes are rejected.
+- A tampered checkpoint is rejected before compatibility reasoning.
+- A checkpoint whose context does not name the exact source recording/RNG stream is rejected.
+- Successful rebinding changes only recording/RNG identity and produces a new valid checkpoint SHA-256.
+
+Minimizer execution remains on the from-start oracle until the next slice adds candidate-level equivalence gating around this proof.
