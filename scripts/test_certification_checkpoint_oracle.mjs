@@ -69,11 +69,14 @@ function evidence(overrides = {}) {
   const lane = {
     trace: [1,2,3,4],
     digest: [1,2,3,4,5,1,2,0],
-    queue: [0,1],
-    keys: [0,1],
-    oldKeys: [0,0],
-    vars: [1,2,3],
-    pixels: [4,5,6],
+    transport: {
+      queue: [0,1],
+      keys: [0,1],
+      oldKeys: [0,0],
+      vars: [1,2,3],
+      pixels: [4,5,6],
+    },
+    workerPayload: [1,2,3,4],
     quit: false,
     error: null,
     soundRequests: [],
@@ -210,7 +213,7 @@ assert.equal(decisionMismatch.authoritativeSummary, fullRun.summary);
 
 // Exact decision but changed terminal state is still a mismatch.
 const evidenceMismatchRun = structuredClone(acceleratedRun);
-evidenceMismatchRun.evidence.edited.pixels[1] = 99;
+evidenceMismatchRun.evidence.edited.transport.pixels[1] = 99;
 const evidenceMismatch = await runCheckpointCandidateOracleV1({
   checkpoint,
   sourceRecording: source,
@@ -279,6 +282,17 @@ assert.equal(thrown.status, 'CHECKPOINT_ORACLE_FULL_ONLY');
 assert.equal(thrown.reason, 'checkpoint-exception');
 assert.match(thrown.checkpointError, /synthetic checkpoint failure/);
 assert.equal(thrown.authoritativeSummary, fullRun.summary);
+
+// Two equally incomplete evidence objects must not be considered equivalent.
+const incompleteEvidence = evidence();
+delete incompleteEvidence.truth.workerPayload;
+const invalidEvidenceComparison = compareCheckpointOracleRunsV1(
+  { summary: fullRun.summary, evidence: incompleteEvidence },
+  { summary: acceleratedRun.summary, evidence: structuredClone(incompleteEvidence) },
+);
+assert.equal(invalidEvidenceComparison.equivalent, false);
+assert.equal(invalidEvidenceComparison.category, 'invalid-evidence');
+assert.equal(invalidEvidenceComparison.fullEvidenceValidation.reason, 'truth-worker-payload');
 
 // Missing evidence can never be trusted.
 const missingEvidence = await runCheckpointCandidateOracleV1({
