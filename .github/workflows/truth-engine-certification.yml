@@ -8,6 +8,7 @@ on:
       - '.github/workflows/truth-engine-certification.yml'
       - 'scripts/**'
       - 'web/certification-host.mjs'
+      - 'web/certification-checkpoint-compat.mjs'
       - 'docs/TRUTH_ENGINE_PHASE_1B.md'
       - 'docs/TRUTH_ENGINE_PHASE_1I.md'
   push:
@@ -16,6 +17,7 @@ on:
       - '.github/workflows/truth-engine-certification.yml'
       - 'scripts/**'
       - 'web/certification-host.mjs'
+      - 'web/certification-checkpoint-compat.mjs'
       - 'docs/TRUTH_ENGINE_PHASE_1B.md'
       - 'docs/TRUTH_ENGINE_PHASE_1I.md'
 
@@ -44,6 +46,7 @@ jobs:
         run: |
           node scripts/test_certification_host.mjs
           node scripts/test_certification_recording.mjs
+          node scripts/test_certification_checkpoint_compat.mjs
 
       - name: Fetch exact AGILE source for both lanes
         run: |
