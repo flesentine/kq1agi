@@ -126,6 +126,7 @@ grep -q 'CHECKPOINT_CANDIDATE_COMPATIBLE' "$OUT/certification-checkpoint-compat.
 grep -q 'rebindCheckpointForRecordingCandidateV1' "$OUT/certification-checkpoint-compat.mjs"
 grep -q 'CHECKPOINT_ORACLE_EQUIVALENT' "$OUT/certification-checkpoint-oracle.mjs"
 grep -q 'runCheckpointCandidateOracleV1' "$OUT/certification-checkpoint-oracle.mjs"
+grep -q 'validateCheckpointOracleEvidenceV1' "$OUT/certification-checkpoint-oracle.mjs"
 grep -q 'certify-reduce-inputs-button' "$OUT/certification-phase1d.mjs"
 grep -q 'minimizeInputGroupsV1' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-reduce-edits-button' "$OUT/certification-phase1d.mjs"
