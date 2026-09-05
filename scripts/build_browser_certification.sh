@@ -107,9 +107,13 @@ cp docs/TRUTH_ENGINE_PHASE_1E.md "$OUT/PHASE_1E.md"
 cp docs/TRUTH_ENGINE_PHASE_1F.md "$OUT/PHASE_1F.md"
 cp docs/TRUTH_ENGINE_PHASE_1G.md "$OUT/PHASE_1G.md"
 cp docs/TRUTH_ENGINE_PHASE_1H.md "$OUT/PHASE_1H.md"
+cp docs/TRUTH_ENGINE_PHASE_1I.md "$OUT/PHASE_1I.md"
 
 test -f "$OUT/certification-input-minimizer.mjs"
 test -f "$OUT/certification-edit-minimizer.mjs"
+test -f "$OUT/PHASE_1I.md"
+grep -q 'REPLAY_PAUSED' "$OUT/certification-recording.mjs"
+grep -q 'checkpoint-resume-boundary' "$OUT/certification-recording.mjs"
 grep -q 'certify-reduce-inputs-button' "$OUT/certification-phase1d.mjs"
 grep -q 'minimizeInputGroupsV1' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-reduce-edits-button' "$OUT/certification-phase1d.mjs"
@@ -123,6 +127,7 @@ printf '%s\n' \
   'Phase -1F dependency-safe input minimization can remove keyboard/mouse action groups while preserving the frozen schedule, RNG stream, sound completions, and exact divergence identity.' \
   'Phase -1G dependency-safe EditConfig minimization removes whole room configs and the visual-pin set while freshly rebinding both EditConfig and recording hashes for every candidate.' \
   'Phase -1H starts an exact checkpoint/restore contract with a certification-only destructive round-trip probe; arbitrary-start replay remains disabled until the restored lane matches its own captured semantic-v1 state.' \
+  'Phase -1I.0 adds an authenticated checkpoint-start replay cursor at recorded pre-release boundaries while leaving minimizer candidates on the full from-start oracle until dependency-safe checkpoint rebinding is proven.' \
   > "$OUT/ARTIFACT.txt"
 
 find "$OUT" -maxdepth 2 -type f | sort
