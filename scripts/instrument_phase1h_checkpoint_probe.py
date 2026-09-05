@@ -119,7 +119,6 @@ if 'restoreCertificationDrawingState' not in picture_text:
         '''    public int[] getPriorityPixels() {
         return jagiPictureContext.getPriorityData();
     }
-}
 ''',
         '''    public int[] getPriorityPixels() {
         return jagiPictureContext.getPriorityData();
@@ -161,7 +160,6 @@ if 'restoreCertificationDrawingState' not in picture_text:
         jagiPictureContext.priColor = priColorSet ? Byte.valueOf((byte)priColor) : null;
         jagiPictureContext.penStyle = (byte)penStyle;
     }
-}
 ''',
         'picture certification drawing state',
     )
