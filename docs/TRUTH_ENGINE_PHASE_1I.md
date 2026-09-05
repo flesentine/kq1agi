@@ -133,3 +133,50 @@ The compatibility proof also emits a deterministic `compatibilityKey` containing
 - Successful rebinding changes only recording/RNG identity and produces a new valid checkpoint SHA-256.
 
 Minimizer execution remains on the from-start oracle until the next slice adds candidate-level equivalence gating around this proof.
+
+
+## Phase -1I.2 — shadow oracle-gated candidate replay
+
+Phase -1I.2 adds a reusable shadow runner around the Phase -1I.1 compatibility/rebinding proof.
+
+The full from-start replay remains authoritative in every case. The checkpoint path is experimental evidence only.
+
+For each candidate:
+
+1. run the candidate from logical tick 1 using the existing replay oracle;
+2. if that full replay does not end in a trusted terminal classification (`REPLAY_MATCH`, `DIVERGED`, or `COMPLETE`), return the full result without trying acceleration;
+3. prove checkpoint/candidate compatibility with Phase -1I.1;
+4. if incompatible, return the full result without trying acceleration;
+5. re-authenticate the compatible checkpoint to the candidate recording/RNG identity;
+6. run the candidate again from the rebound checkpoint;
+7. canonicalize both replay decisions while excluding non-semantic telemetry such as consumed-tick counts, replay-start tick, certified-barrier count, skipped-prefix count, and snapshot epoch;
+8. require the canonical decisions to be exactly equal;
+9. require exact terminal evidence equality for:
+   - logical tick, cycle, and compared cycle,
+   - ORIGINAL and EDITED diagnostic traces,
+   - semantic-v1 digests including RNG draw position,
+   - key queue, keys, old keys, and the complete shared variable transport,
+   - framebuffer pixels,
+   - quit/error state,
+   - pending sound requests/completions, and
+   - pending external divergence state; and
+10. only then return `CHECKPOINT_ORACLE_EQUIVALENT`.
+
+If the checkpoint path throws, omits evidence, disagrees on the replay decision, or differs in any terminal evidence field, the result is not trusted. The full replay classification remains authoritative and the runner reports either `CHECKPOINT_ORACLE_FULL_ONLY` or `CHECKPOINT_ORACLE_MISMATCH`.
+
+The runner reports full and checkpoint consumed-tick telemetry plus `savedTicks`, but those values are explicitly excluded from semantic equivalence.
+
+### Phase -1I.2 acceptance criteria
+
+- Compatible full/checkpoint runs with the same semantic outcome and exact terminal evidence return `CHECKPOINT_ORACLE_EQUIVALENT`.
+- Different replay-start tick, consumed ticks, certified-barrier count, skipped-prefix count, and snapshot epoch do not create false mismatches.
+- A decision mismatch is rejected even if terminal evidence is otherwise equal.
+- An evidence mismatch is rejected even if the replay decision is equal.
+- Missing checkpoint evidence is rejected.
+- A checkpoint replay exception falls back to the full result.
+- A Phase -1I.1-incompatible candidate never attempts checkpoint replay.
+- Full `REPLAY_CONTRACT_MISS`, `REPLAY_TIMING_MISS`, or `STOPPED` results remain full-only.
+- The full replay result remains the authoritative candidate classification in every branch.
+- Phase -1E/-1F/-1G minimizer call sites remain unchanged in this slice.
+
+The next slice may wire Phase -1E/-1F candidate execution through this shadow runner to collect real minimizer-level equivalence evidence. It must not skip the full replay until a later policy freeze explicitly permits that optimization.
