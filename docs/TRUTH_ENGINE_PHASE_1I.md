@@ -94,9 +94,10 @@ A checkpoint is eligible for a recording-only candidate only when all of the fol
 4. GAMEFILES hash/byte length are unchanged;
 5. EditConfig hash is unchanged;
 6. both recordings still begin at logical tick 1 and are not overflowed;
-7. the candidate continues past the checkpoint;
-8. `checkpoint.logicalTick + 1` remains a recorded cycle-release boundary; and
-9. the canonical replay authority through `checkpoint.logicalTick` is exactly equal:
+7. the checkpoint was captured under recorded-external-timing mode;
+8. both source and candidate continue past the checkpoint;
+9. `checkpoint.logicalTick + 1` remains a recorded cycle-release boundary; and
+10. the canonical replay authority through `checkpoint.logicalTick` is exactly equal:
    - all release ticks through the checkpoint,
    - all transport events through the checkpoint, including seq/tick/phase/payload,
    - all RNG observations through the checkpoint, and
@@ -121,7 +122,8 @@ The compatibility proof also emits a deterministic `compatibilityKey` containing
 - A suffix-only RNG-stream change after the checkpoint is compatible and rebinds the full candidate RNG replay specification.
 - Any transport or RNG change through the checkpoint is rejected.
 - Removing the checkpoint's next release boundary is rejected.
-- A candidate ending at or before the checkpoint is rejected.
+- A source or candidate ending at or before the checkpoint is rejected.
+- A checkpoint not captured under recorded-external-timing mode is rejected.
 - GAMEFILES changes are rejected.
 - EditConfig changes are rejected.
 - A tampered checkpoint is rejected before compatibility reasoning.
