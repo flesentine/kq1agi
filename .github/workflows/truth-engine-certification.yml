@@ -75,6 +75,7 @@ jobs:
             core/src/main/java/com/agifans/agile/CertificationRandom.java \
             core/src/main/java/com/agifans/agile/Commands.java \
             core/src/main/java/com/agifans/agile/Interpreter.java \
+            core/src/main/java/com/agifans/agile/agilib/Picture.java \
             core/src/main/java/com/agifans/agile/SavedGames.java \
             html/src/main/java/com/agifans/agile/gwt/CertificationSavedGameStore.java \
             html/src/main/java/com/agifans/agile/worker/AgileWebWorker.java \
