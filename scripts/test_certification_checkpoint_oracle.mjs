@@ -8,8 +8,10 @@ import {
 import { hashCertificationCheckpointV1 } from '../web/certification-host.mjs';
 import {
   canonicalReplayOracleDecisionV1,
+  captureCheckpointOracleEvidenceV1,
   compareCheckpointOracleRunsV1,
   runCheckpointCandidateOracleV1,
+  validateCheckpointOracleEvidenceV1,
 } from '../web/certification-checkpoint-oracle.mjs';
 
 async function freezeRecording(overrides = {}) {
@@ -124,6 +126,45 @@ function divergentSummary(overrides = {}) {
     ...overrides,
   };
 }
+
+const rawProbeHost = {
+  captureCheckpointOracleEvidenceProbe: async () => ({
+    status: 'CHECKPOINT_ORACLE_EVIDENCE_CAPTURED',
+    logicalTick: 12,
+    cycle: 12,
+    comparedCycle: 12,
+    truthTrace: [1,2,3,4],
+    editedTrace: [1,2,3,4],
+    truthDigest: [1,2,3,4,5,1,2,0],
+    editedDigest: [1,2,3,4,5,1,2,0],
+    truthTransport: { queue:[0,1], keys:[0], oldKeys:[0], vars:[1,2], pixels:[3,4] },
+    editedTransport: { queue:[0,1], keys:[0], oldKeys:[0], vars:[1,2], pixels:[3,4] },
+    truthWorkerPayload: [1,2,3],
+    editedWorkerPayload: [4,5,6],
+    truthQuit: false,
+    editedQuit: false,
+    truthError: null,
+    editedError: null,
+    truthSoundRequests: [],
+    editedSoundRequests: [],
+    pendingSoundCompletions: [],
+    pendingExternalDivergence: null,
+  }),
+};
+const wrappedEvidence = await captureCheckpointOracleEvidenceV1(rawProbeHost);
+assert.equal(validateCheckpointOracleEvidenceV1(wrappedEvidence).valid, true);
+assert.deepEqual(wrappedEvidence.truth.workerPayload, [1,2,3]);
+assert.deepEqual(wrappedEvidence.edited.workerPayload, [4,5,6]);
+
+await assert.rejects(
+  () => captureCheckpointOracleEvidenceV1({
+    captureCheckpointOracleEvidenceProbe: async () => ({
+      status: 'CHECKPOINT_ORACLE_EVIDENCE_UNAVAILABLE',
+      reason: 'worker-payload',
+    }),
+  }),
+  /worker-payload/,
+);
 
 const source = await freezeRecording();
 const candidate = await freezeRecording({
