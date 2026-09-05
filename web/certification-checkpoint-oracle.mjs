@@ -60,47 +60,62 @@ function firstDifference(expected, actual, path = '$') {
   return { path, expected, actual, reason: 'value' };
 }
 
-function laneEvidence(lane) {
-  const semanticSlots = CertificationLayout.DIGEST.SEMANTIC_SLOTS;
+function canonicalTransport(snapshot) {
   return Object.freeze({
-    trace: Object.freeze(copyU32(lane.trace)),
-    digest: Object.freeze(copyU32(lane.digest.slice(0, semanticSlots))),
-    queue: Object.freeze(copyU32(lane.queue)),
-    keys: Object.freeze(copyU32(lane.keys)),
-    oldKeys: Object.freeze(copyU32(lane.oldKeys)),
-    vars: Object.freeze(copyU32(lane.vars)),
-    pixels: Object.freeze(copyU32(new Uint32Array(lane.pixelDataSAB))),
-    quit: lane.quit === true,
-    error: lane.error == null ? null : String(lane.error?.message ?? lane.error),
-    soundRequests: Object.freeze((lane.soundRequests ?? []).map(request => Object.freeze(canonicalValue(request)))),
+    queue: Object.freeze([...(snapshot?.queue ?? [])].map(value => Number(value) >>> 0)),
+    keys: Object.freeze([...(snapshot?.keys ?? [])].map(value => Number(value) >>> 0)),
+    oldKeys: Object.freeze([...(snapshot?.oldKeys ?? [])].map(value => Number(value) >>> 0)),
+    vars: Object.freeze([...(snapshot?.vars ?? [])].map(value => Number(value) >>> 0)),
+    pixels: Object.freeze([...(snapshot?.pixels ?? [])].map(value => Number(value) >>> 0)),
   });
 }
 
 /**
  * Capture the terminal state used by the Phase -1I.2 oracle.
  *
- * Call only after runCertificationReplaySession() returns. That runner has already
- * synchronized every trusted MATCH/DIVERGENCE/COMPLETE decision at an authoritative
- * replay barrier. This function is intentionally observational: it does not pulse,
- * snapshot, checkpoint, or otherwise mutate the host.
+ * The host performs a same-barrier snapshot plus a non-destructive KQ1H v2 worker
+ * capture for each lane. ORIGINAL-vs-EDITED MATCH is not required, so divergence
+ * candidates still get hidden reconstruction-state evidence.
  */
-export function captureCheckpointOracleEvidenceV1(host) {
-  if (!host?.started || !host?.truth?.ready || !host?.edited?.ready) {
-    throw new Error('Checkpoint oracle evidence requires a started replay host.');
+export async function captureCheckpointOracleEvidenceV1(host) {
+  if (typeof host?.captureCheckpointOracleEvidenceProbe !== 'function') {
+    throw new Error('Replay host does not support checkpoint oracle evidence capture.');
   }
+  const captured = await host.captureCheckpointOracleEvidenceProbe();
+  if (captured?.status !== 'CHECKPOINT_ORACLE_EVIDENCE_CAPTURED') {
+    const reason = String(captured?.reason ?? captured?.status ?? 'unknown');
+    throw new Error('Checkpoint oracle evidence unavailable: ' + reason);
+  }
+
   return Object.freeze({
     schema: EVIDENCE_SCHEMA,
-    logicalTick: Number(host.logicalTick) >>> 0,
-    cycle: Number(host.cycle) >>> 0,
-    comparedCycle: Number(host.comparedCycle) >>> 0,
-    truth: laneEvidence(host.truth),
-    edited: laneEvidence(host.edited),
-    pendingSoundCompletions: Object.freeze((host.pendingSoundCompletions ?? []).map(event => Object.freeze({
+    logicalTick: Number(captured.logicalTick) >>> 0,
+    cycle: Number(captured.cycle) >>> 0,
+    comparedCycle: Number(captured.comparedCycle) >>> 0,
+    truth: Object.freeze({
+      trace: Object.freeze([...(captured.truthTrace ?? [])].map(value => Number(value) >>> 0)),
+      digest: Object.freeze([...(captured.truthDigest ?? [])].map(value => Number(value) >>> 0)),
+      transport: canonicalTransport(captured.truthTransport),
+      workerPayload: Object.freeze([...(captured.truthWorkerPayload ?? [])].map(value => Number(value) & 0xff)),
+      quit: captured.truthQuit === true,
+      error: captured.truthError == null ? null : String(captured.truthError),
+      soundRequests: Object.freeze((captured.truthSoundRequests ?? []).map(request => Object.freeze(canonicalValue(request)))),
+    }),
+    edited: Object.freeze({
+      trace: Object.freeze([...(captured.editedTrace ?? [])].map(value => Number(value) >>> 0)),
+      digest: Object.freeze([...(captured.editedDigest ?? [])].map(value => Number(value) >>> 0)),
+      transport: canonicalTransport(captured.editedTransport),
+      workerPayload: Object.freeze([...(captured.editedWorkerPayload ?? [])].map(value => Number(value) & 0xff)),
+      quit: captured.editedQuit === true,
+      error: captured.editedError == null ? null : String(captured.editedError),
+      soundRequests: Object.freeze((captured.editedSoundRequests ?? []).map(request => Object.freeze(canonicalValue(request)))),
+    }),
+    pendingSoundCompletions: Object.freeze((captured.pendingSoundCompletions ?? []).map(event => Object.freeze({
       dueTick: Number(event?.dueTick) >>> 0,
       endFlag: Number(event?.endFlag) & 0xff,
     }))),
-    pendingExternalDivergence: host.pendingExternalDivergence == null
-      ? null : Object.freeze(canonicalValue(host.pendingExternalDivergence)),
+    pendingExternalDivergence: captured.pendingExternalDivergence == null
+      ? null : Object.freeze(canonicalValue(captured.pendingExternalDivergence)),
   });
 }
 
