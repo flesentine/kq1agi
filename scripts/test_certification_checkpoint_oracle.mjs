@@ -85,6 +85,15 @@ function evidence(overrides = {}) {
   };
   return {
     schema: 'kq1agi-checkpoint-oracle-evidence-v1',
+    context: {
+      seed: 1234,
+      gameHash: 'sha256:game',
+      gameBytes: 17295,
+      editConfigHash: 'sha256:edit',
+      recordingHash: candidate?.hash ?? '',
+      randomReplaySpec: '',
+      recordedExternalTiming: true,
+    },
     logicalTick: 12,
     cycle: 12,
     comparedCycle: 12,
@@ -130,6 +139,15 @@ function divergentSummary(overrides = {}) {
 const rawProbeHost = {
   captureCheckpointOracleEvidenceProbe: async () => ({
     status: 'CHECKPOINT_ORACLE_EVIDENCE_CAPTURED',
+    context: {
+      seed: 1234,
+      gameHash: 'sha256:game',
+      gameBytes: 17295,
+      editConfigHash: 'sha256:edit',
+      recordingHash: 'sha256:fixture',
+      randomReplaySpec: 'v1|',
+      recordedExternalTiming: true,
+    },
     logicalTick: 12,
     cycle: 12,
     comparedCycle: 12,
@@ -176,6 +194,7 @@ const fullRun = {
   summary: divergentSummary(),
   evidence: evidence(),
 };
+fullRun.evidence.context.recordingHash = candidate.hash;
 const acceleratedRun = {
   summary: divergentSummary({
     certifiedBarriers: 6,
@@ -193,6 +212,7 @@ const acceleratedRun = {
   }),
   evidence: evidence(),
 };
+acceleratedRun.evidence.context.recordingHash = candidate.hash;
 
 const canonical = canonicalReplayOracleDecisionV1(acceleratedRun.summary);
 assert.equal(canonical.consumedTicks, undefined);
@@ -228,6 +248,48 @@ assert.equal(equivalent.authoritativeSummary, fullRun.summary);
 assert.equal(equivalent.savedTicks, 6);
 assert.equal(fullCalls, 1);
 assert.equal(checkpointCalls, 1);
+
+// Full replay evidence must belong to the candidate.
+const wrongFullEvidence = structuredClone(fullRun);
+wrongFullEvidence.evidence.context.recordingHash = source.hash;
+await assert.rejects(
+  () => runCheckpointCandidateOracleV1({
+    checkpoint,
+    sourceRecording: source,
+    candidateRecording: candidate,
+    runFullReplay: async () => wrongFullEvidence,
+    runCheckpointReplay: async () => acceleratedRun,
+  }),
+  /does not belong to the candidate recording/,
+);
+
+// The full oracle must really start from tick 0.
+const wrongFullStart = structuredClone(fullRun);
+wrongFullStart.summary.replayStartTick = 1;
+await assert.rejects(
+  () => runCheckpointCandidateOracleV1({
+    checkpoint,
+    sourceRecording: source,
+    candidateRecording: candidate,
+    runFullReplay: async () => wrongFullStart,
+    runCheckpointReplay: async () => acceleratedRun,
+  }),
+  /did not start at logical tick 0/,
+);
+
+// A checkpoint callback that silently ran from start is never trusted.
+const wrongCheckpointStart = structuredClone(acceleratedRun);
+wrongCheckpointStart.summary.replayStartTick = 0;
+const wrongCheckpointIdentity = await runCheckpointCandidateOracleV1({
+  checkpoint,
+  sourceRecording: source,
+  candidateRecording: candidate,
+  runFullReplay: async () => fullRun,
+  runCheckpointReplay: async () => wrongCheckpointStart,
+});
+assert.equal(wrongCheckpointIdentity.status, 'CHECKPOINT_ORACLE_MISMATCH');
+assert.equal(wrongCheckpointIdentity.reason, 'checkpoint-execution-identity');
+assert.equal(wrongCheckpointIdentity.checkpointTrusted, false);
 
 // Decision disagreement never replaces the full result.
 const decisionMismatch = await runCheckpointCandidateOracleV1({
