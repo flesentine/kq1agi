@@ -119,6 +119,47 @@ export async function captureCheckpointOracleEvidenceV1(host) {
   });
 }
 
+function isArray(value) {
+  return Array.isArray(value);
+}
+
+function validateLaneEvidence(lane, label) {
+  if (!lane || typeof lane !== 'object') return label + '-missing';
+  if (!isArray(lane.trace)) return label + '-trace';
+  if (!isArray(lane.digest)) return label + '-digest';
+  if (!lane.transport || typeof lane.transport !== 'object') return label + '-transport';
+  for (const key of ['queue', 'keys', 'oldKeys', 'vars', 'pixels']) {
+    if (!isArray(lane.transport[key])) return label + '-transport-' + key;
+  }
+  if (!isArray(lane.workerPayload) || lane.workerPayload.length < 1) return label + '-worker-payload';
+  if (typeof lane.quit !== 'boolean') return label + '-quit';
+  if (!Object.prototype.hasOwnProperty.call(lane, 'error')) return label + '-error';
+  if (!isArray(lane.soundRequests)) return label + '-sound-requests';
+  return null;
+}
+
+export function validateCheckpointOracleEvidenceV1(evidence) {
+  if (!evidence || typeof evidence !== 'object') return Object.freeze({ valid: false, reason: 'missing' });
+  if (evidence.schema !== EVIDENCE_SCHEMA) return Object.freeze({ valid: false, reason: 'schema' });
+  for (const key of ['logicalTick', 'cycle', 'comparedCycle']) {
+    const value = Number(evidence[key]);
+    if (!Number.isSafeInteger(value) || value < 0) {
+      return Object.freeze({ valid: false, reason: key });
+    }
+  }
+  const truthReason = validateLaneEvidence(evidence.truth, 'truth');
+  if (truthReason) return Object.freeze({ valid: false, reason: truthReason });
+  const editedReason = validateLaneEvidence(evidence.edited, 'edited');
+  if (editedReason) return Object.freeze({ valid: false, reason: editedReason });
+  if (!isArray(evidence.pendingSoundCompletions)) {
+    return Object.freeze({ valid: false, reason: 'pending-sound-completions' });
+  }
+  if (!Object.prototype.hasOwnProperty.call(evidence, 'pendingExternalDivergence')) {
+    return Object.freeze({ valid: false, reason: 'pending-external-divergence' });
+  }
+  return Object.freeze({ valid: true, reason: 'complete' });
+}
+
 export function canonicalReplayOracleDecisionV1(summary) {
   if (!summary || typeof summary !== 'object') {
     return { status: 'INVALID_REPLAY_SUMMARY' };
@@ -139,6 +180,22 @@ export function compareCheckpointOracleRunsV1(fullRun, acceleratedRun) {
       equivalent: false,
       category: 'missing-evidence',
       difference: { path: '$.evidence', expected: !!fullRun?.evidence, actual: !!acceleratedRun?.evidence },
+    });
+  }
+
+  const fullEvidenceValidation = validateCheckpointOracleEvidenceV1(fullRun.evidence);
+  const acceleratedEvidenceValidation = validateCheckpointOracleEvidenceV1(acceleratedRun.evidence);
+  if (!fullEvidenceValidation.valid || !acceleratedEvidenceValidation.valid) {
+    return Object.freeze({
+      equivalent: false,
+      category: 'invalid-evidence',
+      difference: {
+        path: '$.evidence',
+        expected: fullEvidenceValidation.reason,
+        actual: acceleratedEvidenceValidation.reason,
+      },
+      fullEvidenceValidation,
+      acceleratedEvidenceValidation,
     });
   }
 
