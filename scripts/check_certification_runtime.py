@@ -68,6 +68,8 @@ def verify_lane(root: Path, label: str) -> dict:
     require(commands, 'replayScriptEvents();', f'{label} checkpoint post-restore script replay')
     require(commands, 'showPicture(false);', f'{label} checkpoint post-restore picture rebuild')
     require(commands, 'restoreCertificationResourceLoadState', f'{label} checkpoint resource-state bridge')
+    require(commands, 'getCertificationCurrentPictureIndex', f'{label} hidden current-picture script identity')
+    require(commands, 'ScriptBuffer.ScriptBufferEventType.DRAW_PIC', f'{label} hidden current-picture draw transcript')
     require(commands, 'restoreCertificationCurrentPicture', f'{label} hidden current-picture restore bridge')
     require(commands, 'state.drawObjects();', f'{label} hidden current-picture animated-object rebuild')
     require(picture, 'restoreCertificationDrawingState', f'{label} hidden current-picture drawing state')
