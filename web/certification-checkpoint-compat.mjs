@@ -102,6 +102,13 @@ export async function proveCheckpointCandidateCompatibilityV1(
   if (source.overflowed || candidate.overflowed) {
     return reject('recording-overflow');
   }
+  if (source.finalTick < resumeBeforeTick) {
+    return reject('source-before-checkpoint', {
+      checkpointTick,
+      resumeBeforeTick,
+      sourceFinalTick: source.finalTick,
+    });
+  }
   if (candidate.finalTick < resumeBeforeTick) {
     return reject('candidate-before-checkpoint', {
       checkpointTick,
@@ -111,6 +118,9 @@ export async function proveCheckpointCandidateCompatibilityV1(
   }
 
   const context = checkpoint.context ?? {};
+  if (context.recordedExternalTiming !== true) {
+    return reject('checkpoint-timing-mode');
+  }
   const sourceRandomReplaySpec = encodeRandomReplay(sourceRecording);
   if (String(context.recordingHash ?? '') !== sourceResult.hash) {
     return reject('checkpoint-source-recording');
