@@ -143,12 +143,12 @@ The full from-start replay remains authoritative in every case. The checkpoint p
 
 For each candidate:
 
-1. run the candidate from logical tick 1 using the existing replay oracle;
+1. run the candidate from logical tick 1 using the existing replay oracle, require its authenticated evidence context to name the candidate recording, and require replayStartTick = 0;
 2. if that full replay does not end in a trusted terminal classification (`REPLAY_MATCH`, `DIVERGED`, or `COMPLETE`), return the full result without trying acceleration;
 3. prove checkpoint/candidate compatibility with Phase -1I.1;
 4. if incompatible, return the full result without trying acceleration;
 5. re-authenticate the compatible checkpoint to the candidate recording/RNG identity;
-6. run the candidate again from the rebound checkpoint;
+6. run the candidate again from the rebound checkpoint, require its evidence context to name the same candidate recording, and require replayStartTick = checkpoint.logicalTick;
 7. canonicalize both replay decisions while excluding non-semantic telemetry such as consumed-tick counts, replay-start tick, certified-barrier count, skipped-prefix count, and snapshot epoch;
 8. require the canonical decisions to be exactly equal;
 9. require exact terminal evidence equality for:
@@ -171,6 +171,8 @@ The runner reports full and checkpoint consumed-tick telemetry plus `savedTicks`
 
 - Compatible full/checkpoint runs with the same semantic outcome and exact terminal evidence return `CHECKPOINT_ORACLE_EQUIVALENT`.
 - Different replay-start tick, consumed ticks, certified-barrier count, skipped-prefix count, and snapshot epoch do not create false mismatches.
+- Full evidence bound to the wrong recording or a full replay that did not start at tick 0 is rejected as an oracle wiring error.
+- A checkpoint run bound to the wrong recording or starting anywhere except the proven checkpoint tick is never trusted.
 - A decision mismatch is rejected even if terminal evidence is otherwise equal.
 - An evidence mismatch is rejected even if the replay decision is equal.
 - Missing or incomplete full evidence prevents any checkpoint attempt and returns the full result only.
