@@ -1,4 +1,3 @@
-import { CertificationLayout } from './certification-host.mjs';
 import { rebindCheckpointForRecordingCandidateV1 } from './certification-checkpoint-compat.mjs';
 
 const EVIDENCE_SCHEMA = 'kq1agi-checkpoint-oracle-evidence-v1';
@@ -10,10 +9,6 @@ const TELEMETRY_KEYS = new Set([
   'skippedPrefixTicks',
   'snapshotEpoch',
 ]);
-
-function copyU32(view) {
-  return Array.from(view, value => Number(value) >>> 0);
-}
 
 function canonicalValue(value) {
   if (Array.isArray(value)) return value.map(canonicalValue);
