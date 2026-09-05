@@ -270,6 +270,19 @@ export async function runCheckpointCandidateOracleV1(options = {}) {
     });
   }
 
+  const fullEvidenceValidation = validateCheckpointOracleEvidenceV1(fullRun.evidence);
+  if (!fullEvidenceValidation.valid) {
+    return Object.freeze({
+      status: 'CHECKPOINT_ORACLE_FULL_ONLY',
+      reason: 'full-evidence-unavailable',
+      authoritativeSummary,
+      fullRun,
+      fullEvidenceValidation,
+      fullTelemetry: telemetry(authoritativeSummary),
+      checkpointAttempted: false,
+    });
+  }
+
   const rebound = await rebindCheckpointForRecordingCandidateV1(
     checkpoint,
     sourceRecording,
