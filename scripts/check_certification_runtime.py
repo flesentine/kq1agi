@@ -187,7 +187,7 @@ for marker in [
     'CORE_VARIABLE_SLOTS: 518', 'VARIABLE_SLOTS: 8353', 'variableSlots: VAR.VARIABLE_SLOTS',
     'QUIT: 7', 'SNAPSHOT_REQUEST: 8', 'SNAPSHOT_ACK: 9',
     'CHECKPOINT_REQUEST: 10', 'CHECKPOINT_ACK: 11', 'CHECKPOINT_STATUS: 12', 'digestSlots: 13',
-    'checkpointSlots: 32768', 'certificationCheckpointSAB',
+    'checkpointSlots: 524288', 'certificationCheckpointSAB',
 ]:
     require(host, marker, 'certification host layout')
 
