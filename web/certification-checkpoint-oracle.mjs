@@ -344,8 +344,25 @@ export async function runCheckpointCandidateOracleV1(options = {}) {
 
   const acceleratedEvidenceValidation = validateCheckpointOracleEvidenceV1(acceleratedRun.evidence);
   const checkpointStartTick = Number(rebound.proof.checkpointTick) >>> 0;
-  if (!acceleratedEvidenceValidation.valid
-      || String(acceleratedRun.evidence?.context?.recordingHash ?? '') !== candidateHash
+
+  if (!acceleratedEvidenceValidation.valid) {
+    const comparison = compareCheckpointOracleRunsV1(fullRun, acceleratedRun);
+    return Object.freeze({
+      status: 'CHECKPOINT_ORACLE_MISMATCH',
+      reason: comparison.category,
+      compatibility: rebound.proof,
+      comparison,
+      authoritativeSummary,
+      fullRun,
+      acceleratedRun,
+      fullTelemetry: telemetry(authoritativeSummary),
+      checkpointTelemetry: telemetry(acceleratedRun.summary),
+      checkpointAttempted: true,
+      checkpointTrusted: false,
+    });
+  }
+
+  if (String(acceleratedRun.evidence.context?.recordingHash ?? '') !== candidateHash
       || Number(acceleratedRun.summary.replayStartTick) !== checkpointStartTick) {
     return Object.freeze({
       status: 'CHECKPOINT_ORACLE_MISMATCH',
@@ -356,7 +373,7 @@ export async function runCheckpointCandidateOracleV1(options = {}) {
         category: 'checkpoint-execution-identity',
         acceleratedEvidenceValidation,
         expectedRecordingHash: candidateHash,
-        actualRecordingHash: String(acceleratedRun.evidence?.context?.recordingHash ?? ''),
+        actualRecordingHash: String(acceleratedRun.evidence.context?.recordingHash ?? ''),
         expectedReplayStartTick: checkpointStartTick,
         actualReplayStartTick: Number(acceleratedRun.summary.replayStartTick),
       }),
