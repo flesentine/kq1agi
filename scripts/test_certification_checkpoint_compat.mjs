@@ -156,6 +156,29 @@ assert.equal(
   'candidate-before-checkpoint',
 );
 
+const shortSource = await freezeRecording({
+  finalTick: 6,
+  releaseTicks: [...source.releaseTicks],
+});
+const shortSourceCheckpoint = await makeCheckpoint(shortSource);
+assert.equal(
+  (await proveCheckpointCandidateCompatibilityV1(shortSourceCheckpoint, shortSource, suffixInput)).reason,
+  'source-before-checkpoint',
+);
+
+const wrongTimingBase = {
+  ...checkpoint,
+  context: Object.freeze({ ...checkpoint.context, recordedExternalTiming: false }),
+};
+const wrongTimingCheckpoint = Object.freeze({
+  ...wrongTimingBase,
+  hash: await hashCertificationCheckpointV1(wrongTimingBase),
+});
+assert.equal(
+  (await proveCheckpointCandidateCompatibilityV1(wrongTimingCheckpoint, source, suffixInput)).reason,
+  'checkpoint-timing-mode',
+);
+
 const editChanged = await freezeRecording({ editConfigHash: 'sha256:other-edit' });
 assert.equal(
   (await proveCheckpointCandidateCompatibilityV1(checkpoint, source, editChanged)).reason,
