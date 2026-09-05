@@ -84,6 +84,7 @@ export async function captureCheckpointOracleEvidenceV1(host) {
 
   return Object.freeze({
     schema: EVIDENCE_SCHEMA,
+    context: Object.freeze(canonicalValue(captured.context ?? {})),
     logicalTick: Number(captured.logicalTick) >>> 0,
     cycle: Number(captured.cycle) >>> 0,
     comparedCycle: Number(captured.comparedCycle) >>> 0,
@@ -136,6 +137,10 @@ function validateLaneEvidence(lane, label) {
 export function validateCheckpointOracleEvidenceV1(evidence) {
   if (!evidence || typeof evidence !== 'object') return Object.freeze({ valid: false, reason: 'missing' });
   if (evidence.schema !== EVIDENCE_SCHEMA) return Object.freeze({ valid: false, reason: 'schema' });
+  if (!evidence.context || typeof evidence.context !== 'object'
+      || !String(evidence.context.recordingHash ?? '')) {
+    return Object.freeze({ valid: false, reason: 'context' });
+  }
   for (const key of ['logicalTick', 'cycle', 'comparedCycle']) {
     const value = Number(evidence[key]);
     if (!Number.isSafeInteger(value) || value < 0) {
@@ -283,6 +288,14 @@ export async function runCheckpointCandidateOracleV1(options = {}) {
     });
   }
 
+  const candidateHash = String(candidateRecording?.hash ?? '');
+  if (!candidateHash || String(fullRun.evidence.context?.recordingHash ?? '') !== candidateHash) {
+    throw new Error('Full replay evidence does not belong to the candidate recording.');
+  }
+  if (Number(authoritativeSummary.replayStartTick ?? 0) !== 0) {
+    throw new Error('Full replay oracle did not start at logical tick 0.');
+  }
+
   const rebound = await rebindCheckpointForRecordingCandidateV1(
     checkpoint,
     sourceRecording,
@@ -326,6 +339,34 @@ export async function runCheckpointCandidateOracleV1(options = {}) {
       acceleratedRun: acceleratedRun ?? null,
       fullTelemetry: telemetry(authoritativeSummary),
       checkpointAttempted: true,
+    });
+  }
+
+  const acceleratedEvidenceValidation = validateCheckpointOracleEvidenceV1(acceleratedRun.evidence);
+  const checkpointStartTick = Number(rebound.proof.checkpointTick) >>> 0;
+  if (!acceleratedEvidenceValidation.valid
+      || String(acceleratedRun.evidence?.context?.recordingHash ?? '') !== candidateHash
+      || Number(acceleratedRun.summary.replayStartTick) !== checkpointStartTick) {
+    return Object.freeze({
+      status: 'CHECKPOINT_ORACLE_MISMATCH',
+      reason: 'checkpoint-execution-identity',
+      compatibility: rebound.proof,
+      comparison: Object.freeze({
+        equivalent: false,
+        category: 'checkpoint-execution-identity',
+        acceleratedEvidenceValidation,
+        expectedRecordingHash: candidateHash,
+        actualRecordingHash: String(acceleratedRun.evidence?.context?.recordingHash ?? ''),
+        expectedReplayStartTick: checkpointStartTick,
+        actualReplayStartTick: Number(acceleratedRun.summary.replayStartTick),
+      }),
+      authoritativeSummary,
+      fullRun,
+      acceleratedRun,
+      fullTelemetry: telemetry(authoritativeSummary),
+      checkpointTelemetry: telemetry(acceleratedRun.summary),
+      checkpointAttempted: true,
+      checkpointTrusted: false,
     });
   }
 
