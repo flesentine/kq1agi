@@ -571,6 +571,61 @@ export class CertificationHost {
     };
   }
 
+  async captureCheckpointOracleEvidenceProbe() {
+    if (!this.started || !this.truth.ready || !this.edited.ready) {
+      throw new Error('Checkpoint oracle evidence requires a started certification host.');
+    }
+    if (!isIdle(this.truth) || !isIdle(this.edited)) {
+      return {
+        status: 'CHECKPOINT_ORACLE_EVIDENCE_UNAVAILABLE',
+        reason: 'worker-busy',
+        tick: this.logicalTick,
+        cycle: this.cycle,
+      };
+    }
+
+    // Synchronize each lane's trace/digest at the same idle barrier, but do not
+    // require ORIGINAL-vs-EDITED MATCH: divergence candidates need evidence too.
+    const snapshotEpoch = await this._synchronizeBarrierSnapshot();
+    const capture = await this._requestCheckpointProbe('capture');
+    if (capture.truthStatus !== 1 || capture.editedStatus !== 1) {
+      return {
+        status: 'CHECKPOINT_ORACLE_EVIDENCE_UNAVAILABLE',
+        reason: 'worker-payload',
+        tick: this.logicalTick,
+        cycle: this.cycle,
+        snapshotEpoch,
+        capture,
+      };
+    }
+
+    return {
+      status: 'CHECKPOINT_ORACLE_EVIDENCE_CAPTURED',
+      schema: 'kq1agi-checkpoint-oracle-evidence-v1',
+      context: this.checkpointContext,
+      logicalTick: this.logicalTick,
+      cycle: this.cycle,
+      comparedCycle: this.comparedCycle,
+      snapshotEpoch,
+      truthTrace: Object.freeze(readTrace(this.truth)),
+      editedTrace: Object.freeze(readTrace(this.edited)),
+      truthDigest: Object.freeze(readSemanticDigest(this.truth)),
+      editedDigest: Object.freeze(readSemanticDigest(this.edited)),
+      truthTransport: snapshotLaneTransport(this.truth),
+      editedTransport: snapshotLaneTransport(this.edited),
+      truthWorkerPayload: readWorkerCheckpointPayload(this.truth),
+      editedWorkerPayload: readWorkerCheckpointPayload(this.edited),
+      truthQuit: this.truth.quit === true,
+      editedQuit: this.edited.quit === true,
+      truthError: this.truth.error == null ? null : String(this.truth.error?.message ?? this.truth.error),
+      editedError: this.edited.error == null ? null : String(this.edited.error?.message ?? this.edited.error),
+      truthSoundRequests: Object.freeze(this.truth.soundRequests.map(request => Object.freeze({ ...request }))),
+      editedSoundRequests: Object.freeze(this.edited.soundRequests.map(request => Object.freeze({ ...request }))),
+      pendingSoundCompletions: Object.freeze(this.pendingSoundCompletions.map(event => Object.freeze({ ...event }))),
+      pendingExternalDivergence: this.pendingExternalDivergence,
+    };
+  }
+
   async captureCheckpointProbe() {
     if (!isIdle(this.truth) || !isIdle(this.edited)) {
       throw new Error('Checkpoint capture requires both certification lanes to be idle.');
