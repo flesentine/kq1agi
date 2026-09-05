@@ -173,7 +173,8 @@ The runner reports full and checkpoint consumed-tick telemetry plus `savedTicks`
 - Different replay-start tick, consumed ticks, certified-barrier count, skipped-prefix count, and snapshot epoch do not create false mismatches.
 - A decision mismatch is rejected even if terminal evidence is otherwise equal.
 - An evidence mismatch is rejected even if the replay decision is equal.
-- Missing checkpoint evidence is rejected.
+- Missing or incomplete full evidence prevents any checkpoint attempt and returns the full result only.
+- Missing or incomplete checkpoint evidence is rejected.
 - Oracle evidence capture must include both exact worker payloads; if either lane cannot serialize hidden state, acceleration is not trusted.
 - A checkpoint replay exception falls back to the full result.
 - A Phase -1I.1-incompatible candidate never attempts checkpoint replay.
