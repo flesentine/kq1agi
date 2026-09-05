@@ -113,6 +113,28 @@ if replay_random.exists():
     replay_random.write_text(replay_text)
 
 picture_text = picture.read_text()
+if 'Picture clone = new Picture(jagiPicture);' not in picture_text:
+    picture_text = one(
+        picture_text,
+        '''    public Picture clone() {
+        // It doesn't matter that we're using the same JAGI Picture. The actual
+        // drawing state is in the PictureContext, which will be a different
+        // instance. The JAGI Picture contains only the Vector of picture codes.
+        return new Picture(jagiPicture);
+    }
+''',
+        '''    public Picture clone() {
+        // Certification checkpoints need the clone to retain the Resource identity
+        // of the master PICTURE it came from. Upstream AGILE drops Resource.index
+        // here even though currentPicture is that clone.
+        Picture clone = new Picture(jagiPicture);
+        clone.index = index;
+        clone.isLoaded = isLoaded;
+        return clone;
+    }
+''',
+        'picture clone resource identity',
+    )
 if 'restoreCertificationDrawingState' not in picture_text:
     picture_text = one(
         picture_text,
@@ -326,16 +348,6 @@ if 'captureCertificationCheckpoint()' not in c:
                 if (soundLoaded[i]) soundPlayer.loadSound(state.sounds[i]);
             }
         }
-    }
-
-    public int getCertificationCurrentPictureIndex() {
-        int pictureIndex = -1;
-        for (ScriptBufferEvent event : state.scriptBuffer.events) {
-            if (event.type == ScriptBuffer.ScriptBufferEventType.DRAW_PIC) {
-                pictureIndex = event.resourceNumber;
-            }
-        }
-        return pictureIndex;
     }
 
     public void restoreCertificationCurrentPicture(
