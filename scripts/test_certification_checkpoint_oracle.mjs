@@ -332,12 +332,14 @@ assert.match(evidenceMismatch.comparison.difference.path, /^\$\.evidence/);
 const prefixChanged = await freezeRecording({
   events: source.events.filter(event => event.seq !== 1),
 });
+const prefixFullRun = structuredClone(fullRun);
+prefixFullRun.evidence.context.recordingHash = prefixChanged.hash;
 let incompatibleCheckpointCalls = 0;
 const incompatible = await runCheckpointCandidateOracleV1({
   checkpoint,
   sourceRecording: source,
   candidateRecording: prefixChanged,
-  runFullReplay: async () => fullRun,
+  runFullReplay: async () => prefixFullRun,
   runCheckpointReplay: async () => {
     incompatibleCheckpointCalls += 1;
     return acceleratedRun;
@@ -347,7 +349,7 @@ assert.equal(incompatible.status, 'CHECKPOINT_ORACLE_FULL_ONLY');
 assert.equal(incompatible.reason, 'checkpoint-incompatible');
 assert.equal(incompatible.checkpointAttempted, false);
 assert.equal(incompatibleCheckpointCalls, 0);
-assert.equal(incompatible.authoritativeSummary, fullRun.summary);
+assert.deepEqual(incompatible.authoritativeSummary, prefixFullRun.summary);
 
 // Timing/contract failures from the full oracle do not attempt acceleration.
 let unsupportedCheckpointCalls = 0;
