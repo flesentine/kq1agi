@@ -196,6 +196,19 @@ assert.equal(rejectedRestore.result.reason, 'checkpoint-restore');
 assert.equal(rejectedRestore.result.checkpointStatus, 'CHECKPOINT_HASH_MISMATCH');
 assert.equal(rejectedRestoreHost.logicalTick, 0);
 
+
+// Even an otherwise-valid checkpoint is not a replay cursor unless its next logical
+// tick is a recorded release. This prevents skipping same-tick transport from an
+// unrelated Phase -1H barrier.
+const invalidResumeHost = new FakeHost();
+const invalidResume = await runCertificationReplaySession(invalidResumeHost, frozen, {
+  pulseIntervalMs: 0,
+  checkpoint: { ...fakeCheckpoint, logicalTick: 1 },
+});
+assert.equal(invalidResume.status, 'REPLAY_CONTRACT_MISS');
+assert.equal(invalidResume.result.reason, 'checkpoint-resume-boundary');
+assert.equal(invalidResumeHost.logicalTick, 0);
+
 // Busy provenance is not a wall-clock deadline. If this machine has already
 // finished the replay cycle by the deterministic tick boundary, inject the recorded
 // transport there instead of turning CPU speed into REPLAY_TIMING_MISS.
