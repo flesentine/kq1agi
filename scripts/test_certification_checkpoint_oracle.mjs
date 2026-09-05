@@ -309,6 +309,23 @@ assert.equal(unsupported.reason, 'unsupported-full-status');
 assert.equal(unsupportedCheckpointCalls, 0);
 assert.equal(unsupported.authoritativeSummary, unsupportedSummary);
 
+// Missing/incomplete full evidence prevents any checkpoint attempt.
+let noFullEvidenceCheckpointCalls = 0;
+const noFullEvidence = await runCheckpointCandidateOracleV1({
+  checkpoint,
+  sourceRecording: source,
+  candidateRecording: candidate,
+  runFullReplay: async () => ({ summary: fullRun.summary }),
+  runCheckpointReplay: async () => {
+    noFullEvidenceCheckpointCalls += 1;
+    return acceleratedRun;
+  },
+});
+assert.equal(noFullEvidence.status, 'CHECKPOINT_ORACLE_FULL_ONLY');
+assert.equal(noFullEvidence.reason, 'full-evidence-unavailable');
+assert.equal(noFullEvidence.checkpointAttempted, false);
+assert.equal(noFullEvidenceCheckpointCalls, 0);
+
 // Acceleration exceptions fall back to the full result.
 const thrown = await runCheckpointCandidateOracleV1({
   checkpoint,
