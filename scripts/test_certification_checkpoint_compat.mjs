@@ -54,8 +54,8 @@ async function makeCheckpoint(source) {
     comparedCycle: 6,
     truthTrace: [1, 2, 3],
     editedTrace: [1, 2, 3],
-    truthDigest: [1, 2, 3, 4],
-    editedDigest: [1, 2, 3, 4],
+    truthDigest: [1, 2, 3, 4, 5, 1, 2, 0],
+    editedDigest: [1, 2, 3, 4, 5, 1, 2, 0],
     truthTransport: {
       queue: [1, 2],
       keys: [0, 1],
@@ -88,6 +88,7 @@ assert.equal(suffixProof.status, 'CHECKPOINT_CANDIDATE_COMPATIBLE');
 assert.equal(suffixProof.checkpointTick, 6);
 assert.equal(suffixProof.resumeBeforeTick, 7);
 assert.equal(suffixProof.candidateRecordingHash, suffixInput.hash);
+assert.equal(suffixProof.consumedRandomDraws, 1);
 assert.ok(suffixProof.compatibilityKey.includes(suffixInput.hash));
 assert.ok(suffixProof.compatibilityKey.endsWith('|6'));
 
@@ -134,7 +135,57 @@ const prefixRandom = await freezeRecording({
 });
 assert.equal(
   (await proveCheckpointCandidateCompatibilityV1(checkpoint, source, prefixRandom)).reason,
-  'prefix-authority',
+  'random-draw-prefix',
+);
+
+// The checkpoint draw count is stronger than RNG tick metadata. Even if a consumed
+// draw is stamped after the checkpoint tick, changing one of the first N consumed
+// draws must still be rejected.
+const delayedTickSource = await freezeRecording({
+  random: [
+    { tick: 9, seq: 4, bound: 255, value: 7 },
+    source.random[1],
+  ],
+});
+const delayedTickCheckpoint = await makeCheckpoint(delayedTickSource);
+const delayedTickCandidate = await freezeRecording({
+  random: [
+    { tick: 9, seq: 4, bound: 255, value: 8 },
+    source.random[1],
+  ],
+});
+assert.equal(
+  (await proveCheckpointCandidateCompatibilityV1(
+    delayedTickCheckpoint,
+    delayedTickSource,
+    delayedTickCandidate,
+  )).reason,
+  'random-draw-prefix',
+);
+
+const shortRandomCandidate = await freezeRecording({
+  random: [],
+});
+assert.equal(
+  (await proveCheckpointCandidateCompatibilityV1(checkpoint, source, shortRandomCandidate)).reason,
+  'random-prefix-length',
+);
+
+const mismatchedDigestBase = {
+  ...checkpoint,
+  editedDigest: Object.freeze([1, 2, 3, 4, 5, 2, 2, 0]),
+};
+const mismatchedDigestCheckpoint = Object.freeze({
+  ...mismatchedDigestBase,
+  hash: await hashCertificationCheckpointV1(mismatchedDigestBase),
+});
+assert.equal(
+  (await proveCheckpointCandidateCompatibilityV1(
+    mismatchedDigestCheckpoint,
+    source,
+    suffixInput,
+  )).reason,
+  'checkpoint-random-count',
 );
 
 const missingBoundary = await freezeRecording({
