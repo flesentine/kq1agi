@@ -8,6 +8,7 @@ on:
       - '.github/workflows/truth-engine-certification.yml'
       - 'scripts/**'
       - 'web/certification-host.mjs'
+      - 'web/certification-checkpoint-compat.mjs'
       - 'docs/TRUTH_ENGINE_PHASE_1B.md'
       - 'docs/TRUTH_ENGINE_PHASE_1I.md'
   push:
@@ -16,6 +17,7 @@ on:
       - '.github/workflows/truth-engine-certification.yml'
       - 'scripts/**'
       - 'web/certification-host.mjs'
+      - 'web/certification-checkpoint-compat.mjs'
       - 'docs/TRUTH_ENGINE_PHASE_1B.md'
       - 'docs/TRUTH_ENGINE_PHASE_1I.md'
 
