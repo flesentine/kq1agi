@@ -602,6 +602,7 @@ export class CertificationHost {
     return {
       status: 'CHECKPOINT_ORACLE_EVIDENCE_CAPTURED',
       schema: 'kq1agi-checkpoint-oracle-evidence-v1',
+      context: this.checkpointContext,
       logicalTick: this.logicalTick,
       cycle: this.cycle,
       comparedCycle: this.comparedCycle,
