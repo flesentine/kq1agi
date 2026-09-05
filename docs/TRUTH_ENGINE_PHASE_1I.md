@@ -101,7 +101,8 @@ A checkpoint is eligible for a recording-only candidate only when all of the fol
    - all release ticks through the checkpoint,
    - all transport events through the checkpoint, including seq/tick/phase/payload,
    - all RNG observations through the checkpoint, and
-   - the frozen game/EditConfig identity fields.
+   - the frozen game/EditConfig identity fields; and
+11. the checkpoint's authenticated truth/edited RNG draw counts agree, and the first N source/candidate RNG observations are exactly equal, where N is that consumed draw count.
 
 Only after that proof may the checkpoint context be rebound. Rebinding is deliberately narrow:
 
@@ -120,6 +121,7 @@ The compatibility proof also emits a deterministic `compatibilityKey` containing
 
 - A suffix-only input change after the checkpoint is compatible.
 - A suffix-only RNG-stream change after the checkpoint is compatible and rebinds the full candidate RNG replay specification.
+- RNG compatibility is additionally bound to the checkpoint's authenticated consumed-draw count; changing any of the first N consumed draws is rejected even if tick metadata is misleading.
 - Any transport or RNG change through the checkpoint is rejected.
 - Removing the checkpoint's next release boundary is rejected.
 - A source or candidate ending at or before the checkpoint is rejected.
