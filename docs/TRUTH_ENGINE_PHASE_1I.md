@@ -157,6 +157,7 @@ For each candidate:
    - semantic-v1 digests including RNG draw position,
    - key queue, keys, old keys, and the complete shared variable transport,
    - framebuffer pixels,
+   - exact per-lane KQ1H v2 serialized worker payloads, covering hidden reconstruction state such as current-picture drawing context,
    - quit/error state,
    - pending sound requests/completions, and
    - pending external divergence state; and
@@ -173,6 +174,7 @@ The runner reports full and checkpoint consumed-tick telemetry plus `savedTicks`
 - A decision mismatch is rejected even if terminal evidence is otherwise equal.
 - An evidence mismatch is rejected even if the replay decision is equal.
 - Missing checkpoint evidence is rejected.
+- Oracle evidence capture must include both exact worker payloads; if either lane cannot serialize hidden state, acceleration is not trusted.
 - A checkpoint replay exception falls back to the full result.
 - A Phase -1I.1-incompatible candidate never attempts checkpoint replay.
 - Full `REPLAY_CONTRACT_MISS`, `REPLAY_TIMING_MISS`, or `STOPPED` results remain full-only.
