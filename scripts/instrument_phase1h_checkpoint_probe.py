@@ -116,12 +116,10 @@ picture_text = picture.read_text()
 if 'restoreCertificationDrawingState' not in picture_text:
     picture_text = one(
         picture_text,
-        '''    public int[] getPriorityPixels() {
-        return jagiPictureContext.getPriorityData();
+        '''        return jagiPictureContext.getPriorityData();
     }
 ''',
-        '''    public int[] getPriorityPixels() {
-        return jagiPictureContext.getPriorityData();
+        '''        return jagiPictureContext.getPriorityData();
     }
 
     public boolean certificationPicColorSet() {
