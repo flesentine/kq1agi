@@ -137,6 +137,37 @@ const fullOnlyC = await makeObservation({
   status: 'CHECKPOINT_ORACLE_FULL_ONLY',
 });
 
+function legacyPhase1I4FingerprintInput(observation) {
+  return {
+    candidateRecordingHash: observation.candidateRecordingHash,
+    status: observation.status,
+    reason: observation.reason,
+    checkpointAttempted: observation.checkpointAttempted,
+    checkpointTrusted: observation.checkpointTrusted,
+    savedTicks: observation.savedTicks,
+    compatibility: observation.compatibility,
+    comparison: observation.comparison,
+    authoritativeStatus: observation.authoritativeStatus,
+    authoritativeResultStatus: observation.authoritativeResultStatus,
+    authoritativeResultTick: observation.authoritativeResultTick,
+    fullDecisionHash: observation.fullDecisionHash,
+    checkpointDecisionHash: observation.checkpointDecisionHash,
+    fullEvidenceHash: observation.fullEvidenceHash,
+    checkpointEvidenceHash: observation.checkpointEvidenceHash,
+  };
+}
+
+assert.equal(
+  mismatchA.semanticFingerprint,
+  await hashCanonicalJsonV1(legacyPhase1I4FingerprintInput(mismatchA)),
+  'Phase -1I.5 must preserve the exact Phase -1I.4 fingerprint for null savedTicks.',
+);
+assert.equal(
+  fullOnlyC.semanticFingerprint,
+  await hashCanonicalJsonV1(legacyPhase1I4FingerprintInput(fullOnlyC)),
+  'Phase -1I.5 must preserve the exact Phase -1I.4 full-only fingerprint.',
+);
+
 const stageEquivalentA = await makeStage(equivalentA);
 const stageMismatchA = await makeStage(mismatchA);
 const stageEquivalentB = await makeStage(equivalentB, { stage: 'phase-1f' });
