@@ -116,7 +116,7 @@ function checkpointEvidenceCorpusText(corpus) {
     : 'saved ticks: no clean equivalent samples';
   return [
     `Phase -1I.5 corpus ${shortHash(corpus.hash)} · full replay policy unchanged`,
-    `stages=${summary.uniqueStageExecutions} · observations=${summary.totalObservations} · unique samples=${summary.uniqueSamples} · duplicate observations=${summary.duplicateObservations}`,
+    `stages=${summary.uniqueStageRecords} · observations=${summary.totalObservations} · unique samples=${summary.uniqueSamples} · duplicate observations=${summary.duplicateObservations}`,
     `attempted unique=${summary.uniqueCheckpointAttemptedSamples} · clean equivalent=${summary.cleanEquivalentSamples} · mismatch samples=${summary.mismatchSamples} · inconsistent samples=${summary.inconsistentSamples} · collection gaps=${summary.compactionFailures}`,
     `identities: game=${summary.distinctGameHashes} · EditConfig=${summary.distinctEditConfigHashes} · source recordings=${summary.distinctSourceRecordings}`,
     saved,
