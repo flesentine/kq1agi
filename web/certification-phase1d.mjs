@@ -11,6 +11,12 @@ import {
   summarizeMinimizerCheckpointShadowV1,
 } from './certification-minimizer-checkpoint-shadow.mjs';
 import {
+  compactMinimizerCheckpointObservationV1,
+  createMinimizerCheckpointEvidenceReportV1,
+  createMinimizerCheckpointStageEvidenceV1,
+  serializeMinimizerCheckpointEvidenceReportV1,
+} from './certification-minimizer-checkpoint-evidence.mjs';
+import {
   encodeRandomReplay,
   freezePlayRecordingV1,
   getPlayRecordingStats,
@@ -83,6 +89,17 @@ function checkpointShadowSummaryText(shadowState, results) {
     `oracle candidates=${summary.totalCandidates} · equivalent=${summary.equivalent} · full-only=${summary.fullOnly} · mismatch=${summary.mismatch}`,
     `checkpoint attempts=${summary.checkpointAttempts} · trusted=${summary.trustedCheckpoints} · measured saved ticks=${summary.totalSavedTicks} · average=${average}`,
     `oracle reasons: ${reasons}`,
+  ].join('\n');
+}
+
+
+function checkpointEvidencePopulationText(report) {
+  const population = report?.population;
+  if (!population) return 'evidence report: unavailable';
+  return [
+    `Phase -1I.4 report ${shortHash(report.hash)} · full replay policy unchanged`,
+    `population: ${population.totalObservations} observation(s) · ${population.uniqueSamples} unique sample(s) · ${population.duplicateObservations} duplicate observation(s) · compaction failures=${population.compactionFailures}`,
+    `consistency: ${population.inconsistentSamples} inconsistent repeated sample(s) · attempts=${population.checkpointAttempts} · trusted=${population.trustedCheckpoints} · mismatches=${population.mismatch}`,
   ].join('\n');
 }
 
@@ -238,12 +255,25 @@ function installPhase1D() {
     reduceInputsButton.insertAdjacentElement('afterend', reduceEditsButton);
   }
 
+  let exportShadowEvidenceButton = document.getElementById('certify-export-shadow-evidence-button');
+  if (!exportShadowEvidenceButton) {
+    exportShadowEvidenceButton = document.createElement('button');
+    exportShadowEvidenceButton.id = 'certify-export-shadow-evidence-button';
+    exportShadowEvidenceButton.type = 'button';
+    exportShadowEvidenceButton.textContent = 'EXPORT EVIDENCE';
+    exportShadowEvidenceButton.title = 'Download the compact Phase -1I.4 checkpoint shadow evidence ledger';
+    exportShadowEvidenceButton.disabled = true;
+    reduceEditsButton.insertAdjacentElement('afterend', exportShadowEvidenceButton);
+  }
+
   let replayHost = null;
   let replayRunning = false;
   let stopRequested = false;
   let lastDivergenceContext = null;
   let lastMinimizedContext = null;
   let lastInputReducedContext = null;
+  const shadowEvidenceStages = [];
+  let latestShadowEvidenceReport = null;
 
   const setStatus = (text, state) => {
     status.textContent = text;
@@ -265,12 +295,49 @@ function installPhase1D() {
     minimizeButton.disabled = value || !lastDivergenceContext;
     reduceInputsButton.disabled = value || !lastMinimizedContext;
     reduceEditsButton.disabled = value || !lastInputReducedContext;
+    exportShadowEvidenceButton.disabled = value || !latestShadowEvidenceReport;
     runButton.disabled = value;
     if (refreshButton) refreshButton.disabled = value;
     gameSelect.disabled = value;
     if (barrierInput) barrierInput.disabled = value;
     stopButton.disabled = !value;
   };
+
+  async function recordShadowEvidenceStage(stage, context, shadowState, observations, collectionErrorCandidateHashes, outcome) {
+    try {
+      const stageEvidence = await createMinimizerCheckpointStageEvidenceV1({
+        stage,
+        sourceRecording: context.recording,
+        targetDivergence: context.firstDivergence,
+        shadowState,
+        observations,
+        collectionErrorCandidateHashes,
+        outcome,
+      });
+      shadowEvidenceStages.push(stageEvidence);
+      latestShadowEvidenceReport = await createMinimizerCheckpointEvidenceReportV1(shadowEvidenceStages);
+      globalThis.__kq1agiCheckpointShadowEvidenceReport = latestShadowEvidenceReport;
+      globalThis.__kq1agiCheckpointShadowEvidenceReportError = null;
+      exportShadowEvidenceButton.disabled = replayRunning || !latestShadowEvidenceReport;
+      return latestShadowEvidenceReport;
+    } catch (error) {
+      globalThis.__kq1agiCheckpointShadowEvidenceReportError = String(error?.message ?? error);
+      exportShadowEvidenceButton.disabled = replayRunning || !latestShadowEvidenceReport;
+      return null;
+    }
+  }
+
+  function exportShadowEvidence() {
+    if (!latestShadowEvidenceReport) return;
+    const body = serializeMinimizerCheckpointEvidenceReportV1(latestShadowEvidenceReport);
+    const blob = new Blob([body], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kq1agi-checkpoint-shadow-evidence-${latestShadowEvidenceReport.hash.slice(7, 19)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
 
   function refreshJournal() {
     const stats = getPlayRecordingStats();
@@ -544,6 +611,7 @@ function installPhase1D() {
         shadowSelection,
       );
       const shadowResults = [];
+      const shadowEvidenceErrors = [];
 
       const replayCandidate = async candidate => {
         attemptNumber += 1;
@@ -581,7 +649,12 @@ function installPhase1D() {
             },
           ),
         });
-        shadowResults.push(shadow);
+        try {
+          const observation = await compactMinimizerCheckpointObservationV1(shadow, candidate.hash);
+          shadowResults.push(observation);
+        } catch {
+          shadowEvidenceErrors.push(String(candidate.hash ?? 'unknown-candidate'));
+        }
         return shadow.summary;
       };
 
@@ -596,6 +669,14 @@ function installPhase1D() {
             progress.textContent = `minimize attempt ${attemptNumber} · candidate tick ${attempt.finalTick} · ${attempt.reproduced ? 'same divergence' : attempt.status}`;
           },
         },
+      );
+      const evidenceReport = await recordShadowEvidenceStage(
+        'phase-1e',
+        context,
+        shadowState,
+        shadowResults,
+        shadowEvidenceErrors,
+        { status: minimized.status, attempts: minimized.attempts?.length ?? attemptNumber },
       );
 
       if (minimized.status === 'MINIMIZED') {
@@ -619,6 +700,8 @@ function installPhase1D() {
           'The focused window is diagnostic context only; authoritative replay still starts at logical tick 1.',
           '',
           checkpointShadowSummaryText(shadowState, shadowResults),
+          '',
+          checkpointEvidencePopulationText(evidenceReport),
         ].join('\n');
       } else if (minimized.status === 'NOT_REPRODUCED') {
         setStatus('MINIMIZE NOT REPRODUCED', 'WAITING');
@@ -628,6 +711,8 @@ function installPhase1D() {
           `attempts=${minimized.attempts.length}`,
           '',
           checkpointShadowSummaryText(shadowState, shadowResults),
+          '',
+          checkpointEvidencePopulationText(evidenceReport),
         ].join('\n');
       } else if (minimized.status === 'STOPPED') {
         setStatus('STOPPED', 'IDLE');
@@ -689,6 +774,7 @@ function installPhase1D() {
         shadowSelection,
       );
       const shadowResults = [];
+      const shadowEvidenceErrors = [];
 
       const replayCandidate = async candidate => {
         attemptNumber += 1;
@@ -726,7 +812,12 @@ function installPhase1D() {
             },
           ),
         });
-        shadowResults.push(shadow);
+        try {
+          const observation = await compactMinimizerCheckpointObservationV1(shadow, candidate.hash);
+          shadowResults.push(observation);
+        } catch {
+          shadowEvidenceErrors.push(String(candidate.hash ?? 'unknown-candidate'));
+        }
         return shadow.summary;
       };
 
@@ -741,6 +832,14 @@ function installPhase1D() {
             progress.textContent = `input attempt ${attempt.number} · kept ${attempt.keptGroups}/${groups.length} group(s) · ${attempt.reproduced ? 'same divergence' : attempt.status}`;
           },
         },
+      );
+      const evidenceReport = await recordShadowEvidenceStage(
+        'phase-1f',
+        context,
+        shadowState,
+        shadowResults,
+        shadowEvidenceErrors,
+        { status: reduced.status, attempts: reduced.attempts?.length ?? attemptNumber },
       );
 
       if (reduced.status === 'INPUTS_MINIMIZED' || reduced.status === 'INPUTS_ALREADY_MINIMAL') {
@@ -769,6 +868,8 @@ function installPhase1D() {
           inputGroupsText(reduced.keptGroups),
           '',
           checkpointShadowSummaryText(shadowState, shadowResults),
+          '',
+          checkpointEvidencePopulationText(evidenceReport),
         ].join('\n');
       } else if (reduced.status === 'NO_REMOVABLE_INPUTS') {
         const reducedContext = Object.freeze({
@@ -785,6 +886,8 @@ function installPhase1D() {
           `The minimized prefix contains no dependency-safe keyboard/mouse groups. ${reduced.lockedEvents} locked reproduction event(s) remain. REDUCE EDITS can now minimize the frozen EditConfig.`,
           '',
           checkpointShadowSummaryText(shadowState, shadowResults),
+          '',
+          checkpointEvidencePopulationText(evidenceReport),
         ].join('\n');
       } else if (reduced.status === 'NOT_REPRODUCED') {
         setStatus('INPUT TARGET NOT REPRODUCED', 'WAITING');
@@ -793,6 +896,8 @@ function installPhase1D() {
           `attempts=${reduced.attempts.length}`,
           '',
           checkpointShadowSummaryText(shadowState, shadowResults),
+          '',
+          checkpointEvidencePopulationText(evidenceReport),
         ].join('\n');
       } else if (reduced.status === 'PARTIAL') {
         setStatus(`INPUTS PARTIAL ${reduced.keptGroups.length}/${reduced.totalGroups}`, 'WAITING');
@@ -805,6 +910,8 @@ function installPhase1D() {
           inputGroupsText(reduced.keptGroups),
           '',
           checkpointShadowSummaryText(shadowState, shadowResults),
+          '',
+          checkpointEvidencePopulationText(evidenceReport),
         ].join('\n');
       } else if (reduced.status === 'STOPPED') {
         setStatus('STOPPED', 'IDLE');
@@ -941,6 +1048,7 @@ function installPhase1D() {
   minimizeButton.addEventListener('click', startMinimize);
   reduceInputsButton.addEventListener('click', startReduceInputs);
   reduceEditsButton.addEventListener('click', startReduceEdits);
+  exportShadowEvidenceButton.addEventListener('click', exportShadowEvidence);
   gameSelect.addEventListener('change', invalidateMinimization);
   runButton.addEventListener('click', invalidateMinimization, { capture: true });
   stopButton.addEventListener('click', () => {
