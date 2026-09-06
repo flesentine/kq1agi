@@ -15,6 +15,27 @@ const ORACLE_STATUSES = new Set([
   'CHECKPOINT_ORACLE_FULL_ONLY',
   'CHECKPOINT_ORACLE_MISMATCH',
 ]);
+const FORBIDDEN_EVIDENCE_KEYS = new Set([
+  'workerPayload',
+  'truthWorkerPayload',
+  'editedWorkerPayload',
+  'fullRun',
+  'acceleratedRun',
+]);
+
+function rejectForbiddenEvidenceKeys(value, path = '$') {
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i += 1) rejectForbiddenEvidenceKeys(value[i], `${path}[${i}]`);
+    return;
+  }
+  if (!isObject(value)) return;
+  for (const [key, item] of Object.entries(value)) {
+    if (FORBIDDEN_EVIDENCE_KEYS.has(key)) {
+      throw new Error(`Checkpoint evidence contains forbidden raw oracle field at ${path}.${key}.`);
+    }
+    rejectForbiddenEvidenceKeys(item, `${path}.${key}`);
+  }
+}
 
 function isObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -137,10 +158,41 @@ async function validateStageV1(stage) {
   if (stage.checkpoint.hash != null && !isSha256(stage.checkpoint.hash)) {
     throw new Error('Evidence stage checkpoint hash is invalid.');
   }
+  for (const key of ['logicalTick', 'pauseBeforeTick', 'desiredCheckpointTick']) {
+    if (stage.checkpoint[key] != null && asNonNegativeInteger(stage.checkpoint[key]) == null) {
+      throw new Error(`Evidence stage checkpoint ${key} is invalid.`);
+    }
+  }
+  for (const key of ['gameBytes', 'finalTick', 'eventCount', 'randomCount', 'releaseCount']) {
+    if (asNonNegativeInteger(stage.source[key]) == null) {
+      throw new Error(`Evidence stage source ${key} is invalid.`);
+    }
+  }
   if (!Array.isArray(stage.observations)) throw new Error('Evidence stage observations are missing.');
   if (stage.observations.length > MAX_OBSERVATIONS) throw new Error('Evidence stage exceeds the observation safety limit.');
 
-  for (const observation of stage.observations) await validateObservationV1(observation);
+  for (const observation of stage.observations) {
+    await validateObservationV1(observation);
+    const compatibility = observation.compatibility;
+    if (compatibility) {
+      if (compatibility.candidateRecordingHash != null
+          && compatibility.candidateRecordingHash !== observation.candidateRecordingHash) {
+        throw new Error('Evidence observation compatibility candidate identity mismatch.');
+      }
+      if (compatibility.sourceRecordingHash != null
+          && compatibility.sourceRecordingHash !== stage.source.recordingHash) {
+        throw new Error('Evidence observation compatibility source identity mismatch.');
+      }
+      if (compatibility.checkpointHash != null
+          && compatibility.checkpointHash !== stage.checkpoint.hash) {
+        throw new Error('Evidence observation compatibility checkpoint hash mismatch.');
+      }
+      if (compatibility.checkpointTick != null
+          && Number(compatibility.checkpointTick) !== Number(stage.checkpoint.logicalTick)) {
+        throw new Error('Evidence observation compatibility checkpoint tick mismatch.');
+      }
+    }
+  }
 
   if (!isObject(stage.collection)) throw new Error('Evidence stage collection metadata is missing.');
   const failures = Array.isArray(stage.collection.failedCandidateHashes)
@@ -177,13 +229,19 @@ async function validateStageV1(stage) {
 
 export async function validateMinimizerCheckpointEvidenceReportV1(report) {
   if (!isObject(report)) throw new Error('Checkpoint evidence report must be an object.');
+  rejectForbiddenEvidenceKeys(report);
   if (report.schema !== MinimizerCheckpointEvidenceLayout.REPORT_SCHEMA) {
     throw new Error('Checkpoint evidence report schema mismatch.');
   }
   assertPolicy(report, 'Checkpoint evidence report');
   if (!Array.isArray(report.stages)) throw new Error('Checkpoint evidence report stages are missing.');
   if (report.stages.length > MAX_STAGES) throw new Error('Checkpoint evidence report exceeds the stage safety limit.');
-  for (const stage of report.stages) await validateStageV1(stage);
+  let observations = 0;
+  for (const stage of report.stages) {
+    observations += stage?.observations?.length ?? 0;
+    if (observations > MAX_OBSERVATIONS) throw new Error('Checkpoint evidence report exceeds the observation safety limit.');
+    await validateStageV1(stage);
+  }
 
   const expected = await createMinimizerCheckpointEvidenceReportV1(report.stages);
   if (!(await sameCanonicalValue(expected.population, report.population))) {
@@ -315,7 +373,11 @@ async function createCorpusFromStagesV1(stages) {
     if (!unique.has(stage.hash)) unique.set(stage.hash, stage);
   }
   const dedupedStages = Object.freeze(
-    [...unique.values()].sort((a, b) => String(a.hash).localeCompare(String(b.hash))),
+    [...unique.values()].sort((a, b) => {
+      const left = String(a.hash);
+      const right = String(b.hash);
+      return left < right ? -1 : left > right ? 1 : 0;
+    }),
   );
   const unsigned = {
     schema: CORPUS_SCHEMA,
@@ -331,11 +393,17 @@ async function createCorpusFromStagesV1(stages) {
 
 export async function validateMinimizerCheckpointEvidenceCorpusV1(corpus) {
   if (!isObject(corpus)) throw new Error('Checkpoint evidence corpus must be an object.');
+  rejectForbiddenEvidenceKeys(corpus);
   if (corpus.schema !== CORPUS_SCHEMA) throw new Error('Checkpoint evidence corpus schema mismatch.');
   assertPolicy(corpus, 'Checkpoint evidence corpus');
   if (!Array.isArray(corpus.stages)) throw new Error('Checkpoint evidence corpus stages are missing.');
   if (corpus.stages.length > MAX_STAGES) throw new Error('Checkpoint evidence corpus exceeds the stage safety limit.');
-  for (const stage of corpus.stages) await validateStageV1(stage);
+  let observations = 0;
+  for (const stage of corpus.stages) {
+    observations += stage?.observations?.length ?? 0;
+    if (observations > MAX_OBSERVATIONS) throw new Error('Checkpoint evidence corpus exceeds the observation safety limit.');
+    await validateStageV1(stage);
+  }
 
   const expected = await createCorpusFromStagesV1(corpus.stages);
   if (!(await sameCanonicalValue(expected.summary, corpus.summary))) {
@@ -373,6 +441,10 @@ export async function createMinimizerCheckpointEvidenceCorpusV1(artifacts = []) 
     stages.push(...validated.stages);
     if (stages.length > MAX_STAGES * 2) {
       throw new Error('Combined checkpoint evidence exceeds the import safety limit.');
+    }
+    const observationCount = stages.reduce((total, stage) => total + (stage.observations?.length ?? 0), 0);
+    if (observationCount > MAX_OBSERVATIONS * 2) {
+      throw new Error('Combined checkpoint evidence exceeds the observation import safety limit.');
     }
   }
   return createCorpusFromStagesV1(stages);
