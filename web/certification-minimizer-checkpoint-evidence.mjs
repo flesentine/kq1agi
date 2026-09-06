@@ -84,18 +84,25 @@ export async function hashMinimizerCheckpointObservationSemanticV1(observation) 
     reason: String(observation.reason ?? observation.status ?? 'UNKNOWN'),
     checkpointAttempted: observation.checkpointAttempted === true,
     checkpointTrusted: observation.checkpointTrusted === true,
-    savedTicks: Number.isSafeInteger(Number(observation.savedTicks)) && Number(observation.savedTicks) >= 0
-      ? Number(observation.savedTicks)
-      : null,
+    savedTicks: observation.savedTicks == null
+      ? null
+      : (typeof observation.savedTicks === 'number'
+          && Number.isSafeInteger(observation.savedTicks)
+          && observation.savedTicks >= 0
+        ? observation.savedTicks
+        : null),
     compatibility: observation.compatibility ?? null,
     comparison: observation.comparison ?? null,
     authoritativeStatus: String(observation.authoritativeStatus ?? 'UNKNOWN'),
     authoritativeResultStatus: observation.authoritativeResultStatus == null
       ? null
       : String(observation.authoritativeResultStatus),
-    authoritativeResultTick: Number.isSafeInteger(Number(observation.authoritativeResultTick))
-      ? Number(observation.authoritativeResultTick)
-      : null,
+    authoritativeResultTick: observation.authoritativeResultTick == null
+      ? null
+      : (typeof observation.authoritativeResultTick === 'number'
+          && Number.isSafeInteger(observation.authoritativeResultTick)
+        ? observation.authoritativeResultTick
+        : null),
     fullDecisionHash: observation.fullDecisionHash ?? null,
     checkpointDecisionHash: observation.checkpointDecisionHash ?? null,
     fullEvidenceHash: observation.fullEvidenceHash ?? null,
