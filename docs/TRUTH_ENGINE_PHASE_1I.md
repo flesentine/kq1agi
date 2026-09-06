@@ -185,3 +185,60 @@ The runner reports full and checkpoint consumed-tick telemetry plus `savedTicks`
 - Phase -1E/-1F/-1G minimizer call sites remain unchanged in this slice.
 
 The next slice may wire Phase -1E/-1F candidate execution through this shadow runner to collect real minimizer-level equivalence evidence. It must not skip the full replay until a later policy freeze explicitly permits that optimization.
+
+
+## Phase -1I.3 — minimizer-level shadow evidence
+
+Phase -1I.3 wires the recording-only Phase -1E and Phase -1F candidate call sites through the Phase -1I.2 oracle in **shadow mode**.
+
+This is still not an acceleration-policy change. Every minimizer candidate runs from logical tick 1 first, and that full replay remains the only classification returned to the minimizer. A checkpoint replay may add evidence and telemetry, but it cannot make a candidate reproduce, fail to reproduce, or otherwise change the reduction decision.
+
+### Checkpoint selection and capture
+
+Each minimizer stage captures at most one experimental source checkpoint:
+
+1. take the stage's immutable source recording and exact target divergence tick;
+2. consider only recorded release ticks from 2 through the target tick;
+3. translate each release tick `T` to the authoritative pre-release checkpoint at `T-1`;
+4. choose the candidate closest to the midpoint of the target tick, preferring the later checkpoint on an exact tie;
+5. replay the exact source from start and pause at that recorded boundary; and
+6. capture a normal Phase -1H checkpoint only if the source lanes are exact there.
+
+The midpoint choice is deterministic. It deliberately balances skipped-prefix evidence against Phase -1F eligibility: removing an input before the checkpoint must make that candidate incompatible, while suffix-only removals can still exercise the checkpoint path.
+
+Checkpoint capture is best-effort. No usable recorded boundary, a pause/capture failure, or a user stop leaves the minimizer on its existing full-replay path.
+
+### Candidate execution
+
+When a source checkpoint is available, each Phase -1E/-1F candidate does the following:
+
+1. run the complete candidate from logical tick 1 and capture Phase -1I.2 terminal evidence;
+2. pass that full run to `runCheckpointCandidateOracleV1`;
+3. if Phase -1I.1 says the candidate prefix is compatible, rebind and run the checkpoint suffix in a fresh replay host;
+4. compare decision and terminal evidence exactly under the Phase -1I.2 rules; and
+5. return **only `oracle.authoritativeSummary`** to the minimizer.
+
+The UI reports aggregate shadow evidence after the reduction: equivalent, full-only, and mismatch counts; checkpoint attempts and trusted checkpoints; measured saved ticks; and reason counts.
+
+A `CHECKPOINT_ORACLE_MISMATCH` is therefore scientific evidence against a future shortcut policy, not a minimizer failure and never a replacement for the full result.
+
+### Scope boundary
+
+Phase -1G remains intentionally unchanged and full-replay-only. Its candidates change the EditConfig hash, which can change execution from logical tick 1 and is outside the recording-only Phase -1I.1 rebinding proof.
+
+### Phase -1I.3 acceptance criteria
+
+- Phase -1E and Phase -1F each capture at most one deterministic checkpoint from their own immutable source recording.
+- Checkpoints are captured only at a recorded pre-release boundary before or at the target divergence.
+- Every candidate still runs the full from-start replay first.
+- The minimizer receives the full replay's authoritative summary even when the checkpoint shadow disagrees.
+- A compatible candidate reaches `CHECKPOINT_ORACLE_EQUIVALENT` only after exact Phase -1I.2 decision and terminal-evidence equality.
+- Prefix-changing Phase -1F candidates remain full-only and do not attempt a checkpoint suffix.
+- Missing terminal evidence or unavailable checkpoint capture falls back to the full result without blocking reduction.
+- Shadow telemetry is reported but is not semantic input to the minimizer.
+- Phase -1G has no checkpoint capture, rebinding, or shadow-run call site.
+- No policy is allowed to skip the full replay in this slice.
+
+## Next slice
+
+Collect minimizer-level equivalence evidence across real divergent reproductions and freeze an explicit acceleration policy only after the observed compatible population is large enough to justify it. Until that policy is separately reviewed and frozen, full replay remains mandatory for every candidate.
