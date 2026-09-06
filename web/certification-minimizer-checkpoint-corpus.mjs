@@ -342,7 +342,7 @@ function corpusSummary(stages) {
 
   const uniqueSamples = samples.size;
   return Object.freeze({
-    uniqueStageExecutions: stages.length,
+    uniqueStageRecords: stages.length,
     totalObservations,
     uniqueSamples,
     duplicateObservations: Math.max(0, totalObservations - uniqueSamples),
@@ -436,7 +436,7 @@ export async function validateMinimizerCheckpointEvidenceArtifactV1(artifact) {
 /**
  * Combine one or more hash-valid Phase -1I.4 reports / Phase -1I.5 corpora.
  *
- * Stage executions are deduplicated by their complete stage hash before population
+ * Stage evidence records are deduplicated by their complete stage hash before population
  * statistics are calculated. Repeated executions that share a stageKey but have a
  * different stage hash remain independent observations, allowing contradictory
  * repeats to surface rather than disappear.
