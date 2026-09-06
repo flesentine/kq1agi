@@ -10,6 +10,8 @@ on:
       - 'web/certification-host.mjs'
       - 'web/certification-checkpoint-compat.mjs'
       - 'web/certification-checkpoint-oracle.mjs'
+      - 'web/certification-minimizer-checkpoint-shadow.mjs'
+      - 'web/certification-phase1d.mjs'
       - 'docs/TRUTH_ENGINE_PHASE_1B.md'
       - 'docs/TRUTH_ENGINE_PHASE_1I.md'
   push:
@@ -20,6 +22,8 @@ on:
       - 'web/certification-host.mjs'
       - 'web/certification-checkpoint-compat.mjs'
       - 'web/certification-checkpoint-oracle.mjs'
+      - 'web/certification-minimizer-checkpoint-shadow.mjs'
+      - 'web/certification-phase1d.mjs'
       - 'docs/TRUTH_ENGINE_PHASE_1B.md'
       - 'docs/TRUTH_ENGINE_PHASE_1I.md'
 
@@ -50,6 +54,7 @@ jobs:
           node scripts/test_certification_recording.mjs
           node scripts/test_certification_checkpoint_compat.mjs
           node scripts/test_certification_checkpoint_oracle.mjs
+          node scripts/test_certification_minimizer_checkpoint_shadow.mjs
 
       - name: Fetch exact AGILE source for both lanes
         run: |
