@@ -25,6 +25,8 @@ const checkpointHash = sha('4');
 
 async function makeObservation({
   candidateHash,
+  sourceRecordingHash = sourceHash,
+  checkpointIdentityHash = checkpointHash,
   status = 'CHECKPOINT_ORACLE_EQUIVALENT',
   savedTicks = 5,
   evidenceHash = sha('6'),
@@ -48,9 +50,9 @@ async function makeObservation({
     checkpointTelemetry: attempted ? { consumedTicks: 7, replayStartTick: 5 } : null,
     compatibility: {
       checkpointTick: 5,
-      sourceRecordingHash: sourceHash,
+      sourceRecordingHash,
       candidateRecordingHash: candidateHash,
-      checkpointHash,
+      checkpointHash: checkpointIdentityHash,
     },
     comparison: equivalent
       ? { category: 'exact', equivalent: true, differencePath: null, differenceReason: null }
@@ -121,6 +123,7 @@ async function makeStage(observation, overrides = {}) {
 
 const candidateA = sha('a');
 const candidateB = sha('b');
+const candidateC = sha('c');
 const equivalentA = await makeObservation({ candidateHash: candidateA });
 const equivalentB = await makeObservation({ candidateHash: candidateB, savedTicks: 7 });
 const mismatchA = await makeObservation({
@@ -129,15 +132,15 @@ const mismatchA = await makeObservation({
   evidenceHash: sha('6'),
   checkpointEvidenceHash: sha('7'),
 });
-const fullOnlyB = await makeObservation({
-  candidateHash: candidateB,
+const fullOnlyC = await makeObservation({
+  candidateHash: candidateC,
   status: 'CHECKPOINT_ORACLE_FULL_ONLY',
 });
 
 const stageEquivalentA = await makeStage(equivalentA);
 const stageMismatchA = await makeStage(mismatchA);
 const stageEquivalentB = await makeStage(equivalentB, { stage: 'phase-1f' });
-const stageFullOnlyB = await makeStage(fullOnlyB, { stage: 'phase-1f' });
+const stageFullOnlyC = await makeStage(fullOnlyC, { stage: 'phase-1f' });
 
 assert.equal(stageEquivalentA.stageKey, stageMismatchA.stageKey);
 assert.notEqual(stageEquivalentA.hash, stageMismatchA.hash);
@@ -149,7 +152,7 @@ const reportEquivalent = await createMinimizerCheckpointEvidenceReportV1([
 const reportOverlap = await createMinimizerCheckpointEvidenceReportV1([
   stageEquivalentA,
   stageMismatchA,
-  stageFullOnlyB,
+  stageFullOnlyC,
 ]);
 
 const validatedReport = await validateMinimizerCheckpointEvidenceReportV1(reportEquivalent);
@@ -224,11 +227,15 @@ const duplicateOnly = await createMinimizerCheckpointEvidenceCorpusV1([
 ]);
 assert.equal(duplicateOnly.hash, cleanCorpus.hash, 'Repeated identical reports/corpora must not inflate the corpus.');
 
+const mixedSourceHash = sha('8');
 const mixedSourceStage = await makeStage(
-  await makeObservation({ candidateHash: sha('c') }),
+  await makeObservation({
+    candidateHash: sha('d'),
+    sourceRecordingHash: mixedSourceHash,
+  }),
   {
     sourceRecording: sourceRecording({
-      hash: sha('8'),
+      hash: mixedSourceHash,
       gameHash: sha('9'),
       editConfigHash: sha('0'),
     }),
@@ -242,8 +249,8 @@ assert.equal(mixedCorpus.summary.reviewFlags.mixedGameIdentity, true);
 assert.equal(mixedCorpus.summary.reviewFlags.mixedEditConfigIdentity, true);
 
 const failureStage = await makeStage(
-  await makeObservation({ candidateHash: sha('d'), status: 'CHECKPOINT_ORACLE_FULL_ONLY' }),
-  { collectionErrorCandidateHashes: [sha('e')] },
+  await makeObservation({ candidateHash: sha('e'), status: 'CHECKPOINT_ORACLE_FULL_ONLY' }),
+  { collectionErrorCandidateHashes: [sha('f')] },
 );
 const failureReport = await createMinimizerCheckpointEvidenceReportV1([failureStage]);
 const failureCorpus = await createMinimizerCheckpointEvidenceCorpusV1([failureReport]);
@@ -286,6 +293,22 @@ await assert.rejects(
   /semantic fingerprint mismatch/,
 );
 
+const rawPayloadTamper = structuredClone(reportEquivalent);
+rawPayloadTamper.stages[0].observations[0].workerPayload = [1, 2, 3];
+{
+  const stage = rawPayloadTamper.stages[0];
+  const { hash: _oldHash, ...unsignedStage } = stage;
+  stage.hash = await hashCanonicalJsonV1(unsignedStage);
+}
+{
+  const { hash: _oldHash, ...unsignedReport } = rawPayloadTamper;
+  rawPayloadTamper.hash = await hashCanonicalJsonV1(unsignedReport);
+}
+await assert.rejects(
+  validateMinimizerCheckpointEvidenceReportV1(rawPayloadTamper),
+  /forbidden raw oracle field/,
+);
+
 const corpusTamper = structuredClone(cleanCorpus);
 corpusTamper.summary.cleanEquivalentSamples = 999;
 await assert.rejects(
@@ -306,7 +329,7 @@ const phase1dSource = await readFile(new URL('../web/certification-phase1d.mjs',
 assert.equal(phase1dSource.includes('certify-import-evidence-button'), true);
 assert.equal(phase1dSource.includes('certify-export-evidence-corpus-button'), true);
 assert.equal(phase1dSource.includes('__kq1agiCheckpointEvidenceCorpus'), true);
-assert.equal((phase1dSource.match(/createMinimizerCheckpointEvidenceCorpusV1/g) ?? []).length, 2);
+assert.equal((phase1dSource.match(/createMinimizerCheckpointEvidenceCorpusV1/g) ?? []).length, 3);
 const editStart = phase1dSource.indexOf('async function startReduceEdits()');
 const editEnd = phase1dSource.indexOf("replayButton.addEventListener", editStart);
 assert.ok(editStart >= 0 && editEnd > editStart);
