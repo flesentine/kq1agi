@@ -315,6 +315,90 @@ No candidate can skip its full replay in Phase -1I.4. The report is an evidence 
 - Phase -1G remains full-replay-only and is excluded from the Phase -1I.4 checkpoint population.
 - The evidence report explicitly states that no acceleration policy has been frozen.
 
+## Phase -1I.5 — cross-session evidence corpus
+
+Phase -1I.5 makes Phase -1I.4 evidence composable across independent browser sessions without turning evidence into policy.
+
+A later Phase -1I.4 export can contain stage executions that appeared in an earlier export from the same browser session. Naively concatenating those files would therefore count the same execution more than once. Phase -1I.5 introduces a deterministic corpus format that validates the imported evidence chain, removes exact duplicate stage executions, preserves independent repeated executions, and recomputes the population from the validated stages.
+
+### Import validation
+
+The certification panel accepts one or more Phase -1I.4 report JSON files or previously exported Phase -1I.5 corpus files.
+
+Before imported evidence enters the corpus, Phase -1I.5 verifies:
+
+- the evidence-only policy declaration is still exactly `full-replay-authoritative`, `policyFrozen=false`, `policyDecision=EVIDENCE_ONLY`;
+- every compact observation uses the expected schema and oracle status;
+- equivalent observations are attempted/trusted and have matching full/checkpoint decision and evidence SHA-256 fingerprints;
+- mismatch observations are attempted/untrusted and retain a failed comparison;
+- every compact observation's semantic fingerprint recomputes exactly;
+- every stage aggregate recomputes from its observations;
+- every stage key recomputes from stage/source/target/checkpoint identity;
+- every stage SHA-256 recomputes exactly;
+- every report population recomputes from its stages; and
+- the top-level report/corpus SHA-256 recomputes exactly.
+
+The importer is intentionally bounded: individual files above 16 MiB are rejected and the corpus module places deterministic limits on stage/observation counts.
+
+These SHA-256 checks provide deterministic integrity and corruption detection for exported evidence. They are not a signature or claim that an arbitrary third-party file is externally authenticated.
+
+### Deduplication and repeated evidence
+
+The corpus uses the complete stage SHA-256 as the identity of a single stage execution.
+
+- If the exact same stage execution appears in multiple imported reports/corpora, it is stored and counted once.
+- If two independent executions share the same deterministic `stageKey` but have different stage hashes, both remain in the corpus.
+- Candidate population identity remains `stageKey + candidateRecordingHash`.
+
+That distinction matters scientifically: overlapping exports must not inflate the evidence population, while a genuinely repeated run must remain visible so repeat consistency can be measured.
+
+For each unique sample identity, the corpus reports whether observations repeat, whether their semantic fingerprints disagree, whether any mismatch occurred, and whether the sample is a clean exact-equivalent observation.
+
+### Corpus summary
+
+The deterministic `kq1agi-minimizer-checkpoint-evidence-corpus-v1` summary includes:
+
+- unique stage executions;
+- total observations and unique candidate samples;
+- duplicate observations caused by repeated sample identities;
+- repeated and inconsistent samples;
+- unique samples that actually attempted a checkpoint;
+- clean equivalent samples;
+- samples with any mismatch;
+- full-only samples;
+- evidence-compaction collection gaps;
+- distinct GAMEFILES, EditConfig, and source-recording identities; and
+- saved-tick distribution over clean, consistent unique equivalent samples: count, minimum, median, p90, maximum, and average.
+
+The corpus also exposes explicit review flags for any mismatch, inconsistent repeat, collection gap, mixed GAMEFILES identity, or mixed EditConfig identity. These are evidence-review signals only; there is still no automatic acceleration decision.
+
+### Browser workflow
+
+The certification panel now exposes:
+
+- **EXPORT EVIDENCE** — the current Phase -1I.4 browser-session report;
+- **IMPORT EVIDENCE** — one or more hash-valid Phase -1I.4 reports / Phase -1I.5 corpora; and
+- **EXPORT CORPUS** — the deduplicated cross-session corpus.
+
+Imported evidence can be combined with new evidence collected in the current browser session. The same validated corpus is exposed as `globalThis.__kq1agiCheckpointEvidenceCorpus` for browser automation and audit inspection.
+
+Import/review state is outside replay semantics. A rejected or malformed evidence file cannot change a minimizer result, and Phase -1E/-1F still return the mandatory full replay result exactly as before.
+
+### Phase -1I.5 acceptance criteria
+
+- Valid Phase -1I.4 reports import only after observation/stage/report integrity recomputation succeeds.
+- Valid Phase -1I.5 corpora can be imported and combined incrementally with later reports.
+- Import order does not change the final corpus hash.
+- Re-importing an identical report/corpus does not inflate the corpus.
+- Overlapping exports deduplicate exact stage executions by stage hash.
+- Independent executions with the same stage key remain separate and can expose inconsistent sample fingerprints.
+- Tampered observation fingerprints, stage keys, stage hashes, populations, or top-level hashes are rejected.
+- Mixed GAMEFILES/EditConfig evidence is surfaced explicitly rather than silently pooled.
+- Saved-tick statistics use unique clean equivalent samples rather than duplicate observations.
+- Imported evidence does not enable checkpoint acceleration or alter minimizer classification.
+- Phase -1G remains full-replay-only and outside the checkpoint evidence population.
+- Corpus policy remains `full-replay-authoritative`, `policyFrozen=false`, `policyDecision=EVIDENCE_ONLY`.
+
 ## Next slice
 
-Collect real Phase -1E/-1F evidence reports from divergent reproductions and review the **unique compatible sample population**, mismatch count, repeat consistency, and saved-tick distribution. A later Phase -1I policy-freeze change may define a minimum evidence bar and a narrowly scoped checkpoint-acceleration policy, but only in a separate reviewed slice. Full replay remains mandatory until that happens.
+Use the Phase -1I.5 corpus to collect a real, hash-valid population from independent divergent reproductions. Review mismatches, inconsistent repeats, identity mixing, collection gaps, and saved-tick distribution before proposing any explicit acceleration policy. A policy freeze remains a separate change and full replay remains mandatory until that review succeeds.
