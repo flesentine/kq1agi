@@ -248,6 +248,31 @@ assert.equal(mixedCorpus.summary.distinctEditConfigHashes, 2);
 assert.equal(mixedCorpus.summary.reviewFlags.mixedGameIdentity, true);
 assert.equal(mixedCorpus.summary.reviewFlags.mixedEditConfigIdentity, true);
 
+const unavailableStage = await createMinimizerCheckpointStageEvidenceV1({
+  stage: 'phase-1e',
+  sourceRecording: sourceRecording(),
+  targetDivergence: { tick: 12 },
+  shadowState: Object.freeze({
+    status: 'MINIMIZER_SHADOW_CHECKPOINT_UNAVAILABLE',
+    reason: 'no-recorded-release',
+    selection: Object.freeze({
+      status: 'MINIMIZER_SHADOW_NO_BOUNDARY',
+      reason: 'no-recorded-release',
+      targetTick: 12,
+    }),
+  }),
+  observations: [],
+  collectionErrorCandidateHashes: [],
+  outcome: { status: 'MINIMIZED', attempts: 1 },
+});
+const unavailableReport = await createMinimizerCheckpointEvidenceReportV1([unavailableStage]);
+await validateMinimizerCheckpointEvidenceReportV1(unavailableReport);
+const unavailableCorpus = await createMinimizerCheckpointEvidenceCorpusV1([unavailableReport]);
+assert.equal(unavailableCorpus.summary.uniqueStageRecords, 1);
+assert.equal(unavailableCorpus.summary.totalObservations, 0);
+assert.equal(unavailableCorpus.summary.uniqueSamples, 0);
+assert.equal(unavailableCorpus.summary.savedTicks.count, 0);
+
 const failureStage = await makeStage(
   await makeObservation({ candidateHash: sha('e'), status: 'CHECKPOINT_ORACLE_FULL_ONLY' }),
   { collectionErrorCandidateHashes: [sha('f')] },
