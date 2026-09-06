@@ -381,6 +381,7 @@ function installPhase1D() {
           ...importedEvidenceArtifacts,
           latestShadowEvidenceReport,
         ]);
+        importedEvidenceArtifacts.splice(0, importedEvidenceArtifacts.length, latestEvidenceCorpus);
         globalThis.__kq1agiCheckpointEvidenceCorpus = latestEvidenceCorpus;
         globalThis.__kq1agiCheckpointEvidenceCorpusError = null;
       } catch (corpusError) {
@@ -443,7 +444,7 @@ function installPhase1D() {
         ...(latestShadowEvidenceReport ? [latestShadowEvidenceReport] : []),
       ];
       const corpus = await createMinimizerCheckpointEvidenceCorpusV1(inputs);
-      importedEvidenceArtifacts.push(...batch);
+      importedEvidenceArtifacts.splice(0, importedEvidenceArtifacts.length, corpus);
       latestEvidenceCorpus = corpus;
       globalThis.__kq1agiCheckpointEvidenceCorpus = corpus;
       globalThis.__kq1agiCheckpointEvidenceCorpusError = null;
