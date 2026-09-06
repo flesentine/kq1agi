@@ -166,7 +166,7 @@ assert.equal(cleanCorpus.schema, MinimizerCheckpointCorpusLayout.CORPUS_SCHEMA);
 assert.equal(cleanCorpus.policy, 'full-replay-authoritative');
 assert.equal(cleanCorpus.policyFrozen, false);
 assert.equal(cleanCorpus.policyDecision, 'EVIDENCE_ONLY');
-assert.equal(cleanCorpus.summary.uniqueStageExecutions, 2);
+assert.equal(cleanCorpus.summary.uniqueStageRecords, 2);
 assert.equal(cleanCorpus.summary.totalObservations, 2);
 assert.equal(cleanCorpus.summary.uniqueSamples, 2);
 assert.equal(cleanCorpus.summary.uniqueCheckpointAttemptedSamples, 2);
@@ -192,7 +192,7 @@ const combined = await createMinimizerCheckpointEvidenceCorpusV1([
   reportEquivalent,
   reportOverlap,
 ]);
-assert.equal(combined.summary.uniqueStageExecutions, 4, 'Overlapping stage execution must be deduped by stage hash.');
+assert.equal(combined.summary.uniqueStageRecords, 4, 'Overlapping stage evidence record must be deduped by stage hash.');
 assert.equal(combined.summary.totalObservations, 4);
 assert.equal(combined.summary.uniqueSamples, 3);
 assert.equal(combined.summary.duplicateObservations, 1);
