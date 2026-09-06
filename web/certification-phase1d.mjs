@@ -440,6 +440,7 @@ function installPhase1D() {
         globalThis.__kq1agiCheckpointEvidenceReview = null;
         globalThis.__kq1agiCheckpointEvidenceCorpusError = String(corpusError?.message ?? corpusError);
         globalThis.__kq1agiCheckpointEvidenceReviewError = 'Evidence review unavailable because corpus construction failed.';
+        exportEvidenceReviewButton.disabled = true;
       }
       exportEvidenceCorpusButton.disabled = replayRunning || !latestEvidenceCorpus;
       return latestShadowEvidenceReport;
@@ -515,7 +516,9 @@ function installPhase1D() {
       const review = await refreshEvidenceReview();
       exportEvidenceCorpusButton.disabled = replayRunning || !latestEvidenceCorpus;
       setStatus('EVIDENCE CORPUS READY', 'MATCH');
-      progress.textContent = `Phase -1I.5 imported ${files.length} evidence file(s) · hash validation PASS · Phase -1I.6 review ready`;
+      progress.textContent = review
+        ? `Phase -1I.5 imported ${files.length} evidence file(s) · hash validation PASS · Phase -1I.6 review ready`
+        : `Phase -1I.5 imported ${files.length} evidence file(s) · hash validation PASS · Phase -1I.6 review unavailable`;
       detail.textContent = [checkpointEvidenceCorpusText(corpus), '', checkpointEvidenceReviewText(review)].join('\n');
     } catch (error) {
       globalThis.__kq1agiCheckpointEvidenceCorpusError = String(error?.message ?? error);
