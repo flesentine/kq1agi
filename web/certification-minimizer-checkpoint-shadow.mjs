@@ -8,7 +8,7 @@ function asTick(value) {
 function freezeReasonCounts(map) {
   return Object.freeze(
     [...map.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
+      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
       .map(([reason, count]) => Object.freeze({ reason, count })),
   );
 }
