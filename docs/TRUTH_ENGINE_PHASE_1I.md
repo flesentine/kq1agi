@@ -344,13 +344,13 @@ These SHA-256 checks provide deterministic integrity and corruption detection fo
 
 ### Deduplication and repeated evidence
 
-The corpus uses the complete stage SHA-256 as the identity of a single stage execution.
+The corpus uses the complete stage SHA-256 as the identity of a single stage evidence record.
 
-- If the exact same stage execution appears in multiple imported reports/corpora, it is stored and counted once.
+- If the exact same stage evidence record appears in multiple imported reports/corpora, it is stored and counted once.
 - If two independent executions share the same deterministic `stageKey` but have different stage hashes, both remain in the corpus.
 - Candidate population identity remains `stageKey + candidateRecordingHash`.
 
-That distinction matters scientifically: overlapping exports must not inflate the evidence population, while a genuinely repeated run must remain visible so repeat consistency can be measured.
+That distinction matters scientifically: overlapping exports must not inflate the evidence population. Because Phase -1I.4 intentionally has no random/session execution nonce, a truly independent rerun that produces a byte-identical stage record cannot be distinguished from an overlapping duplicate export and is conservatively counted once. Repeat consistency is measured only when independently collected stage records are distinguishable by their deterministic contents.
 
 For each unique sample identity, the corpus reports whether observations repeat, whether their semantic fingerprints disagree, whether any mismatch occurred, and whether the sample is a clean exact-equivalent observation.
 
@@ -358,7 +358,7 @@ For each unique sample identity, the corpus reports whether observations repeat,
 
 The deterministic `kq1agi-minimizer-checkpoint-evidence-corpus-v1` summary includes:
 
-- unique stage executions;
+- unique stage records;
 - total observations and unique candidate samples;
 - duplicate observations caused by repeated sample identities;
 - repeated and inconsistent samples;
@@ -391,7 +391,7 @@ Import/review state is outside replay semantics. A rejected or malformed evidenc
 - Import order does not change the final corpus hash.
 - Re-importing an identical report/corpus does not inflate the corpus.
 - Overlapping exports deduplicate exact stage executions by stage hash.
-- Independent executions with the same stage key remain separate and can expose inconsistent sample fingerprints.
+- Independent runs with the same stage key remain separate only when their stage records differ. A byte-identical independent rerun is intentionally indistinguishable from an overlapping duplicate export under the deterministic Phase -1I.4 format and is therefore counted once; this conservative undercount prevents unsupported evidence inflation.
 - Tampered observation fingerprints, stage keys, stage hashes, populations, or top-level hashes are rejected.
 - Mixed GAMEFILES/EditConfig evidence is surfaced explicitly rather than silently pooled.
 - Saved-tick statistics use unique clean equivalent samples rather than duplicate observations.
