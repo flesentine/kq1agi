@@ -223,4 +223,28 @@ assert.deepEqual(summary.reasons, [
   { reason: 'decision', count: 1 },
 ]);
 
+const { readFile } = await import('node:fs/promises');
+const phase1dSource = await readFile(
+  new URL('../web/certification-phase1d.mjs', import.meta.url),
+  'utf8',
+);
+const shadowCallCount = (phase1dSource.match(/runMinimizerCheckpointShadowV1/g) ?? []).length;
+assert.equal(shadowCallCount, 3, 'Phase -1I.3 expects one import plus exactly two minimizer shadow call sites.');
+const captureCallCount = (phase1dSource.match(/captureFrozenRecordingCheckpoint/g) ?? []).length;
+assert.equal(captureCallCount, 3, 'Phase -1I.3 expects one helper definition plus exactly two checkpoint capture call sites.');
+const editStart = phase1dSource.indexOf('async function startReduceEdits()');
+const editEnd = phase1dSource.indexOf("replayButton.addEventListener", editStart);
+assert.ok(editStart >= 0 && editEnd > editStart, 'Phase -1G source boundary must remain inspectable.');
+const editSection = phase1dSource.slice(editStart, editEnd);
+assert.equal(
+  editSection.includes('runMinimizerCheckpointShadowV1'),
+  false,
+  'Phase -1G EditConfig minimization must remain full-replay-only in Phase -1I.3.',
+);
+assert.equal(
+  editSection.includes('captureFrozenRecordingCheckpoint'),
+  false,
+  'Phase -1G must not capture/rebind recording-only checkpoints.',
+);
+
 console.log('minimizer checkpoint shadow tests: PASS');
