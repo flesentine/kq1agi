@@ -22,6 +22,7 @@ node scripts/test_certification_checkpoint_compat.mjs
 node scripts/test_certification_checkpoint_oracle.mjs
 node scripts/test_certification_minimizer_checkpoint_shadow.mjs
 node scripts/test_certification_minimizer_checkpoint_evidence.mjs
+node scripts/test_certification_minimizer_checkpoint_corpus.mjs
 node scripts/test_certification_recording_hash.mjs
 node scripts/test_certification_replay_host.mjs
 node scripts/test_phase1d_recording_boundary.mjs
@@ -105,6 +106,7 @@ cp web/certification-checkpoint-compat.mjs "$OUT/certification-checkpoint-compat
 cp web/certification-checkpoint-oracle.mjs "$OUT/certification-checkpoint-oracle.mjs"
 cp web/certification-minimizer-checkpoint-shadow.mjs "$OUT/certification-minimizer-checkpoint-shadow.mjs"
 cp web/certification-minimizer-checkpoint-evidence.mjs "$OUT/certification-minimizer-checkpoint-evidence.mjs"
+cp web/certification-minimizer-checkpoint-corpus.mjs "$OUT/certification-minimizer-checkpoint-corpus.mjs"
 cp web/certification-replay-host.mjs "$OUT/certification-replay-host.mjs"
 cp web/certification-phase1d.mjs "$OUT/certification-phase1d.mjs"
 cp web/certification-minimizer.mjs "$OUT/certification-minimizer.mjs"
@@ -121,6 +123,7 @@ test -f "$OUT/certification-checkpoint-compat.mjs"
 test -f "$OUT/certification-checkpoint-oracle.mjs"
 test -f "$OUT/certification-minimizer-checkpoint-shadow.mjs"
 test -f "$OUT/certification-minimizer-checkpoint-evidence.mjs"
+test -f "$OUT/certification-minimizer-checkpoint-corpus.mjs"
 test -f "$OUT/certification-input-minimizer.mjs"
 test -f "$OUT/certification-edit-minimizer.mjs"
 test -f "$OUT/PHASE_1I.md"
@@ -137,10 +140,17 @@ grep -q 'runMinimizerCheckpointShadowV1' "$OUT/certification-minimizer-checkpoin
 grep -q 'selectMinimizerShadowCheckpointBoundaryV1' "$OUT/certification-minimizer-checkpoint-shadow.mjs"
 grep -q 'compactMinimizerCheckpointObservationV1' "$OUT/certification-minimizer-checkpoint-evidence.mjs"
 grep -q 'createMinimizerCheckpointEvidenceReportV1' "$OUT/certification-minimizer-checkpoint-evidence.mjs"
+grep -q 'hashMinimizerCheckpointObservationSemanticV1' "$OUT/certification-minimizer-checkpoint-evidence.mjs"
 grep -q 'policyFrozen: false' "$OUT/certification-minimizer-checkpoint-evidence.mjs"
+grep -q 'createMinimizerCheckpointEvidenceCorpusV1' "$OUT/certification-minimizer-checkpoint-corpus.mjs"
+grep -q 'validateMinimizerCheckpointEvidenceArtifactV1' "$OUT/certification-minimizer-checkpoint-corpus.mjs"
+grep -q 'kq1agi-minimizer-checkpoint-evidence-corpus-v1' "$OUT/certification-minimizer-checkpoint-corpus.mjs"
 grep -q 'checkpointShadowSummaryText' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-export-shadow-evidence-button' "$OUT/certification-phase1d.mjs"
 grep -q '__kq1agiCheckpointShadowEvidenceReport' "$OUT/certification-phase1d.mjs"
+grep -q 'certify-import-evidence-button' "$OUT/certification-phase1d.mjs"
+grep -q 'certify-export-evidence-corpus-button' "$OUT/certification-phase1d.mjs"
+grep -q '__kq1agiCheckpointEvidenceCorpus' "$OUT/certification-phase1d.mjs"
 ! grep -q 'shadowResults.push(shadow)' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-reduce-inputs-button' "$OUT/certification-phase1d.mjs"
 grep -q 'minimizeInputGroupsV1' "$OUT/certification-phase1d.mjs"
@@ -160,6 +170,7 @@ printf '%s\n' \
   'Phase -1I.2 adds a shadow oracle runner: full replay remains authoritative, compatible checkpoint replay is trusted only after exact decision and terminal-evidence equivalence.' \
   'Phase -1I.3 wires Phase -1E/-1F candidates through that runner in shadow mode, captures one deterministic recorded-boundary checkpoint per minimizer stage, reports equivalence telemetry, and keeps the full replay authoritative; Phase -1G remains full-only.' \
   'Phase -1I.4 compacts each Phase -1E/-1F oracle result into deterministic decision/evidence SHA-256 fingerprints, deduplicates repeated sample identities, exposes inconsistent repeats and collection gaps, and exports an evidence-only report while full replay remains mandatory.' \
+  'Phase -1I.5 validates and composes exported reports/corpora across browser sessions, deduplicates overlapping deterministic stage records by hash, preserves distinguishable repeats, conservatively collapses byte-identical repeats, flags mismatches/identity mixing/collection gaps, and keeps policy EVIDENCE_ONLY.' \
   > "$OUT/ARTIFACT.txt"
 
 find "$OUT" -maxdepth 2 -type f | sort
