@@ -384,6 +384,8 @@ function installPhase1D() {
         globalThis.__kq1agiCheckpointEvidenceCorpus = latestEvidenceCorpus;
         globalThis.__kq1agiCheckpointEvidenceCorpusError = null;
       } catch (corpusError) {
+        latestEvidenceCorpus = null;
+        globalThis.__kq1agiCheckpointEvidenceCorpus = null;
         globalThis.__kq1agiCheckpointEvidenceCorpusError = String(corpusError?.message ?? corpusError);
       }
       exportEvidenceCorpusButton.disabled = replayRunning || !latestEvidenceCorpus;
