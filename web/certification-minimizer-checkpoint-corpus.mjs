@@ -379,6 +379,16 @@ async function createCorpusFromStagesV1(stages) {
       return left < right ? -1 : left > right ? 1 : 0;
     }),
   );
+  if (dedupedStages.length > MAX_STAGES) {
+    throw new Error('Checkpoint evidence corpus exceeds the post-dedup stage safety limit.');
+  }
+  const observationCount = dedupedStages.reduce(
+    (total, stage) => total + (stage.observations?.length ?? 0),
+    0,
+  );
+  if (observationCount > MAX_OBSERVATIONS) {
+    throw new Error('Checkpoint evidence corpus exceeds the post-dedup observation safety limit.');
+  }
   const unsigned = {
     schema: CORPUS_SCHEMA,
     policy: POLICY,
