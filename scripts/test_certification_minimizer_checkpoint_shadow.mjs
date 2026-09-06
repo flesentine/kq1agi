@@ -127,8 +127,8 @@ assert.deepEqual(selection, {
   status: 'MINIMIZER_SHADOW_BOUNDARY_SELECTED',
   targetTick: 12,
   desiredCheckpointTick: 6,
-  pauseBeforeTick: 6,
-  checkpointTick: 5,
+  pauseBeforeTick: 8,
+  checkpointTick: 7,
   recordedReleaseCount: 4,
 });
 
