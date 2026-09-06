@@ -74,6 +74,35 @@ async function optionalHash(value) {
   return value == null ? null : hashCanonicalJsonV1(value);
 }
 
+export async function hashMinimizerCheckpointObservationSemanticV1(observation) {
+  if (!observation || typeof observation !== 'object') {
+    throw new TypeError('A compact minimizer checkpoint observation is required.');
+  }
+  return hashCanonicalJsonV1({
+    candidateRecordingHash: String(observation.candidateRecordingHash ?? ''),
+    status: String(observation.status ?? 'UNKNOWN'),
+    reason: String(observation.reason ?? observation.status ?? 'UNKNOWN'),
+    checkpointAttempted: observation.checkpointAttempted === true,
+    checkpointTrusted: observation.checkpointTrusted === true,
+    savedTicks: Number.isSafeInteger(Number(observation.savedTicks)) && Number(observation.savedTicks) >= 0
+      ? Number(observation.savedTicks)
+      : null,
+    compatibility: observation.compatibility ?? null,
+    comparison: observation.comparison ?? null,
+    authoritativeStatus: String(observation.authoritativeStatus ?? 'UNKNOWN'),
+    authoritativeResultStatus: observation.authoritativeResultStatus == null
+      ? null
+      : String(observation.authoritativeResultStatus),
+    authoritativeResultTick: Number.isSafeInteger(Number(observation.authoritativeResultTick))
+      ? Number(observation.authoritativeResultTick)
+      : null,
+    fullDecisionHash: observation.fullDecisionHash ?? null,
+    checkpointDecisionHash: observation.checkpointDecisionHash ?? null,
+    fullEvidenceHash: observation.fullEvidenceHash ?? null,
+    checkpointEvidenceHash: observation.checkpointEvidenceHash ?? null,
+  });
+}
+
 /**
  * Convert one full Phase -1I.2 oracle result into a compact, cryptographically
  * fingerprinted observation. The giant terminal evidence payloads are hashed and
@@ -141,23 +170,7 @@ export async function compactMinimizerCheckpointObservationV1(shadow, candidateR
     checkpointEvidenceHash,
   };
 
-  const semanticFingerprint = await hashCanonicalJsonV1({
-    candidateRecordingHash: observationCore.candidateRecordingHash,
-    status: observationCore.status,
-    reason: observationCore.reason,
-    checkpointAttempted: observationCore.checkpointAttempted,
-    checkpointTrusted: observationCore.checkpointTrusted,
-    savedTicks: observationCore.savedTicks,
-    compatibility: observationCore.compatibility,
-    comparison: observationCore.comparison,
-    authoritativeStatus: observationCore.authoritativeStatus,
-    authoritativeResultStatus: observationCore.authoritativeResultStatus,
-    authoritativeResultTick: observationCore.authoritativeResultTick,
-    fullDecisionHash,
-    checkpointDecisionHash,
-    fullEvidenceHash,
-    checkpointEvidenceHash,
-  });
+  const semanticFingerprint = await hashMinimizerCheckpointObservationSemanticV1(observationCore);
 
   return Object.freeze({ ...observationCore, semanticFingerprint });
 }
