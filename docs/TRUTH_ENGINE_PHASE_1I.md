@@ -239,6 +239,82 @@ Phase -1G remains intentionally unchanged and full-replay-only. Its candidates c
 - Phase -1G has no checkpoint capture, rebinding, or shadow-run call site.
 - No policy is allowed to skip the full replay in this slice.
 
+## Phase -1I.3 transition
+
+The next slice is evidence collection, not policy activation. Full replay remains mandatory while the compatible population is measured and audited.
+
+## Phase -1I.4 — compact minimizer evidence ledger
+
+Phase -1I.4 turns the Phase -1I.3 shadow observations into an auditable evidence population without changing replay authority or enabling acceleration.
+
+The scientific problem in Phase -1I.3 is that a useful shadow run naturally produces two large terminal snapshots for every compatible minimizer candidate: the full-run evidence and the checkpoint-run evidence. Retaining every raw oracle result for the lifetime of a long minimization can unnecessarily retain many copies of KQ1H v2 worker payloads. Phase -1I.4 therefore compacts each candidate immediately after the oracle comparison.
+
+### Compact observation
+
+For each Phase -1E/-1F candidate that enters the shadow oracle, the UI now derives a `kq1agi-minimizer-checkpoint-observation-v1` record before the next candidate starts. The observation keeps:
+
+- the candidate recording hash;
+- oracle status/reason and checkpoint attempted/trusted flags;
+- full/checkpoint consumed-tick telemetry and measured saved ticks;
+- compact checkpoint-compatibility identity;
+- mismatch category plus the first differing evidence/decision path and reason;
+- the authoritative result status/tick;
+- SHA-256 fingerprints of the canonical full/checkpoint decisions; and
+- SHA-256 fingerprints plus validation status for the full/checkpoint terminal evidence.
+
+The raw `fullRun` / `acceleratedRun` evidence objects, including hidden worker payload arrays, are not retained in the minimizer evidence ledger. An exact Phase -1I.2 equivalence therefore leaves matching full/checkpoint decision and evidence fingerprints; a mismatch preserves the differing fingerprints and forensic difference path without keeping the large payloads alive.
+
+This compaction is evidence-only. `shadow.summary` is still returned to the minimizer before the raw oracle result becomes unreachable, and that summary is still the full from-start authoritative result. Fingerprint/report generation is best-effort: a compaction failure records the affected candidate hash as a collection gap, and a report-generation failure disables that new report rather than changing the minimizer's replay classification.
+
+### Stage and population identity
+
+Each completed Phase -1E or Phase -1F execution produces a deterministic `kq1agi-minimizer-checkpoint-stage-evidence-v1` record containing:
+
+- source recording/game/EditConfig identity and source sizes;
+- exact target divergence tick;
+- checkpoint selection/capture identity;
+- stage outcome and attempt count;
+- compact candidate observations; and
+- the existing aggregate equivalent/full-only/mismatch telemetry.
+
+A deterministic stage key is derived from stage name, source recording hash, target tick, and checkpoint identity. The exported report uses `stageKey + candidateRecordingHash` as the population sample identity. Re-running the same candidate under the same source/checkpoint therefore does not silently inflate the number of unique samples.
+
+The report separately exposes:
+
+- total observations;
+- unique samples;
+- duplicate observations and repeated samples; and
+- **inconsistent repeated samples**, where the same sample identity produced different semantic fingerprints on different executions.
+
+An inconsistent repeated sample is strong evidence against any later shortcut policy and must not be hidden by aggregate success counts.
+
+### Exported evidence report
+
+The certification panel exposes **EXPORT EVIDENCE** once at least one Phase -1E/-1F stage record exists. The deterministic JSON report uses schema `kq1agi-minimizer-checkpoint-evidence-report-v1`, carries its own SHA-256 hash, and is also published in-page as `globalThis.__kq1agiCheckpointShadowEvidenceReport` for browser automation/audit inspection.
+
+The report deliberately declares:
+
+- `policy: full-replay-authoritative`;
+- `policyFrozen: false`; and
+- `policyDecision: EVIDENCE_ONLY`.
+
+No candidate can skip its full replay in Phase -1I.4. The report is an evidence collection surface, not an acceleration gate.
+
+### Phase -1I.4 acceptance criteria
+
+- Phase -1E and Phase -1F remain the only minimizer stages entering the recording-only checkpoint shadow path.
+- Every shadow candidate still runs the full replay first and the minimizer still receives only the full authoritative summary.
+- Raw oracle terminal worker payloads are not retained in the cross-candidate evidence array.
+- Compact observations preserve deterministic SHA-256 decision/evidence fingerprints and mismatch paths.
+- Evidence compaction/report failures cannot replace or block the minimizer's full authoritative result; collection gaps are surfaced separately.
+- Exact equivalent observations have equal full/checkpoint semantic fingerprints at the decision/evidence level.
+- Stage and report hashes are deterministic and contain no wall-clock/random identity.
+- Repeated identical stage/candidate samples are counted separately as observations but only once as a unique population sample.
+- Conflicting repeated outcomes are surfaced as inconsistent samples.
+- Exported JSON contains no raw hidden worker payload arrays.
+- Phase -1G remains full-replay-only and is excluded from the Phase -1I.4 checkpoint population.
+- The evidence report explicitly states that no acceleration policy has been frozen.
+
 ## Next slice
 
-Collect minimizer-level equivalence evidence across real divergent reproductions and freeze an explicit acceleration policy only after the observed compatible population is large enough to justify it. Until that policy is separately reviewed and frozen, full replay remains mandatory for every candidate.
+Collect real Phase -1E/-1F evidence reports from divergent reproductions and review the **unique compatible sample population**, mismatch count, repeat consistency, and saved-tick distribution. A later Phase -1I policy-freeze change may define a minimum evidence bar and a narrowly scoped checkpoint-acceleration policy, but only in a separate reviewed slice. Full replay remains mandatory until that happens.
