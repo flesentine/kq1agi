@@ -46,8 +46,7 @@ function isSha256(value) {
 }
 
 function asNonNegativeInteger(value) {
-  const n = Number(value);
-  return Number.isSafeInteger(n) && n >= 0 ? n : null;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
 async function sameCanonicalValue(a, b) {
@@ -158,6 +157,17 @@ async function validateStageV1(stage) {
   if (stage.checkpoint.hash != null && !isSha256(stage.checkpoint.hash)) {
     throw new Error('Evidence stage checkpoint hash is invalid.');
   }
+  if (stage.checkpoint.hash != null) {
+    if (stage.checkpoint.status !== 'MINIMIZER_SHADOW_CHECKPOINT_CAPTURED'
+        || stage.checkpoint.reason != null
+        || asNonNegativeInteger(stage.checkpoint.logicalTick) == null) {
+      throw new Error('Captured evidence checkpoint identity is inconsistent.');
+    }
+  } else if (stage.checkpoint.status !== 'MINIMIZER_SHADOW_CHECKPOINT_UNAVAILABLE'
+      || typeof stage.checkpoint.reason !== 'string'
+      || !stage.checkpoint.reason) {
+    throw new Error('Unavailable evidence checkpoint identity is inconsistent.');
+  }
   for (const key of ['logicalTick', 'pauseBeforeTick', 'desiredCheckpointTick']) {
     if (stage.checkpoint[key] != null && asNonNegativeInteger(stage.checkpoint[key]) == null) {
       throw new Error(`Evidence stage checkpoint ${key} is invalid.`);
@@ -205,6 +215,10 @@ async function validateStageV1(stage) {
   }
   if (new Set(failures).size !== failures.length || failures.some(hash => !isSha256(hash))) {
     throw new Error('Evidence stage collection failure identities are invalid.');
+  }
+  const sortedFailures = [...failures].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  if (failures.some((hash, index) => hash !== sortedFailures[index])) {
+    throw new Error('Evidence stage collection failure identities are not canonical.');
   }
 
   const expectedSummary = summarizeMinimizerCheckpointShadowV1(stage.observations);
