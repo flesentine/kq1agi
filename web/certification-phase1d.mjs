@@ -4,6 +4,12 @@ import { minimizeDivergentPrefix } from './certification-minimizer.mjs';
 import { groupReplayInputEventsV1, minimizeInputGroupsV1 } from './certification-input-minimizer.mjs';
 import { groupEditConfigV1, minimizeEditConfigV1 } from './certification-edit-minimizer.mjs';
 import { ReplayCertificationHost } from './certification-replay-host.mjs';
+import { captureCheckpointOracleEvidenceV1 } from './certification-checkpoint-oracle.mjs';
+import {
+  runMinimizerCheckpointShadowV1,
+  selectMinimizerShadowCheckpointBoundaryV1,
+  summarizeMinimizerCheckpointShadowV1,
+} from './certification-minimizer-checkpoint-shadow.mjs';
 import {
   encodeRandomReplay,
   freezePlayRecordingV1,
@@ -56,6 +62,28 @@ function editGroupsText(groups, limit = 12) {
   });
   if (groups.length > limit) shown.push(`… ${groups.length - limit} more group(s)`);
   return ['remaining edit groups:', ...shown].join('\n');
+}
+
+function checkpointShadowSummaryText(shadowState, results) {
+  if (!shadowState?.checkpoint) {
+    const reason = shadowState?.reason ?? shadowState?.selection?.reason ?? 'checkpoint unavailable';
+    return `checkpoint shadow: unavailable (${reason}) · full replay remained authoritative`;
+  }
+
+  const summary = summarizeMinimizerCheckpointShadowV1(results);
+  const reasons = summary.reasons.length
+    ? summary.reasons.map(item => `${item.reason}=${item.count}`).join(', ')
+    : 'none';
+  const average = summary.averageSavedTicks == null
+    ? 'n/a'
+    : summary.averageSavedTicks.toFixed(1);
+
+  return [
+    `checkpoint shadow: source tick ${shadowState.checkpoint.logicalTick} · pause before ${shadowState.selection.pauseBeforeTick} · full replay authoritative`,
+    `oracle candidates=${summary.totalCandidates} · equivalent=${summary.equivalent} · full-only=${summary.fullOnly} · mismatch=${summary.mismatch}`,
+    `checkpoint attempts=${summary.checkpointAttempts} · trusted=${summary.trustedCheckpoints} · measured saved ticks=${summary.totalSavedTicks} · average=${average}`,
+    `oracle reasons: ${reasons}`,
+  ].join('\n');
 }
 
 /**
@@ -284,11 +312,105 @@ function installPhase1D() {
       await replayHost.start(gameBuffer);
       const applyEditConfig = createEditConfigApplicator(editConfig);
       applyEditConfig(replayHost);
-      return await runCertificationReplaySession(replayHost, recording, {
+      const summary = await runCertificationReplaySession(replayHost, recording, {
         pulseIntervalMs: options.pulseIntervalMs ?? (1000 / 60),
         beforePulse: () => applyEditConfig(replayHost),
         shouldStop: () => stopRequested,
         onUpdate: options.onUpdate ?? (() => {}),
+        checkpoint: options.checkpoint ?? null,
+      });
+
+      if (!options.captureEvidence) return summary;
+
+      let evidence = null;
+      let evidenceError = null;
+      if (['REPLAY_MATCH', 'DIVERGED', 'COMPLETE'].includes(String(summary?.status ?? ''))) {
+        try {
+          evidence = await captureCheckpointOracleEvidenceV1(replayHost);
+        } catch (error) {
+          evidenceError = String(error?.stack ?? error);
+        }
+      }
+      return Object.freeze({ summary, evidence, evidenceError });
+    } finally {
+      replayHost?.terminate();
+      replayHost = null;
+    }
+  }
+
+  async function captureFrozenRecordingCheckpoint(recording, gameBuffer, editConfig, selection) {
+    if (selection?.status !== 'MINIMIZER_SHADOW_BOUNDARY_SELECTED') {
+      return Object.freeze({
+        status: 'MINIMIZER_SHADOW_CHECKPOINT_UNAVAILABLE',
+        reason: selection?.reason ?? 'no-boundary',
+        selection,
+      });
+    }
+
+    const truthWorkerUrl = new URL('./truth-worker/worker.nocache.js', import.meta.url).href;
+    const editedWorkerUrl = new URL('./edited-worker/worker.nocache.js', import.meta.url).href;
+    replayHost?.terminate();
+    replayHost = new ReplayCertificationHost({
+      truthWorkerUrl,
+      editedWorkerUrl,
+      randomReplaySpec: encodeRandomReplay(recording),
+      recordedExternalTiming: true,
+      checkpointContext: {
+        gameHash: recording.gameHash,
+        gameBytes: recording.gameBytes,
+        editConfigHash: recording.editConfigHash,
+        recordingHash: recording.hash,
+      },
+    });
+
+    try {
+      await replayHost.start(gameBuffer);
+      const applyEditConfig = createEditConfigApplicator(editConfig);
+      applyEditConfig(replayHost);
+      const paused = await runCertificationReplaySession(replayHost, recording, {
+        pulseIntervalMs: 0,
+        beforePulse: () => applyEditConfig(replayHost),
+        shouldStop: () => stopRequested,
+        pauseBeforeTick: selection.pauseBeforeTick,
+      });
+      if (paused?.status !== 'REPLAY_PAUSED') {
+        return Object.freeze({
+          status: 'MINIMIZER_SHADOW_CHECKPOINT_UNAVAILABLE',
+          reason: `pause-${paused?.status ?? 'unknown'}`,
+          selection,
+          paused,
+        });
+      }
+
+      const checkpoint = await replayHost.captureCheckpointProbe();
+      if (checkpoint?.status !== 'CHECKPOINT_CAPTURED') {
+        return Object.freeze({
+          status: 'MINIMIZER_SHADOW_CHECKPOINT_UNAVAILABLE',
+          reason: checkpoint?.status ?? 'capture-failed',
+          selection,
+          checkpointResult: checkpoint ?? null,
+        });
+      }
+      if ((Number(checkpoint.logicalTick) >>> 0) !== (Number(selection.checkpointTick) >>> 0)) {
+        return Object.freeze({
+          status: 'MINIMIZER_SHADOW_CHECKPOINT_UNAVAILABLE',
+          reason: 'checkpoint-position',
+          selection,
+          checkpointResult: checkpoint,
+        });
+      }
+
+      return Object.freeze({
+        status: 'MINIMIZER_SHADOW_CHECKPOINT_CAPTURED',
+        selection,
+        checkpoint,
+      });
+    } catch (error) {
+      return Object.freeze({
+        status: 'MINIMIZER_SHADOW_CHECKPOINT_UNAVAILABLE',
+        reason: 'capture-exception',
+        selection,
+        error: String(error?.stack ?? error),
       });
     } finally {
       replayHost?.terminate();
