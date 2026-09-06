@@ -22,6 +22,10 @@ import {
   validateMinimizerCheckpointEvidenceArtifactV1,
 } from './certification-minimizer-checkpoint-corpus.mjs';
 import {
+  createMinimizerCheckpointEvidenceReviewV1,
+  serializeMinimizerCheckpointEvidenceReviewV1,
+} from './certification-minimizer-checkpoint-review.mjs';
+import {
   encodeRandomReplay,
   freezePlayRecordingV1,
   getPlayRecordingStats,
@@ -121,6 +125,17 @@ function checkpointEvidenceCorpusText(corpus) {
     `identities: game=${summary.distinctGameHashes} · EditConfig=${summary.distinctEditConfigHashes} · source recordings=${summary.distinctSourceRecordings}`,
     saved,
     'policy: EVIDENCE_ONLY · no checkpoint acceleration is enabled',
+  ].join('\n');
+}
+
+function checkpointEvidenceReviewText(review) {
+  if (!review) return 'evidence review: unavailable';
+  const blockers = review.blockers?.length ? review.blockers.join(', ') : 'none';
+  return [
+    `Phase -1I.6 review ${shortHash(review.hash)} · status=${review.reviewStatus}`,
+    `blockers: ${blockers}`,
+    `review population: attempted unique=${review.evidence.uniqueCheckpointAttemptedSamples} · clean equivalent=${review.evidence.cleanEquivalentSamples} · mismatches=${review.evidence.mismatchSamples} · inconsistent=${review.evidence.inconsistentSamples} · collection gaps=${review.evidence.compactionFailures}`,
+    'threshold: UNSET · accelerationAllowed=false · full replay remains mandatory',
   ].join('\n');
 }
 
@@ -308,6 +323,17 @@ function installPhase1D() {
     importEvidenceButton.insertAdjacentElement('afterend', exportEvidenceCorpusButton);
   }
 
+  let exportEvidenceReviewButton = document.getElementById('certify-export-evidence-review-button');
+  if (!exportEvidenceReviewButton) {
+    exportEvidenceReviewButton = document.createElement('button');
+    exportEvidenceReviewButton.id = 'certify-export-evidence-review-button';
+    exportEvidenceReviewButton.type = 'button';
+    exportEvidenceReviewButton.textContent = 'EXPORT REVIEW';
+    exportEvidenceReviewButton.title = 'Download the deterministic Phase -1I.6 evidence review record';
+    exportEvidenceReviewButton.disabled = true;
+    exportEvidenceCorpusButton.insertAdjacentElement('afterend', exportEvidenceReviewButton);
+  }
+
   let importEvidenceInput = document.getElementById('certify-import-evidence-input');
   if (!importEvidenceInput) {
     importEvidenceInput = document.createElement('input');
@@ -329,6 +355,7 @@ function installPhase1D() {
   const importedEvidenceArtifacts = [];
   let latestShadowEvidenceReport = null;
   let latestEvidenceCorpus = null;
+  let latestEvidenceReview = null;
 
   const setStatus = (text, state) => {
     status.textContent = text;
@@ -353,12 +380,33 @@ function installPhase1D() {
     exportShadowEvidenceButton.disabled = value || !latestShadowEvidenceReport;
     importEvidenceButton.disabled = value;
     exportEvidenceCorpusButton.disabled = value || !latestEvidenceCorpus;
+    exportEvidenceReviewButton.disabled = value || !latestEvidenceReview;
     runButton.disabled = value;
     if (refreshButton) refreshButton.disabled = value;
     gameSelect.disabled = value;
     if (barrierInput) barrierInput.disabled = value;
     stopButton.disabled = !value;
   };
+
+  async function refreshEvidenceReview() {
+    if (!latestEvidenceCorpus) {
+      latestEvidenceReview = null;
+      globalThis.__kq1agiCheckpointEvidenceReview = null;
+      exportEvidenceReviewButton.disabled = true;
+      return null;
+    }
+    try {
+      latestEvidenceReview = await createMinimizerCheckpointEvidenceReviewV1(latestEvidenceCorpus);
+      globalThis.__kq1agiCheckpointEvidenceReview = latestEvidenceReview;
+      globalThis.__kq1agiCheckpointEvidenceReviewError = null;
+    } catch (error) {
+      latestEvidenceReview = null;
+      globalThis.__kq1agiCheckpointEvidenceReview = null;
+      globalThis.__kq1agiCheckpointEvidenceReviewError = String(error?.message ?? error);
+    }
+    exportEvidenceReviewButton.disabled = replayRunning || !latestEvidenceReview;
+    return latestEvidenceReview;
+  }
 
   async function recordShadowEvidenceStage(stage, context, shadowState, observations, collectionErrorCandidateHashes, outcome) {
     try {
@@ -384,10 +432,14 @@ function installPhase1D() {
         importedEvidenceArtifacts.splice(0, importedEvidenceArtifacts.length, latestEvidenceCorpus);
         globalThis.__kq1agiCheckpointEvidenceCorpus = latestEvidenceCorpus;
         globalThis.__kq1agiCheckpointEvidenceCorpusError = null;
+        await refreshEvidenceReview();
       } catch (corpusError) {
         latestEvidenceCorpus = null;
+        latestEvidenceReview = null;
         globalThis.__kq1agiCheckpointEvidenceCorpus = null;
+        globalThis.__kq1agiCheckpointEvidenceReview = null;
         globalThis.__kq1agiCheckpointEvidenceCorpusError = String(corpusError?.message ?? corpusError);
+        globalThis.__kq1agiCheckpointEvidenceReviewError = 'Evidence review unavailable because corpus construction failed.';
       }
       exportEvidenceCorpusButton.disabled = replayRunning || !latestEvidenceCorpus;
       return latestShadowEvidenceReport;
@@ -422,6 +474,18 @@ function installPhase1D() {
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
+  function exportEvidenceReview() {
+    if (!latestEvidenceReview) return;
+    const body = serializeMinimizerCheckpointEvidenceReviewV1(latestEvidenceReview);
+    const blob = new Blob([body], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kq1agi-checkpoint-evidence-review-${latestEvidenceReview.hash.slice(7, 19)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
   async function importEvidenceFiles() {
     const files = [...(importEvidenceInput.files ?? [])];
     importEvidenceInput.value = '';
@@ -448,10 +512,11 @@ function installPhase1D() {
       latestEvidenceCorpus = corpus;
       globalThis.__kq1agiCheckpointEvidenceCorpus = corpus;
       globalThis.__kq1agiCheckpointEvidenceCorpusError = null;
+      const review = await refreshEvidenceReview();
       exportEvidenceCorpusButton.disabled = replayRunning || !latestEvidenceCorpus;
       setStatus('EVIDENCE CORPUS READY', 'MATCH');
-      progress.textContent = `Phase -1I.5 imported ${files.length} evidence file(s) · hash validation PASS`;
-      detail.textContent = checkpointEvidenceCorpusText(corpus);
+      progress.textContent = `Phase -1I.5 imported ${files.length} evidence file(s) · hash validation PASS · Phase -1I.6 review ready`;
+      detail.textContent = [checkpointEvidenceCorpusText(corpus), '', checkpointEvidenceReviewText(review)].join('\n');
     } catch (error) {
       globalThis.__kq1agiCheckpointEvidenceCorpusError = String(error?.message ?? error);
       setStatus('EVIDENCE IMPORT REJECTED', 'ERROR');
@@ -1175,6 +1240,7 @@ function installPhase1D() {
   });
   importEvidenceInput.addEventListener('change', importEvidenceFiles);
   exportEvidenceCorpusButton.addEventListener('click', exportEvidenceCorpus);
+  exportEvidenceReviewButton.addEventListener('click', exportEvidenceReview);
   gameSelect.addEventListener('change', invalidateMinimization);
   runButton.addEventListener('click', invalidateMinimization, { capture: true });
   stopButton.addEventListener('click', () => {
