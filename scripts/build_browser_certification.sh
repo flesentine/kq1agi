@@ -170,7 +170,7 @@ printf '%s\n' \
   'Phase -1I.2 adds a shadow oracle runner: full replay remains authoritative, compatible checkpoint replay is trusted only after exact decision and terminal-evidence equivalence.' \
   'Phase -1I.3 wires Phase -1E/-1F candidates through that runner in shadow mode, captures one deterministic recorded-boundary checkpoint per minimizer stage, reports equivalence telemetry, and keeps the full replay authoritative; Phase -1G remains full-only.' \
   'Phase -1I.4 compacts each Phase -1E/-1F oracle result into deterministic decision/evidence SHA-256 fingerprints, deduplicates repeated sample identities, exposes inconsistent repeats and collection gaps, and exports an evidence-only report while full replay remains mandatory.' \
-  'Phase -1I.5 validates and composes exported reports/corpora across browser sessions, deduplicates overlapping stage executions by hash, preserves independent repeats, flags mismatches/identity mixing/collection gaps, and keeps policy EVIDENCE_ONLY.' \
+  'Phase -1I.5 validates and composes exported reports/corpora across browser sessions, deduplicates overlapping deterministic stage records by hash, preserves distinguishable repeats, conservatively collapses byte-identical repeats, flags mismatches/identity mixing/collection gaps, and keeps policy EVIDENCE_ONLY.' \
   > "$OUT/ARTIFACT.txt"
 
 find "$OUT" -maxdepth 2 -type f | sort
