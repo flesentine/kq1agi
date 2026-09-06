@@ -23,6 +23,7 @@ node scripts/test_certification_checkpoint_oracle.mjs
 node scripts/test_certification_minimizer_checkpoint_shadow.mjs
 node scripts/test_certification_minimizer_checkpoint_evidence.mjs
 node scripts/test_certification_minimizer_checkpoint_corpus.mjs
+node scripts/test_certification_minimizer_checkpoint_review.mjs
 node scripts/test_certification_recording_hash.mjs
 node scripts/test_certification_replay_host.mjs
 node scripts/test_phase1d_recording_boundary.mjs
@@ -107,6 +108,7 @@ cp web/certification-checkpoint-oracle.mjs "$OUT/certification-checkpoint-oracle
 cp web/certification-minimizer-checkpoint-shadow.mjs "$OUT/certification-minimizer-checkpoint-shadow.mjs"
 cp web/certification-minimizer-checkpoint-evidence.mjs "$OUT/certification-minimizer-checkpoint-evidence.mjs"
 cp web/certification-minimizer-checkpoint-corpus.mjs "$OUT/certification-minimizer-checkpoint-corpus.mjs"
+cp web/certification-minimizer-checkpoint-review.mjs "$OUT/certification-minimizer-checkpoint-review.mjs"
 cp web/certification-replay-host.mjs "$OUT/certification-replay-host.mjs"
 cp web/certification-phase1d.mjs "$OUT/certification-phase1d.mjs"
 cp web/certification-minimizer.mjs "$OUT/certification-minimizer.mjs"
@@ -124,6 +126,7 @@ test -f "$OUT/certification-checkpoint-oracle.mjs"
 test -f "$OUT/certification-minimizer-checkpoint-shadow.mjs"
 test -f "$OUT/certification-minimizer-checkpoint-evidence.mjs"
 test -f "$OUT/certification-minimizer-checkpoint-corpus.mjs"
+test -f "$OUT/certification-minimizer-checkpoint-review.mjs"
 test -f "$OUT/certification-input-minimizer.mjs"
 test -f "$OUT/certification-edit-minimizer.mjs"
 test -f "$OUT/PHASE_1I.md"
@@ -145,12 +148,18 @@ grep -q 'policyFrozen: false' "$OUT/certification-minimizer-checkpoint-evidence.
 grep -q 'createMinimizerCheckpointEvidenceCorpusV1' "$OUT/certification-minimizer-checkpoint-corpus.mjs"
 grep -q 'validateMinimizerCheckpointEvidenceArtifactV1' "$OUT/certification-minimizer-checkpoint-corpus.mjs"
 grep -q 'kq1agi-minimizer-checkpoint-evidence-corpus-v1' "$OUT/certification-minimizer-checkpoint-corpus.mjs"
+grep -q 'createMinimizerCheckpointEvidenceReviewV1' "$OUT/certification-minimizer-checkpoint-review.mjs"
+grep -q 'CLEAN_EVIDENCE_THRESHOLD_UNSET' "$OUT/certification-minimizer-checkpoint-review.mjs"
+grep -q 'accelerationAllowed: false' "$OUT/certification-minimizer-checkpoint-review.mjs"
+grep -q "status: 'UNSET'" "$OUT/certification-minimizer-checkpoint-review.mjs"
 grep -q 'checkpointShadowSummaryText' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-export-shadow-evidence-button' "$OUT/certification-phase1d.mjs"
 grep -q '__kq1agiCheckpointShadowEvidenceReport' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-import-evidence-button' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-export-evidence-corpus-button' "$OUT/certification-phase1d.mjs"
 grep -q '__kq1agiCheckpointEvidenceCorpus' "$OUT/certification-phase1d.mjs"
+grep -q 'certify-export-evidence-review-button' "$OUT/certification-phase1d.mjs"
+grep -q '__kq1agiCheckpointEvidenceReview' "$OUT/certification-phase1d.mjs"
 ! grep -q 'shadowResults.push(shadow)' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-reduce-inputs-button' "$OUT/certification-phase1d.mjs"
 grep -q 'minimizeInputGroupsV1' "$OUT/certification-phase1d.mjs"
@@ -171,6 +180,7 @@ printf '%s\n' \
   'Phase -1I.3 wires Phase -1E/-1F candidates through that runner in shadow mode, captures one deterministic recorded-boundary checkpoint per minimizer stage, reports equivalence telemetry, and keeps the full replay authoritative; Phase -1G remains full-only.' \
   'Phase -1I.4 compacts each Phase -1E/-1F oracle result into deterministic decision/evidence SHA-256 fingerprints, deduplicates repeated sample identities, exposes inconsistent repeats and collection gaps, and exports an evidence-only report while full replay remains mandatory.' \
   'Phase -1I.5 validates and composes exported reports/corpora across browser sessions, deduplicates overlapping deterministic stage records by hash, preserves distinguishable repeats, conservatively collapses byte-identical repeats, flags mismatches/identity mixing/collection gaps, and keeps policy EVIDENCE_ONLY.' \
+  'Phase -1I.6 derives a deterministic evidence review from a validated corpus, surfaces explicit blockers, leaves all numeric evidence thresholds UNSET, exports accelerationAllowed=false, and keeps full replay mandatory.' \
   > "$OUT/ARTIFACT.txt"
 
 find "$OUT" -maxdepth 2 -type f | sort
