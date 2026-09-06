@@ -530,14 +530,59 @@ function installPhase1D() {
       const gameBuffer = await readImportedGame(context.directoryName);
       await validateFrozenReplayIdentityV1(context.recording, gameBuffer, context.editConfig);
 
+      const shadowSelection = selectMinimizerShadowCheckpointBoundaryV1(
+        context.recording,
+        context.firstDivergence.tick,
+      );
+      progress.textContent = shadowSelection.status === 'MINIMIZER_SHADOW_BOUNDARY_SELECTED'
+        ? `capturing Phase -1E shadow checkpoint @ tick ${shadowSelection.checkpointTick}…`
+        : `Phase -1E checkpoint shadow unavailable · ${shadowSelection.reason}`;
+      const shadowState = await captureFrozenRecordingCheckpoint(
+        context.recording,
+        gameBuffer,
+        context.editConfig,
+        shadowSelection,
+      );
+      const shadowResults = [];
+
       const replayCandidate = async candidate => {
         attemptNumber += 1;
-        return runFrozenRecording(candidate, gameBuffer, context.editConfig, {
-          pulseIntervalMs: 0,
-          onUpdate: update => {
-            progress.textContent = `minimize attempt ${attemptNumber} · candidate tick ${candidate.finalTick} · replay tick ${replayHost?.logicalTick ?? update.targetTick ?? 0}`;
-          },
+        if (!shadowState.checkpoint) {
+          return runFrozenRecording(candidate, gameBuffer, context.editConfig, {
+            pulseIntervalMs: 0,
+            onUpdate: update => {
+              progress.textContent = `minimize attempt ${attemptNumber} · candidate tick ${candidate.finalTick} · full replay tick ${replayHost?.logicalTick ?? update.targetTick ?? 0}`;
+            },
+          });
+        }
+
+        const shadow = await runMinimizerCheckpointShadowV1({
+          checkpoint: shadowState.checkpoint,
+          sourceRecording: context.recording,
+          candidateRecording: candidate,
+          runFullReplay: recording => runFrozenRecording(recording, gameBuffer, context.editConfig, {
+            pulseIntervalMs: 0,
+            captureEvidence: true,
+            onUpdate: update => {
+              progress.textContent = `minimize attempt ${attemptNumber} · candidate tick ${candidate.finalTick} · full replay tick ${replayHost?.logicalTick ?? update.targetTick ?? 0}`;
+            },
+          }),
+          runCheckpointReplay: (recording, reboundCheckpoint) => runFrozenRecording(
+            recording,
+            gameBuffer,
+            context.editConfig,
+            {
+              pulseIntervalMs: 0,
+              checkpoint: reboundCheckpoint,
+              captureEvidence: true,
+              onUpdate: update => {
+                progress.textContent = `minimize attempt ${attemptNumber} · candidate tick ${candidate.finalTick} · checkpoint replay tick ${replayHost?.logicalTick ?? update.targetTick ?? 0}`;
+              },
+            },
+          ),
         });
+        shadowResults.push(shadow);
+        return shadow.summary;
       };
 
       const minimized = await minimizeDivergentPrefix(
@@ -572,10 +617,18 @@ function installPhase1D() {
           minimizationFocusText(minimized.focus),
           '',
           'The focused window is diagnostic context only; authoritative replay still starts at logical tick 1.',
+          '',
+          checkpointShadowSummaryText(shadowState, shadowResults),
         ].join('\n');
       } else if (minimized.status === 'NOT_REPRODUCED') {
         setStatus('MINIMIZE NOT REPRODUCED', 'WAITING');
-        detail.textContent = `The frozen source no longer reproduced the exact target divergence. No reduced recording was accepted.\nrecording=${recordingIdentity(context.recording)}\nattempts=${minimized.attempts.length}`;
+        detail.textContent = [
+          'The frozen source no longer reproduced the exact target divergence. No reduced recording was accepted.',
+          `recording=${recordingIdentity(context.recording)}`,
+          `attempts=${minimized.attempts.length}`,
+          '',
+          checkpointShadowSummaryText(shadowState, shadowResults),
+        ].join('\n');
       } else if (minimized.status === 'STOPPED') {
         setStatus('STOPPED', 'IDLE');
       } else {
@@ -622,14 +675,59 @@ function installPhase1D() {
       const gameBuffer = await readImportedGame(context.directoryName);
       await validateFrozenReplayIdentityV1(context.recording, gameBuffer, context.editConfig);
 
+      const shadowSelection = selectMinimizerShadowCheckpointBoundaryV1(
+        context.recording,
+        context.firstDivergence.tick,
+      );
+      progress.textContent = shadowSelection.status === 'MINIMIZER_SHADOW_BOUNDARY_SELECTED'
+        ? `capturing Phase -1F shadow checkpoint @ tick ${shadowSelection.checkpointTick}…`
+        : `Phase -1F checkpoint shadow unavailable · ${shadowSelection.reason}`;
+      const shadowState = await captureFrozenRecordingCheckpoint(
+        context.recording,
+        gameBuffer,
+        context.editConfig,
+        shadowSelection,
+      );
+      const shadowResults = [];
+
       const replayCandidate = async candidate => {
         attemptNumber += 1;
-        return runFrozenRecording(candidate, gameBuffer, context.editConfig, {
-          pulseIntervalMs: 0,
-          onUpdate: update => {
-            progress.textContent = `input attempt ${attemptNumber} · replay tick ${replayHost?.logicalTick ?? update.targetTick ?? 0}/${candidate.finalTick}`;
-          },
+        if (!shadowState.checkpoint) {
+          return runFrozenRecording(candidate, gameBuffer, context.editConfig, {
+            pulseIntervalMs: 0,
+            onUpdate: update => {
+              progress.textContent = `input attempt ${attemptNumber} · full replay tick ${replayHost?.logicalTick ?? update.targetTick ?? 0}/${candidate.finalTick}`;
+            },
+          });
+        }
+
+        const shadow = await runMinimizerCheckpointShadowV1({
+          checkpoint: shadowState.checkpoint,
+          sourceRecording: context.recording,
+          candidateRecording: candidate,
+          runFullReplay: recording => runFrozenRecording(recording, gameBuffer, context.editConfig, {
+            pulseIntervalMs: 0,
+            captureEvidence: true,
+            onUpdate: update => {
+              progress.textContent = `input attempt ${attemptNumber} · full replay tick ${replayHost?.logicalTick ?? update.targetTick ?? 0}/${candidate.finalTick}`;
+            },
+          }),
+          runCheckpointReplay: (recording, reboundCheckpoint) => runFrozenRecording(
+            recording,
+            gameBuffer,
+            context.editConfig,
+            {
+              pulseIntervalMs: 0,
+              checkpoint: reboundCheckpoint,
+              captureEvidence: true,
+              onUpdate: update => {
+                progress.textContent = `input attempt ${attemptNumber} · checkpoint replay tick ${replayHost?.logicalTick ?? update.targetTick ?? 0}/${candidate.finalTick}`;
+              },
+            },
+          ),
         });
+        shadowResults.push(shadow);
+        return shadow.summary;
       };
 
       const reduced = await minimizeInputGroupsV1(
@@ -669,6 +767,8 @@ function installPhase1D() {
           `attempts=${reduced.attempts.length}`,
           '',
           inputGroupsText(reduced.keptGroups),
+          '',
+          checkpointShadowSummaryText(shadowState, shadowResults),
         ].join('\n');
       } else if (reduced.status === 'NO_REMOVABLE_INPUTS') {
         const reducedContext = Object.freeze({
@@ -681,10 +781,19 @@ function installPhase1D() {
         lastInputReducedContext = reducedContext;
         reduceEditsButton.disabled = false;
         setStatus('NO REMOVABLE INPUTS', 'MATCH');
-        detail.textContent = `The minimized prefix contains no dependency-safe keyboard/mouse groups. ${reduced.lockedEvents} locked reproduction event(s) remain. REDUCE EDITS can now minimize the frozen EditConfig.`;
+        detail.textContent = [
+          `The minimized prefix contains no dependency-safe keyboard/mouse groups. ${reduced.lockedEvents} locked reproduction event(s) remain. REDUCE EDITS can now minimize the frozen EditConfig.`,
+          '',
+          checkpointShadowSummaryText(shadowState, shadowResults),
+        ].join('\n');
       } else if (reduced.status === 'NOT_REPRODUCED') {
         setStatus('INPUT TARGET NOT REPRODUCED', 'WAITING');
-        detail.textContent = `The Phase -1E source no longer reproduced the exact target divergence. No input reduction was accepted.\nattempts=${reduced.attempts.length}`;
+        detail.textContent = [
+          'The Phase -1E source no longer reproduced the exact target divergence. No input reduction was accepted.',
+          `attempts=${reduced.attempts.length}`,
+          '',
+          checkpointShadowSummaryText(shadowState, shadowResults),
+        ].join('\n');
       } else if (reduced.status === 'PARTIAL') {
         setStatus(`INPUTS PARTIAL ${reduced.keptGroups.length}/${reduced.totalGroups}`, 'WAITING');
         detail.textContent = [
@@ -694,6 +803,8 @@ function installPhase1D() {
           `attempts=${reduced.attempts.length}`,
           '',
           inputGroupsText(reduced.keptGroups),
+          '',
+          checkpointShadowSummaryText(shadowState, shadowResults),
         ].join('\n');
       } else if (reduced.status === 'STOPPED') {
         setStatus('STOPPED', 'IDLE');
