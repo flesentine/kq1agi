@@ -354,6 +354,12 @@ const phase1dSource = await readFile(new URL('../web/certification-phase1d.mjs',
 assert.equal(phase1dSource.includes('certify-import-evidence-button'), true);
 assert.equal(phase1dSource.includes('certify-export-evidence-corpus-button'), true);
 assert.equal(phase1dSource.includes('__kq1agiCheckpointEvidenceCorpus'), true);
+assert.equal(phase1dSource.includes('importedEvidenceArtifacts.push('), false, 'Raw imported reports must not accumulate after corpus construction.');
+assert.equal(
+  (phase1dSource.match(/importedEvidenceArtifacts\.splice\(0, importedEvidenceArtifacts\.length,/g) ?? []).length,
+  2,
+  'Phase -1I.5 must replace imported evidence with the canonical corpus after local rebuilds and imports.',
+);
 assert.equal((phase1dSource.match(/createMinimizerCheckpointEvidenceCorpusV1/g) ?? []).length, 3);
 const editStart = phase1dSource.indexOf('async function startReduceEdits()');
 const editEnd = phase1dSource.indexOf("replayButton.addEventListener", editStart);
