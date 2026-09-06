@@ -213,6 +213,25 @@ class MockWorker {
 
   const checkpoint2 = await host.captureCheckpointProbe();
   assert.equal(checkpoint2.status, 'CHECKPOINT_CAPTURED');
+
+  // Phase -1I.2 oracle evidence captures each lane's exact hidden KQ1H payload
+  // even when ORIGINAL-vs-EDITED are already semantically divergent.
+  editedWorker.digestXor = 1;
+  const oracleEvidence = await host.captureCheckpointOracleEvidenceProbe();
+  assert.equal(oracleEvidence.status, 'CHECKPOINT_ORACLE_EVIDENCE_CAPTURED');
+  assert.equal(oracleEvidence.logicalTick, host.logicalTick);
+  assert.equal(oracleEvidence.truthWorkerPayload.length > 0, true);
+  assert.equal(oracleEvidence.editedWorkerPayload.length > 0, true);
+  assert.notDeepEqual(oracleEvidence.truthDigest, oracleEvidence.editedDigest);
+  editedWorker.digestXor = 0;
+
+  // Evidence capture also fails closed when a lane cannot serialize hidden state.
+  truthWorker.checkpointCaptureAvailable = false;
+  const oracleUnavailable = await host.captureCheckpointOracleEvidenceProbe();
+  assert.equal(oracleUnavailable.status, 'CHECKPOINT_ORACLE_EVIDENCE_UNAVAILABLE');
+  assert.equal(oracleUnavailable.reason, 'worker-payload');
+  truthWorker.checkpointCaptureAvailable = true;
+
   editedWorker.digestXor = 1;
   const notExact = await host.restoreCheckpointProbe(checkpoint2);
   assert.equal(notExact.status, 'CHECKPOINT_NOT_EXACT');

@@ -19,6 +19,7 @@ node scripts/test_certification_panel.mjs
 node scripts/test_certification_edit_config.mjs
 node scripts/test_certification_recording.mjs
 node scripts/test_certification_checkpoint_compat.mjs
+node scripts/test_certification_checkpoint_oracle.mjs
 node scripts/test_certification_recording_hash.mjs
 node scripts/test_certification_replay_host.mjs
 node scripts/test_phase1d_recording_boundary.mjs
@@ -99,6 +100,7 @@ cp web/certification-panel.mjs "$OUT/certification-panel.mjs"
 cp web/certification-edit-config.mjs "$OUT/certification-edit-config.mjs"
 cp web/certification-recording.mjs "$OUT/certification-recording.mjs"
 cp web/certification-checkpoint-compat.mjs "$OUT/certification-checkpoint-compat.mjs"
+cp web/certification-checkpoint-oracle.mjs "$OUT/certification-checkpoint-oracle.mjs"
 cp web/certification-replay-host.mjs "$OUT/certification-replay-host.mjs"
 cp web/certification-phase1d.mjs "$OUT/certification-phase1d.mjs"
 cp web/certification-minimizer.mjs "$OUT/certification-minimizer.mjs"
@@ -112,14 +114,19 @@ cp docs/TRUTH_ENGINE_PHASE_1H.md "$OUT/PHASE_1H.md"
 cp docs/TRUTH_ENGINE_PHASE_1I.md "$OUT/PHASE_1I.md"
 
 test -f "$OUT/certification-checkpoint-compat.mjs"
+test -f "$OUT/certification-checkpoint-oracle.mjs"
 test -f "$OUT/certification-input-minimizer.mjs"
 test -f "$OUT/certification-edit-minimizer.mjs"
 test -f "$OUT/PHASE_1I.md"
 grep -q 'REPLAY_PAUSED' "$OUT/certification-recording.mjs"
 grep -q 'checkpoint-resume-boundary' "$OUT/certification-recording.mjs"
 grep -q 'checkpointSlots: 524288' "$OUT/certification-host.mjs"
+grep -q 'captureCheckpointOracleEvidenceProbe' "$OUT/certification-host.mjs"
 grep -q 'CHECKPOINT_CANDIDATE_COMPATIBLE' "$OUT/certification-checkpoint-compat.mjs"
 grep -q 'rebindCheckpointForRecordingCandidateV1' "$OUT/certification-checkpoint-compat.mjs"
+grep -q 'CHECKPOINT_ORACLE_EQUIVALENT' "$OUT/certification-checkpoint-oracle.mjs"
+grep -q 'runCheckpointCandidateOracleV1' "$OUT/certification-checkpoint-oracle.mjs"
+grep -q 'validateCheckpointOracleEvidenceV1' "$OUT/certification-checkpoint-oracle.mjs"
 grep -q 'certify-reduce-inputs-button' "$OUT/certification-phase1d.mjs"
 grep -q 'minimizeInputGroupsV1' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-reduce-edits-button' "$OUT/certification-phase1d.mjs"
@@ -135,6 +142,7 @@ printf '%s\n' \
   'Phase -1H starts an exact checkpoint/restore contract with a certification-only destructive round-trip probe; arbitrary-start replay remains disabled until the restored lane matches its own captured semantic-v1 state.' \
   'Phase -1I.0 adds an authenticated checkpoint-start replay cursor at recorded pre-release boundaries while leaving minimizer candidates on the full from-start oracle until dependency-safe checkpoint rebinding is proven.' \
   'Phase -1I.1 adds a recording-only checkpoint compatibility proof and re-authenticated candidate rebinding; GAMEFILES/EditConfig identity never rebinds, and minimizer acceleration remains oracle-gated.' \
+  'Phase -1I.2 adds a shadow oracle runner: full replay remains authoritative, compatible checkpoint replay is trusted only after exact decision and terminal-evidence equivalence.' \
   > "$OUT/ARTIFACT.txt"
 
 find "$OUT" -maxdepth 2 -type f | sort
