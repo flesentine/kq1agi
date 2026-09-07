@@ -24,7 +24,12 @@ function numericCompare(left, right) {
 
 function sortedUniqueStrings(values) {
   return Object.freeze(
-    [...new Set(values.map(value => String(value)).filter(Boolean))].sort(lexicalCompare),
+    [...new Set(
+      values
+        .filter(value => value != null)
+        .map(value => String(value))
+        .filter(Boolean),
+    )].sort(lexicalCompare),
   );
 }
 
