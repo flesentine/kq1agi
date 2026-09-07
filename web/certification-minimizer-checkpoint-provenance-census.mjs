@@ -116,13 +116,9 @@ export async function createMinimizerCheckpointProvenanceCensusV1(packages = [])
   for (const item of packages) validatedPackages.push(await validatePackageV1(item));
 
   const uniqueByProvenanceHash = new Map();
-  let duplicateSnapshots = 0;
   for (const item of validatedPackages) {
     const hash = item.provenance.hash;
-    if (uniqueByProvenanceHash.has(hash)) {
-      duplicateSnapshots += 1;
-      continue;
-    }
+    if (uniqueByProvenanceHash.has(hash)) continue;
     uniqueByProvenanceHash.set(hash, item);
   }
 
@@ -193,9 +189,7 @@ export async function createMinimizerCheckpointProvenanceCensusV1(packages = [])
     accelerationAllowed: false,
     censusDecision: 'DESCRIPTIVE_ONLY',
     provenanceDecision: 'COLLECTION_IDENTITY_ONLY',
-    inputPackages: packages.length,
     uniqueProvenanceSnapshots: uniqueByProvenanceHash.size,
-    duplicateSnapshots,
     supersededSnapshots,
     uniqueCollectionRuns: selectedRuns.length,
     toolObservedCollectionEvents,
