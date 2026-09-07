@@ -515,6 +515,7 @@ Each cohort records:
 - exact GAMEFILES hash;
 - exact EditConfig hash;
 - sorted stage hashes belonging to that cohort;
+- sorted source-recording hashes contributing to that cohort;
 - child corpus hash;
 - Phase -1I.6 review hash/status/blockers;
 - compact evidence counts;
