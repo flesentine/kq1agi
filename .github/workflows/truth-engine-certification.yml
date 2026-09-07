@@ -14,6 +14,7 @@ on:
       - 'web/certification-minimizer-checkpoint-evidence.mjs'
       - 'web/certification-minimizer-checkpoint-corpus.mjs'
       - 'web/certification-minimizer-checkpoint-review.mjs'
+      - 'web/certification-minimizer-checkpoint-cohort-review.mjs'
       - 'web/certification-phase1d.mjs'
       - 'docs/TRUTH_ENGINE_PHASE_1B.md'
       - 'docs/TRUTH_ENGINE_PHASE_1I.md'
@@ -29,6 +30,7 @@ on:
       - 'web/certification-minimizer-checkpoint-evidence.mjs'
       - 'web/certification-minimizer-checkpoint-corpus.mjs'
       - 'web/certification-minimizer-checkpoint-review.mjs'
+      - 'web/certification-minimizer-checkpoint-cohort-review.mjs'
       - 'web/certification-phase1d.mjs'
       - 'docs/TRUTH_ENGINE_PHASE_1B.md'
       - 'docs/TRUTH_ENGINE_PHASE_1I.md'
@@ -64,6 +66,7 @@ jobs:
           node scripts/test_certification_minimizer_checkpoint_evidence.mjs
           node scripts/test_certification_minimizer_checkpoint_corpus.mjs
           node scripts/test_certification_minimizer_checkpoint_review.mjs
+          node scripts/test_certification_minimizer_checkpoint_cohort_review.mjs
 
       - name: Fetch exact AGILE source for both lanes
         run: |
