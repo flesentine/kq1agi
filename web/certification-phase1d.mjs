@@ -14,6 +14,7 @@ import {
   compactMinimizerCheckpointObservationV1,
   createMinimizerCheckpointEvidenceReportV1,
   createMinimizerCheckpointStageEvidenceV1,
+  MinimizerCheckpointEvidenceLayout,
   serializeMinimizerCheckpointEvidenceReportV1,
 } from './certification-minimizer-checkpoint-evidence.mjs';
 import {
@@ -37,8 +38,14 @@ import {
   createMinimizerCheckpointCollectionEventV1,
   createMinimizerCheckpointCollectionProvenanceV1,
   createMinimizerCheckpointCollectionRunIdV1,
+  MinimizerCheckpointProvenanceLayout,
   serializeMinimizerCheckpointCollectionProvenanceV1,
+  validateMinimizerCheckpointCollectionProvenanceV1,
 } from './certification-minimizer-checkpoint-provenance.mjs';
+import {
+  createMinimizerCheckpointProvenanceCensusV1,
+  serializeMinimizerCheckpointProvenanceCensusV1,
+} from './certification-minimizer-checkpoint-provenance-census.mjs';
 import {
   encodeRandomReplay,
   freezePlayRecordingV1,
@@ -174,6 +181,16 @@ function checkpointEvidenceCoverageText(profile) {
     `Phase -1I.8 coverage ${shortHash(profile.hash)} · DESCRIPTIVE_ONLY`,
     `cohorts=${profile.cohortCount} · concentration flags: ${flags}`,
     'coverage flags are descriptive, not review blockers · threshold UNSET · accelerationAllowed=false',
+  ].join('\n');
+}
+
+function checkpointProvenanceCensusText(census) {
+  if (!census) return 'provenance census: unavailable';
+  return [
+    `Phase -1I.10 provenance census ${shortHash(census.hash)} · DESCRIPTIVE_ONLY`,
+    `runs=${census.uniqueCollectionRuns} · tool-observed events=${census.toolObservedCollectionEvents} · deterministic stages=${census.distinctStageHashes}`,
+    `duplicate snapshots=${census.duplicateSnapshots} · superseded same-run snapshots=${census.supersededSnapshots} · stages repeated across runs=${census.crossRunRepeatedStageHashes}`,
+    'I.5 corpus counts unchanged · threshold UNSET · accelerationAllowed=false',
   ].join('\n');
 }
 
@@ -405,6 +422,38 @@ function installPhase1D() {
     exportEvidenceCoverageButton.insertAdjacentElement('afterend', exportCollectionProvenanceButton);
   }
 
+  let importProvenanceButton = document.getElementById('certify-import-provenance-button');
+  if (!importProvenanceButton) {
+    importProvenanceButton = document.createElement('button');
+    importProvenanceButton.id = 'certify-import-provenance-button';
+    importProvenanceButton.type = 'button';
+    importProvenanceButton.textContent = 'IMPORT PROVENANCE';
+    importProvenanceButton.title = 'Import Phase -1I.4 reports plus Phase -1I.9 provenance sidecars for cross-session census';
+    exportCollectionProvenanceButton.insertAdjacentElement('afterend', importProvenanceButton);
+  }
+
+  let exportProvenanceCensusButton = document.getElementById('certify-export-provenance-census-button');
+  if (!exportProvenanceCensusButton) {
+    exportProvenanceCensusButton = document.createElement('button');
+    exportProvenanceCensusButton.id = 'certify-export-provenance-census-button';
+    exportProvenanceCensusButton.type = 'button';
+    exportProvenanceCensusButton.textContent = 'EXPORT CENSUS';
+    exportProvenanceCensusButton.title = 'Download the Phase -1I.10 cross-session provenance census';
+    exportProvenanceCensusButton.disabled = true;
+    importProvenanceButton.insertAdjacentElement('afterend', exportProvenanceCensusButton);
+  }
+
+  let importProvenanceInput = document.getElementById('certify-import-provenance-input');
+  if (!importProvenanceInput) {
+    importProvenanceInput = document.createElement('input');
+    importProvenanceInput.id = 'certify-import-provenance-input';
+    importProvenanceInput.type = 'file';
+    importProvenanceInput.accept = '.json,application/json';
+    importProvenanceInput.multiple = true;
+    importProvenanceInput.hidden = true;
+    exportProvenanceCensusButton.insertAdjacentElement('afterend', importProvenanceInput);
+  }
+
   let importEvidenceInput = document.getElementById('certify-import-evidence-input');
   if (!importEvidenceInput) {
     importEvidenceInput = document.createElement('input');
@@ -430,8 +479,10 @@ function installPhase1D() {
   let latestEvidenceCohortReview = null;
   let latestEvidenceCoverageProfile = null;
   const collectionProvenanceEvents = [];
+  const importedProvenancePackages = [];
   let collectionRunId = null;
   let latestCollectionProvenance = null;
+  let latestProvenanceCensus = null;
   try {
     collectionRunId = createMinimizerCheckpointCollectionRunIdV1();
     globalThis.__kq1agiCheckpointCollectionRunId = collectionRunId;
@@ -468,6 +519,8 @@ function installPhase1D() {
     exportEvidenceCohortsButton.disabled = value || !latestEvidenceCohortReview;
     exportEvidenceCoverageButton.disabled = value || !latestEvidenceCoverageProfile;
     exportCollectionProvenanceButton.disabled = value || !latestCollectionProvenance;
+    importProvenanceButton.disabled = value;
+    exportProvenanceCensusButton.disabled = value || !latestProvenanceCensus;
     runButton.disabled = value;
     if (refreshButton) refreshButton.disabled = value;
     gameSelect.disabled = value;
@@ -557,7 +610,34 @@ function installPhase1D() {
       globalThis.__kq1agiCheckpointCollectionProvenanceError = String(error?.message ?? error);
     }
     exportCollectionProvenanceButton.disabled = replayRunning || !latestCollectionProvenance;
+    await refreshProvenanceCensus();
     return latestCollectionProvenance;
+  }
+
+  async function refreshProvenanceCensus() {
+    const packages = [
+      ...importedProvenancePackages,
+      ...(latestCollectionProvenance && latestShadowEvidenceReport
+        ? [{ evidenceReport: latestShadowEvidenceReport, provenance: latestCollectionProvenance }]
+        : []),
+    ];
+    if (!packages.length) {
+      latestProvenanceCensus = null;
+      globalThis.__kq1agiCheckpointProvenanceCensus = null;
+      exportProvenanceCensusButton.disabled = true;
+      return null;
+    }
+    try {
+      latestProvenanceCensus = await createMinimizerCheckpointProvenanceCensusV1(packages);
+      globalThis.__kq1agiCheckpointProvenanceCensus = latestProvenanceCensus;
+      globalThis.__kq1agiCheckpointProvenanceCensusError = null;
+    } catch (error) {
+      latestProvenanceCensus = null;
+      globalThis.__kq1agiCheckpointProvenanceCensus = null;
+      globalThis.__kq1agiCheckpointProvenanceCensusError = String(error?.message ?? error);
+    }
+    exportProvenanceCensusButton.disabled = replayRunning || !latestProvenanceCensus;
+    return latestProvenanceCensus;
   }
 
   async function recordShadowEvidenceStage(stage, context, shadowState, observations, collectionErrorCandidateHashes, outcome) {
@@ -684,6 +764,74 @@ function installPhase1D() {
     link.download = `kq1agi-checkpoint-collection-provenance-${latestCollectionProvenance.hash.slice(7, 19)}.json`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  function exportProvenanceCensus() {
+    if (!latestProvenanceCensus) return;
+    const body = serializeMinimizerCheckpointProvenanceCensusV1(latestProvenanceCensus);
+    const blob = new Blob([body], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kq1agi-checkpoint-provenance-census-${latestProvenanceCensus.hash.slice(7, 19)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  async function importProvenanceFiles() {
+    const files = [...(importProvenanceInput.files ?? [])];
+    importProvenanceInput.value = '';
+    if (!files.length) return;
+
+    try {
+      const reportsByHash = new Map();
+      for (const item of importedProvenancePackages) {
+        reportsByHash.set(item.evidenceReport.hash, item.evidenceReport);
+      }
+      if (latestShadowEvidenceReport) {
+        reportsByHash.set(latestShadowEvidenceReport.hash, latestShadowEvidenceReport);
+      }
+
+      const sidecars = [];
+      for (const file of files) {
+        if (file.size > 16 * 1024 * 1024) {
+          throw new Error(`Provenance file is larger than 16 MiB: ${file.name}`);
+        }
+        const parsed = JSON.parse(await file.text());
+        if (parsed?.schema === MinimizerCheckpointEvidenceLayout.REPORT_SCHEMA) {
+          const validated = await validateMinimizerCheckpointEvidenceArtifactV1(parsed);
+          if (validated.kind !== 'report') throw new Error('Provenance import requires Phase -1I.4 reports.');
+          reportsByHash.set(parsed.hash, parsed);
+        } else if (parsed?.schema === MinimizerCheckpointProvenanceLayout.PROVENANCE_SCHEMA) {
+          sidecars.push(parsed);
+        } else {
+          throw new Error(`Unsupported provenance import schema in ${file.name}`);
+        }
+      }
+      if (!sidecars.length) throw new Error('Provenance import requires at least one Phase -1I.9 sidecar.');
+
+      const batch = [];
+      for (const provenance of sidecars) {
+        const evidenceReport = reportsByHash.get(provenance.evidenceReportHash);
+        if (!evidenceReport) {
+          throw new Error(`Missing Phase -1I.4 report for provenance ${shortHash(provenance.hash)}.`);
+        }
+        await validateMinimizerCheckpointCollectionProvenanceV1(provenance, evidenceReport);
+        batch.push(Object.freeze({ evidenceReport, provenance }));
+      }
+
+      importedProvenancePackages.push(...batch);
+      const census = await refreshProvenanceCensus();
+      if (!census) throw new Error(globalThis.__kq1agiCheckpointProvenanceCensusError || 'Provenance census unavailable.');
+      setStatus('PROVENANCE CENSUS READY', 'MATCH');
+      progress.textContent = `Phase -1I.10 imported ${sidecars.length} provenance sidecar(s) · exact report binding PASS`;
+      detail.textContent = checkpointProvenanceCensusText(census);
+    } catch (error) {
+      globalThis.__kq1agiCheckpointProvenanceCensusError = String(error?.message ?? error);
+      setStatus('PROVENANCE IMPORT REJECTED', 'ERROR');
+      progress.textContent = 'Phase -1I.10 provenance import rejected';
+      detail.textContent = String(error?.stack ?? error);
+    }
   }
 
   async function importEvidenceFiles() {
@@ -1456,6 +1604,11 @@ function installPhase1D() {
   exportEvidenceCohortsButton.addEventListener('click', exportEvidenceCohorts);
   exportEvidenceCoverageButton.addEventListener('click', exportEvidenceCoverage);
   exportCollectionProvenanceButton.addEventListener('click', exportCollectionProvenance);
+  importProvenanceButton.addEventListener('click', () => {
+    if (!replayRunning) importProvenanceInput.click();
+  });
+  importProvenanceInput.addEventListener('change', importProvenanceFiles);
+  exportProvenanceCensusButton.addEventListener('click', exportProvenanceCensus);
   gameSelect.addEventListener('change', invalidateMinimization);
   runButton.addEventListener('click', invalidateMinimization, { capture: true });
   stopButton.addEventListener('click', () => {
