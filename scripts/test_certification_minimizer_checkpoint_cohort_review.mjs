@@ -237,6 +237,10 @@ const sameIdentityCorpus = await corpusFromStages([
 const sameIdentityBundle = await createMinimizerCheckpointEvidenceCohortReviewV1(sameIdentityCorpus);
 assert.equal(sameIdentityBundle.cohortCount, 1, 'Different source recordings must stay in one GAMEFILES/EditConfig cohort.');
 assert.equal(sameIdentityBundle.cohorts[0].evidence.distinctSourceRecordings, 2);
+assert.deepEqual(
+  sameIdentityBundle.cohorts[0].sourceRecordingHashes,
+  [identityA.source, identityASource2.source].sort(),
+);
 assert.equal(sameIdentityBundle.cohorts[0].reviewStatus, 'CLEAN_EVIDENCE_THRESHOLD_UNSET');
 
 const sameGameDifferentEditObs = await observation({
