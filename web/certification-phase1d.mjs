@@ -177,15 +177,6 @@ function checkpointEvidenceCoverageText(profile) {
   ].join('\n');
 }
 
-function checkpointCollectionProvenanceText(provenance) {
-  if (!provenance) return 'collection provenance: unavailable until a live Phase -1E/-1F stage is collected';
-  return [
-    `Phase -1I.9 collection provenance ${shortHash(provenance.hash)} · COLLECTION_IDENTITY_ONLY`,
-    `live events=${provenance.eventCount} · distinct stage hashes=${provenance.distinctStageHashes.length}`,
-    'imported evidence cannot mint collection events · accelerationAllowed=false',
-  ].join('\n');
-}
-
 /**
  * Re-verify the immutable replay identities before Phase -1E derives candidates.
  * The recording hash protects the declared EditConfig hash, but EditConfig's nested
