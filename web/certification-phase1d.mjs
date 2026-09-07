@@ -30,6 +30,10 @@ import {
   serializeMinimizerCheckpointEvidenceCohortReviewV1,
 } from './certification-minimizer-checkpoint-cohort-review.mjs';
 import {
+  createMinimizerCheckpointEvidenceCoverageProfileV1,
+  serializeMinimizerCheckpointEvidenceCoverageProfileV1,
+} from './certification-minimizer-checkpoint-coverage.mjs';
+import {
   encodeRandomReplay,
   freezePlayRecordingV1,
   getPlayRecordingStats,
@@ -152,6 +156,18 @@ function checkpointEvidenceCohortReviewText(bundle) {
     `Phase -1I.7 identity cohorts ${shortHash(bundle.hash)} · exact GAMEFILES + EditConfig partition`,
     `cohorts=${bundle.cohortCount} · statuses: ${statuses}`,
     'global Phase -1I.6 review remains separate · threshold UNSET · accelerationAllowed=false',
+  ].join('\n');
+}
+
+function checkpointEvidenceCoverageText(profile) {
+  if (!profile) return 'coverage profile: unavailable';
+  const flags = Object.entries(profile.flagCounts ?? {})
+    .map(([flag, count]) => `${flag}=${count}`)
+    .join(', ') || 'none';
+  return [
+    `Phase -1I.8 coverage ${shortHash(profile.hash)} · DESCRIPTIVE_ONLY`,
+    `cohorts=${profile.cohortCount} · concentration flags: ${flags}`,
+    'coverage flags are descriptive, not review blockers · threshold UNSET · accelerationAllowed=false',
   ].join('\n');
 }
 
@@ -361,6 +377,17 @@ function installPhase1D() {
     exportEvidenceReviewButton.insertAdjacentElement('afterend', exportEvidenceCohortsButton);
   }
 
+  let exportEvidenceCoverageButton = document.getElementById('certify-export-evidence-coverage-button');
+  if (!exportEvidenceCoverageButton) {
+    exportEvidenceCoverageButton = document.createElement('button');
+    exportEvidenceCoverageButton.id = 'certify-export-evidence-coverage-button';
+    exportEvidenceCoverageButton.type = 'button';
+    exportEvidenceCoverageButton.textContent = 'EXPORT COVERAGE';
+    exportEvidenceCoverageButton.title = 'Download the descriptive Phase -1I.8 evidence coverage profile';
+    exportEvidenceCoverageButton.disabled = true;
+    exportEvidenceCohortsButton.insertAdjacentElement('afterend', exportEvidenceCoverageButton);
+  }
+
   let importEvidenceInput = document.getElementById('certify-import-evidence-input');
   if (!importEvidenceInput) {
     importEvidenceInput = document.createElement('input');
@@ -384,6 +411,7 @@ function installPhase1D() {
   let latestEvidenceCorpus = null;
   let latestEvidenceReview = null;
   let latestEvidenceCohortReview = null;
+  let latestEvidenceCoverageProfile = null;
 
   const setStatus = (text, state) => {
     status.textContent = text;
@@ -410,6 +438,7 @@ function installPhase1D() {
     exportEvidenceCorpusButton.disabled = value || !latestEvidenceCorpus;
     exportEvidenceReviewButton.disabled = value || !latestEvidenceReview;
     exportEvidenceCohortsButton.disabled = value || !latestEvidenceCohortReview;
+    exportEvidenceCoverageButton.disabled = value || !latestEvidenceCoverageProfile;
     runButton.disabled = value;
     if (refreshButton) refreshButton.disabled = value;
     gameSelect.disabled = value;
@@ -457,6 +486,26 @@ function installPhase1D() {
     return latestEvidenceCohortReview;
   }
 
+  async function refreshEvidenceCoverageProfile() {
+    if (!latestEvidenceCorpus) {
+      latestEvidenceCoverageProfile = null;
+      globalThis.__kq1agiCheckpointEvidenceCoverageProfile = null;
+      exportEvidenceCoverageButton.disabled = true;
+      return null;
+    }
+    try {
+      latestEvidenceCoverageProfile = await createMinimizerCheckpointEvidenceCoverageProfileV1(latestEvidenceCorpus);
+      globalThis.__kq1agiCheckpointEvidenceCoverageProfile = latestEvidenceCoverageProfile;
+      globalThis.__kq1agiCheckpointEvidenceCoverageProfileError = null;
+    } catch (error) {
+      latestEvidenceCoverageProfile = null;
+      globalThis.__kq1agiCheckpointEvidenceCoverageProfile = null;
+      globalThis.__kq1agiCheckpointEvidenceCoverageProfileError = String(error?.message ?? error);
+    }
+    exportEvidenceCoverageButton.disabled = replayRunning || !latestEvidenceCoverageProfile;
+    return latestEvidenceCoverageProfile;
+  }
+
   async function recordShadowEvidenceStage(stage, context, shadowState, observations, collectionErrorCandidateHashes, outcome) {
     try {
       const stageEvidence = await createMinimizerCheckpointStageEvidenceV1({
@@ -483,18 +532,23 @@ function installPhase1D() {
         globalThis.__kq1agiCheckpointEvidenceCorpusError = null;
         await refreshEvidenceReview();
         await refreshEvidenceCohortReview();
+        await refreshEvidenceCoverageProfile();
       } catch (corpusError) {
         latestEvidenceCorpus = null;
         latestEvidenceReview = null;
         latestEvidenceCohortReview = null;
+        latestEvidenceCoverageProfile = null;
         globalThis.__kq1agiCheckpointEvidenceCorpus = null;
         globalThis.__kq1agiCheckpointEvidenceReview = null;
         globalThis.__kq1agiCheckpointEvidenceCohortReview = null;
+        globalThis.__kq1agiCheckpointEvidenceCoverageProfile = null;
         globalThis.__kq1agiCheckpointEvidenceCorpusError = String(corpusError?.message ?? corpusError);
         globalThis.__kq1agiCheckpointEvidenceReviewError = 'Evidence review unavailable because corpus construction failed.';
         globalThis.__kq1agiCheckpointEvidenceCohortReviewError = 'Identity cohort review unavailable because corpus construction failed.';
+        globalThis.__kq1agiCheckpointEvidenceCoverageProfileError = 'Coverage profile unavailable because corpus construction failed.';
         exportEvidenceReviewButton.disabled = true;
         exportEvidenceCohortsButton.disabled = true;
+        exportEvidenceCoverageButton.disabled = true;
       }
       exportEvidenceCorpusButton.disabled = replayRunning || !latestEvidenceCorpus;
       return latestShadowEvidenceReport;
@@ -553,6 +607,18 @@ function installPhase1D() {
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
+  function exportEvidenceCoverage() {
+    if (!latestEvidenceCoverageProfile) return;
+    const body = serializeMinimizerCheckpointEvidenceCoverageProfileV1(latestEvidenceCoverageProfile);
+    const blob = new Blob([body], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kq1agi-checkpoint-evidence-coverage-${latestEvidenceCoverageProfile.hash.slice(7, 19)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
   async function importEvidenceFiles() {
     const files = [...(importEvidenceInput.files ?? [])];
     importEvidenceInput.value = '';
@@ -581,17 +647,20 @@ function installPhase1D() {
       globalThis.__kq1agiCheckpointEvidenceCorpusError = null;
       const review = await refreshEvidenceReview();
       const cohortReview = await refreshEvidenceCohortReview();
+      const coverageProfile = await refreshEvidenceCoverageProfile();
       exportEvidenceCorpusButton.disabled = replayRunning || !latestEvidenceCorpus;
       setStatus('EVIDENCE CORPUS READY', 'MATCH');
-      progress.textContent = review && cohortReview
-        ? `Phase -1I.5 imported ${files.length} evidence file(s) · hash validation PASS · Phase -1I.6 review ready · Phase -1I.7 cohorts ready`
-        : `Phase -1I.5 imported ${files.length} evidence file(s) · hash validation PASS · derived review artifact unavailable`;
+      progress.textContent = review && cohortReview && coverageProfile
+        ? `Phase -1I.5 imported ${files.length} evidence file(s) · hash validation PASS · I.6 review ready · I.7 cohorts ready · I.8 coverage ready`
+        : `Phase -1I.5 imported ${files.length} evidence file(s) · hash validation PASS · derived evidence artifact unavailable`;
       detail.textContent = [
         checkpointEvidenceCorpusText(corpus),
         '',
         checkpointEvidenceReviewText(review),
         '',
         checkpointEvidenceCohortReviewText(cohortReview),
+        '',
+        checkpointEvidenceCoverageText(coverageProfile),
       ].join('\n');
     } catch (error) {
       globalThis.__kq1agiCheckpointEvidenceCorpusError = String(error?.message ?? error);
@@ -1318,6 +1387,7 @@ function installPhase1D() {
   exportEvidenceCorpusButton.addEventListener('click', exportEvidenceCorpus);
   exportEvidenceReviewButton.addEventListener('click', exportEvidenceReview);
   exportEvidenceCohortsButton.addEventListener('click', exportEvidenceCohorts);
+  exportEvidenceCoverageButton.addEventListener('click', exportEvidenceCoverage);
   gameSelect.addEventListener('change', invalidateMinimization);
   runButton.addEventListener('click', invalidateMinimization, { capture: true });
   stopButton.addEventListener('click', () => {

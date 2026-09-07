@@ -570,6 +570,110 @@ Failure to derive cohorts disables only the cohort export. It cannot rewrite the
 - Phase -1G remains full-replay-only and outside cohort/review execution.
 - Full replay remains mandatory for every candidate.
 
+## Phase -1I.8 — descriptive evidence coverage profile
+
+Phase -1I.8 describes the **shape** of the evidence inside each exact Phase -1I.7 GAMEFILES + EditConfig cohort. It does not add a sufficiency rule and it does not change the Phase -1I.6 review result.
+
+The purpose is to make concentration visible before anyone proposes an evidence threshold. A cohort can be exact-equivalent under Phase -1I.6 while still having narrow coverage, for example:
+
+- only Phase -1E minimizer candidates;
+- only one source recording;
+- only one target divergence tick;
+- only one captured checkpoint tick; or
+- no captured checkpoint at all.
+
+Those facts are useful for scientific review, but Phase -1I.8 treats them as descriptive metadata rather than blockers.
+
+### Coverage dimensions
+
+For every exact GAMEFILES + EditConfig cohort, the deterministic profile records:
+
+- Phase -1E stage-record count;
+- Phase -1F stage-record count;
+- sorted source-recording hashes;
+- sorted target divergence ticks;
+- sorted captured checkpoint logical ticks;
+- sorted checkpoint hashes;
+- unavailable-checkpoint reasons;
+- stage-record count;
+- compact observation count;
+- evidence-compaction failure count; and
+- one compact descriptor for each stage record containing stage hash, minimizer stage, source hash, target tick, checkpoint status/reason/tick/hash, observation count, and compaction failures.
+
+The profile links each cohort back to its Phase -1I.7 cohort key and Phase -1I.6 review hash/status/blockers. Coverage therefore cannot replace or silently reinterpret the existing equivalence review.
+
+### Descriptive concentration flags
+
+Each cohort may expose:
+
+- `missingPhase1E`;
+- `missingPhase1F`;
+- `singleStageRecord`;
+- `singleSourceRecording`;
+- `singleTargetTick`;
+- `noCapturedCheckpoint`;
+- `singleCapturedCheckpointTick`; and
+- `hasUnavailableCheckpoint`.
+
+These flags are **not evidence blockers**. They are deterministic observations about the current corpus shape.
+
+For example, a cohort may legitimately have:
+
+- Phase -1I.6 review: `CLEAN_EVIDENCE_THRESHOLD_UNSET`; and
+- Phase -1I.8 coverage: `singleSourceRecording=true`.
+
+That combination means the exact evidence collected so far agrees, while also showing that the population is narrow in source-recording breadth.
+
+### Coverage policy boundary
+
+The top-level profile always declares:
+
+- `policy: full-replay-authoritative`;
+- `policyFrozen: false`;
+- `policyDecision: EVIDENCE_ONLY`;
+- `accelerationAllowed: false`; and
+- `coverageDecision: DESCRIPTIVE_ONLY`.
+
+Its threshold policy remains explicitly `UNSET`. No numeric minimum is defined for:
+
+- unique checkpoint-attempted samples;
+- distinct source recordings;
+- target-tick coverage;
+- checkpoint-tick coverage; or
+- saved-tick benefit.
+
+Phase -1I.8 therefore cannot convert a coverage shape into an acceleration decision.
+
+### Browser workflow
+
+Whenever a valid Phase -1I.5 corpus exists, the certification panel derives:
+
+- the global Phase -1I.6 review;
+- the Phase -1I.7 identity cohort review bundle; and
+- the Phase -1I.8 descriptive coverage profile.
+
+The coverage profile is exposed separately as `globalThis.__kq1agiCheckpointEvidenceCoverageProfile` and can be downloaded with **EXPORT COVERAGE**.
+
+Coverage-generation failure disables only the coverage export. It cannot rewrite the corpus, global review, cohort review, replay result, or minimizer classification.
+
+### Phase -1I.8 acceptance criteria
+
+- Coverage generation first validates the complete Phase -1I.5 corpus.
+- Coverage uses the same exact GAMEFILES + EditConfig cohort partition as Phase -1I.7.
+- Every Phase -1I.8 cohort stage set must match the corresponding Phase -1I.7 stage hashes exactly.
+- Coverage hash is deterministic for the same corpus.
+- Phase -1E and Phase -1F stage counts are reported independently.
+- Different source-recording hashes remain visible inside one identity cohort.
+- Target divergence ticks and captured checkpoint ticks/hashes are reported as sorted distinct dimensions.
+- Unavailable checkpoints are represented explicitly rather than silently dropped.
+- A clean Phase -1I.6 review can coexist with concentration flags.
+- A mismatch/blocker remains linked from the Phase -1I.6 review; coverage does not remove it.
+- Every coverage profile declares `coverageDecision=DESCRIPTIVE_ONLY`.
+- `accelerationAllowed=false` and threshold policy `UNSET` remain mandatory.
+- Raw worker payloads are never included.
+- Phase -1G remains full-replay-only and outside coverage/review execution.
+- Full replay remains authoritative for every minimizer candidate.
+
 ## Next slice
 
-Collect real Phase -1E/-1F evidence and use the Phase -1I.7 cohort bundle to inspect each exact GAMEFILES/EditConfig identity separately. Only after a real identity-scoped population is clean should a later, separately reviewed PR propose a numeric evidence threshold or acceleration policy. Phase -1I.7 itself changes no replay authority.
+Collect real Phase -1E/-1F evidence and use the Phase -1I.8 coverage profile to inspect whether each clean exact identity cohort is concentrated in one minimizer stage/source/tick shape or spans multiple independent conditions. Only after reviewing a real clean population and its coverage should a separate PR propose any numeric evidence threshold or acceleration policy. Phase -1I.8 itself changes no replay authority.
