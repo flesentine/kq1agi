@@ -399,6 +399,87 @@ Import/review state is outside replay semantics. A rejected or malformed evidenc
 - Phase -1G remains full-replay-only and outside the checkpoint evidence population.
 - Corpus policy remains `full-replay-authoritative`, `policyFrozen=false`, `policyDecision=EVIDENCE_ONLY`.
 
+## Phase -1I.6 — deterministic evidence review record
+
+Phase -1I.6 turns one hash-valid Phase -1I.5 corpus into a deterministic review artifact. It answers a narrower question than an acceleration policy: **does the currently collected evidence contain an obvious scientific blocker, and what exactly is still unset?**
+
+The review record never authorizes checkpoint acceleration. It always declares:
+
+- `policy: full-replay-authoritative`;
+- `policyFrozen: false`;
+- `policyDecision: EVIDENCE_ONLY`; and
+- `accelerationAllowed: false`.
+
+### Review states
+
+A validated corpus receives exactly one evidence-review status:
+
+- `NO_COMPATIBLE_SAMPLES` — there are no unique samples that actually attempted a checkpoint;
+- `BLOCKED_BY_EVIDENCE` — one or more explicit evidence blockers are present; or
+- `CLEAN_EVIDENCE_THRESHOLD_UNSET` — none of the current evidence blockers are present, but no minimum evidence threshold has been defined.
+
+The third state is deliberately **not** equivalent to “ready to accelerate.” It means only that the current corpus has no known blocker under this review schema.
+
+### Evidence blockers
+
+The review emits a deterministic ordered blocker list. Current blocker codes are:
+
+- `NO_CHECKPOINT_ATTEMPTS`;
+- `CHECKPOINT_MISMATCH`;
+- `INCONSISTENT_REPEAT`;
+- `COLLECTION_GAP`;
+- `MIXED_GAME_IDENTITY`; and
+- `MIXED_EDIT_CONFIG_IDENTITY`.
+
+A full-only candidate does not by itself block a corpus that also contains clean compatible checkpoint evidence. Full-only samples are still reported, but they represent candidates outside the recording-only checkpoint compatibility proof rather than a failed checkpoint equivalence attempt.
+
+Mixed GAMEFILES/EditConfig identity is treated as a blocker for one global policy review. The corpus remains valid; the signal means evidence from those identities should not be silently pooled into one acceleration decision.
+
+### Threshold remains intentionally unset
+
+The review contains an explicit `thresholdPolicy` object with:
+
+- `status: UNSET`;
+- `minimumUniqueCheckpointAttemptedSamples: null`;
+- `minimumDistinctSourceRecordings: null`; and
+- `minimumSavedTickBenefit: null`.
+
+Phase -1I.6 therefore freezes **no** sample-count threshold, diversity threshold, or performance-benefit threshold.
+
+The evidence counts, identity hashes, and saved-tick distribution are copied from the independently validated corpus so a later policy-review PR can state its threshold against a fixed review artifact rather than silently changing the evidence population.
+
+### Conservative corpus caveats
+
+The review carries the Phase -1I.5 scientific caveats forward explicitly:
+
+- byte-identical stage records are deduplicated;
+- Phase -1I.4 contains no execution nonce, so an independently repeated byte-identical execution is indistinguishable from an overlapping export; and
+- full replay remains mandatory.
+
+These caveats are part of the hashed review record.
+
+### Browser workflow
+
+Whenever a valid Phase -1I.5 corpus exists, the certification panel derives the Phase -1I.6 review in best-effort evidence-only state and exposes it as `globalThis.__kq1agiCheckpointEvidenceReview`.
+
+The panel also exposes **EXPORT REVIEW**, which downloads the deterministic `kq1agi-minimizer-checkpoint-evidence-review-v1` JSON artifact.
+
+Review-generation failure can disable review export, but it cannot alter the validated corpus and cannot affect replay/minimizer classification.
+
+### Phase -1I.6 acceptance criteria
+
+- Review generation first requires a fully validated Phase -1I.5 corpus.
+- Review hash is deterministic for the same corpus.
+- The review always declares `accelerationAllowed=false`.
+- The threshold policy remains explicitly `UNSET` with null numeric thresholds.
+- No checkpoint attempts yields `NO_COMPATIBLE_SAMPLES`.
+- Any checkpoint mismatch, inconsistent repeat, collection gap, mixed GAMEFILES identity, or mixed EditConfig identity appears in the blocker list.
+- A clean corpus with compatible exact-equivalent samples yields `CLEAN_EVIDENCE_THRESHOLD_UNSET`, never an acceleration approval.
+- Full-only samples may coexist with clean equivalent evidence without becoming an equivalence failure.
+- The review retains only compact hashes/counts/identity metadata and never raw worker payloads.
+- Phase -1G remains full-replay-only and has no review/corpus execution path.
+- Full replay remains mandatory in every minimizer candidate.
+
 ## Next slice
 
-Use the Phase -1I.5 corpus to collect a real, hash-valid population from independent divergent reproductions. Review mismatches, inconsistent repeats, identity mixing, collection gaps, and saved-tick distribution before proposing any explicit acceleration policy. A policy freeze remains a separate change and full replay remains mandatory until that review succeeds.
+Collect real Phase -1E/-1F evidence into one or more Phase -1I.5 corpora and export Phase -1I.6 review records. Only after inspecting a real clean population should a separate PR propose a numeric evidence threshold and narrowly scoped acceleration policy. Until that explicit policy freeze is reviewed and merged, checkpoint execution remains shadow-only and every candidate still runs from game start.
