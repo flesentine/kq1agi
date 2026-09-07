@@ -480,6 +480,96 @@ Review-generation failure can disable review export, but it cannot alter the val
 - Phase -1G remains full-replay-only and has no review/corpus execution path.
 - Full replay remains mandatory in every minimizer candidate.
 
+## Phase -1I.7 — identity-scoped cohort review
+
+Phase -1I.7 preserves the Phase -1I.6 global review while adding a deterministic way to inspect mixed evidence by the exact identity boundary that can affect execution from game start.
+
+The cohort identity is exactly:
+
+- GAMEFILES SHA-256; plus
+- EditConfig SHA-256.
+
+Source recording identity is **not** part of the cohort key. Multiple independent source recordings for the same GAMEFILES/EditConfig pair therefore contribute to the same identity-scoped population and remain visible through the existing distinct-source-recording count.
+
+### Why cohorting is separate from the global review
+
+A Phase -1I.6 review intentionally blocks a mixed GAMEFILES or mixed EditConfig corpus. That remains correct for any single global acceleration-policy discussion.
+
+Phase -1I.7 does not remove or reinterpret that blocker. Instead, it derives a second artifact from the same validated parent corpus:
+
+1. validate the complete Phase -1I.5 corpus;
+2. group its already validated stage records by exact GAMEFILES + EditConfig hash;
+3. build a normal Phase -1I.4 report and Phase -1I.5 child corpus for each group;
+4. run the existing Phase -1I.6 review unchanged on each child corpus; and
+5. export the resulting ordered cohort summaries as one deterministic bundle.
+
+Because every child goes back through the existing corpus and review validators, cohorting does not create a weaker alternate review path.
+
+### Cohort review bundle
+
+The deterministic schema is `kq1agi-minimizer-checkpoint-evidence-cohort-review-v1`.
+
+Each cohort records:
+
+- deterministic cohort key;
+- exact GAMEFILES hash;
+- exact EditConfig hash;
+- sorted stage hashes belonging to that cohort;
+- sorted source-recording hashes contributing to that cohort;
+- child corpus hash;
+- Phase -1I.6 review hash/status/blockers;
+- compact evidence counts;
+- saved-tick distribution;
+- `accelerationAllowed=false`; and
+- the same explicitly `UNSET` numeric threshold policy.
+
+The bundle also records the parent corpus hash, cohort count, and deterministic counts of each review status.
+
+Every parent stage record belongs to exactly one cohort. A different source recording under the same GAMEFILES/EditConfig identity remains in the same cohort.
+
+### What cohorting may and may not change
+
+Cohorting can remove only the *global mixing condition* by considering one exact identity at a time.
+
+It must **not** remove evidence blockers intrinsic to that identity. For example:
+
+- a checkpoint mismatch remains `CHECKPOINT_MISMATCH`;
+- an inconsistent repeated sample remains `INCONSISTENT_REPEAT`;
+- a collection gap remains `COLLECTION_GAP`; and
+- a cohort with no checkpoint attempts remains `NO_COMPATIBLE_SAMPLES`.
+
+A globally mixed corpus may therefore be `BLOCKED_BY_EVIDENCE` while two individual identity cohorts are each `CLEAN_EVIDENCE_THRESHOLD_UNSET`. This does not approve acceleration; it only shows that the global blocker came from identity pooling rather than an equivalence failure inside either cohort.
+
+### Browser workflow
+
+Whenever a valid Phase -1I.5 corpus exists, the certification panel derives both:
+
+- the global Phase -1I.6 review; and
+- the Phase -1I.7 identity cohort bundle.
+
+The global review remains exposed as `globalThis.__kq1agiCheckpointEvidenceReview`.
+
+The cohort bundle is exposed separately as `globalThis.__kq1agiCheckpointEvidenceCohortReview` and can be downloaded with **EXPORT COHORTS**.
+
+Failure to derive cohorts disables only the cohort export. It cannot rewrite the global review, corpus, replay result, or minimizer classification.
+
+### Phase -1I.7 acceptance criteria
+
+- Cohort generation requires a fully validated Phase -1I.5 parent corpus.
+- Cohort identity is exactly GAMEFILES hash + EditConfig hash.
+- Different source recordings with the same GAMEFILES/EditConfig identity remain in one cohort.
+- Every parent stage hash appears in exactly one cohort.
+- Cohort ordering and bundle hash are deterministic.
+- Each cohort is rebuilt through the normal Phase -1I.4 report, Phase -1I.5 corpus, and Phase -1I.6 review functions.
+- A globally mixed identity corpus remains globally blocked under Phase -1I.6.
+- Per-cohort review may be clean only when that child corpus has no non-identity evidence blocker.
+- Mismatch, inconsistency, collection-gap, and no-attempt blockers survive cohorting.
+- Every cohort and the top-level bundle declare `accelerationAllowed=false`.
+- Threshold policy remains `UNSET` with null numeric thresholds.
+- Raw worker payloads are never included.
+- Phase -1G remains full-replay-only and outside cohort/review execution.
+- Full replay remains mandatory for every candidate.
+
 ## Next slice
 
-Collect real Phase -1E/-1F evidence into one or more Phase -1I.5 corpora and export Phase -1I.6 review records. Only after inspecting a real clean population should a separate PR propose a numeric evidence threshold and narrowly scoped acceleration policy. Until that explicit policy freeze is reviewed and merged, checkpoint execution remains shadow-only and every candidate still runs from game start.
+Collect real Phase -1E/-1F evidence and use the Phase -1I.7 cohort bundle to inspect each exact GAMEFILES/EditConfig identity separately. Only after a real identity-scoped population is clean should a later, separately reviewed PR propose a numeric evidence threshold or acceleration policy. Phase -1I.7 itself changes no replay authority.

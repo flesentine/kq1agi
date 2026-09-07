@@ -26,6 +26,10 @@ import {
   serializeMinimizerCheckpointEvidenceReviewV1,
 } from './certification-minimizer-checkpoint-review.mjs';
 import {
+  createMinimizerCheckpointEvidenceCohortReviewV1,
+  serializeMinimizerCheckpointEvidenceCohortReviewV1,
+} from './certification-minimizer-checkpoint-cohort-review.mjs';
+import {
   encodeRandomReplay,
   freezePlayRecordingV1,
   getPlayRecordingStats,
@@ -136,6 +140,18 @@ function checkpointEvidenceReviewText(review) {
     `blockers: ${blockers}`,
     `review population: attempted unique=${review.evidence.uniqueCheckpointAttemptedSamples} · clean equivalent=${review.evidence.cleanEquivalentSamples} · mismatches=${review.evidence.mismatchSamples} · inconsistent=${review.evidence.inconsistentSamples} · collection gaps=${review.evidence.compactionFailures}`,
     'threshold: UNSET · accelerationAllowed=false · full replay remains mandatory',
+  ].join('\n');
+}
+
+function checkpointEvidenceCohortReviewText(bundle) {
+  if (!bundle) return 'identity cohorts: unavailable';
+  const statuses = Object.entries(bundle.statusCounts ?? {})
+    .map(([status, count]) => `${status}=${count}`)
+    .join(', ') || 'none';
+  return [
+    `Phase -1I.7 identity cohorts ${shortHash(bundle.hash)} · exact GAMEFILES + EditConfig partition`,
+    `cohorts=${bundle.cohortCount} · statuses: ${statuses}`,
+    'global Phase -1I.6 review remains separate · threshold UNSET · accelerationAllowed=false',
   ].join('\n');
 }
 
@@ -334,6 +350,17 @@ function installPhase1D() {
     exportEvidenceCorpusButton.insertAdjacentElement('afterend', exportEvidenceReviewButton);
   }
 
+  let exportEvidenceCohortsButton = document.getElementById('certify-export-evidence-cohorts-button');
+  if (!exportEvidenceCohortsButton) {
+    exportEvidenceCohortsButton = document.createElement('button');
+    exportEvidenceCohortsButton.id = 'certify-export-evidence-cohorts-button';
+    exportEvidenceCohortsButton.type = 'button';
+    exportEvidenceCohortsButton.textContent = 'EXPORT COHORTS';
+    exportEvidenceCohortsButton.title = 'Download the Phase -1I.7 GAMEFILES + EditConfig identity-scoped review bundle';
+    exportEvidenceCohortsButton.disabled = true;
+    exportEvidenceReviewButton.insertAdjacentElement('afterend', exportEvidenceCohortsButton);
+  }
+
   let importEvidenceInput = document.getElementById('certify-import-evidence-input');
   if (!importEvidenceInput) {
     importEvidenceInput = document.createElement('input');
@@ -356,6 +383,7 @@ function installPhase1D() {
   let latestShadowEvidenceReport = null;
   let latestEvidenceCorpus = null;
   let latestEvidenceReview = null;
+  let latestEvidenceCohortReview = null;
 
   const setStatus = (text, state) => {
     status.textContent = text;
@@ -381,6 +409,7 @@ function installPhase1D() {
     importEvidenceButton.disabled = value;
     exportEvidenceCorpusButton.disabled = value || !latestEvidenceCorpus;
     exportEvidenceReviewButton.disabled = value || !latestEvidenceReview;
+    exportEvidenceCohortsButton.disabled = value || !latestEvidenceCohortReview;
     runButton.disabled = value;
     if (refreshButton) refreshButton.disabled = value;
     gameSelect.disabled = value;
@@ -408,6 +437,26 @@ function installPhase1D() {
     return latestEvidenceReview;
   }
 
+  async function refreshEvidenceCohortReview() {
+    if (!latestEvidenceCorpus) {
+      latestEvidenceCohortReview = null;
+      globalThis.__kq1agiCheckpointEvidenceCohortReview = null;
+      exportEvidenceCohortsButton.disabled = true;
+      return null;
+    }
+    try {
+      latestEvidenceCohortReview = await createMinimizerCheckpointEvidenceCohortReviewV1(latestEvidenceCorpus);
+      globalThis.__kq1agiCheckpointEvidenceCohortReview = latestEvidenceCohortReview;
+      globalThis.__kq1agiCheckpointEvidenceCohortReviewError = null;
+    } catch (error) {
+      latestEvidenceCohortReview = null;
+      globalThis.__kq1agiCheckpointEvidenceCohortReview = null;
+      globalThis.__kq1agiCheckpointEvidenceCohortReviewError = String(error?.message ?? error);
+    }
+    exportEvidenceCohortsButton.disabled = replayRunning || !latestEvidenceCohortReview;
+    return latestEvidenceCohortReview;
+  }
+
   async function recordShadowEvidenceStage(stage, context, shadowState, observations, collectionErrorCandidateHashes, outcome) {
     try {
       const stageEvidence = await createMinimizerCheckpointStageEvidenceV1({
@@ -433,14 +482,19 @@ function installPhase1D() {
         globalThis.__kq1agiCheckpointEvidenceCorpus = latestEvidenceCorpus;
         globalThis.__kq1agiCheckpointEvidenceCorpusError = null;
         await refreshEvidenceReview();
+        await refreshEvidenceCohortReview();
       } catch (corpusError) {
         latestEvidenceCorpus = null;
         latestEvidenceReview = null;
+        latestEvidenceCohortReview = null;
         globalThis.__kq1agiCheckpointEvidenceCorpus = null;
         globalThis.__kq1agiCheckpointEvidenceReview = null;
+        globalThis.__kq1agiCheckpointEvidenceCohortReview = null;
         globalThis.__kq1agiCheckpointEvidenceCorpusError = String(corpusError?.message ?? corpusError);
         globalThis.__kq1agiCheckpointEvidenceReviewError = 'Evidence review unavailable because corpus construction failed.';
+        globalThis.__kq1agiCheckpointEvidenceCohortReviewError = 'Identity cohort review unavailable because corpus construction failed.';
         exportEvidenceReviewButton.disabled = true;
+        exportEvidenceCohortsButton.disabled = true;
       }
       exportEvidenceCorpusButton.disabled = replayRunning || !latestEvidenceCorpus;
       return latestShadowEvidenceReport;
@@ -487,6 +541,18 @@ function installPhase1D() {
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
+  function exportEvidenceCohorts() {
+    if (!latestEvidenceCohortReview) return;
+    const body = serializeMinimizerCheckpointEvidenceCohortReviewV1(latestEvidenceCohortReview);
+    const blob = new Blob([body], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kq1agi-checkpoint-evidence-cohorts-${latestEvidenceCohortReview.hash.slice(7, 19)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
   async function importEvidenceFiles() {
     const files = [...(importEvidenceInput.files ?? [])];
     importEvidenceInput.value = '';
@@ -514,12 +580,19 @@ function installPhase1D() {
       globalThis.__kq1agiCheckpointEvidenceCorpus = corpus;
       globalThis.__kq1agiCheckpointEvidenceCorpusError = null;
       const review = await refreshEvidenceReview();
+      const cohortReview = await refreshEvidenceCohortReview();
       exportEvidenceCorpusButton.disabled = replayRunning || !latestEvidenceCorpus;
       setStatus('EVIDENCE CORPUS READY', 'MATCH');
-      progress.textContent = review
-        ? `Phase -1I.5 imported ${files.length} evidence file(s) · hash validation PASS · Phase -1I.6 review ready`
-        : `Phase -1I.5 imported ${files.length} evidence file(s) · hash validation PASS · Phase -1I.6 review unavailable`;
-      detail.textContent = [checkpointEvidenceCorpusText(corpus), '', checkpointEvidenceReviewText(review)].join('\n');
+      progress.textContent = review && cohortReview
+        ? `Phase -1I.5 imported ${files.length} evidence file(s) · hash validation PASS · Phase -1I.6 review ready · Phase -1I.7 cohorts ready`
+        : `Phase -1I.5 imported ${files.length} evidence file(s) · hash validation PASS · derived review artifact unavailable`;
+      detail.textContent = [
+        checkpointEvidenceCorpusText(corpus),
+        '',
+        checkpointEvidenceReviewText(review),
+        '',
+        checkpointEvidenceCohortReviewText(cohortReview),
+      ].join('\n');
     } catch (error) {
       globalThis.__kq1agiCheckpointEvidenceCorpusError = String(error?.message ?? error);
       setStatus('EVIDENCE IMPORT REJECTED', 'ERROR');
@@ -1244,6 +1317,7 @@ function installPhase1D() {
   importEvidenceInput.addEventListener('change', importEvidenceFiles);
   exportEvidenceCorpusButton.addEventListener('click', exportEvidenceCorpus);
   exportEvidenceReviewButton.addEventListener('click', exportEvidenceReview);
+  exportEvidenceCohortsButton.addEventListener('click', exportEvidenceCohorts);
   gameSelect.addEventListener('change', invalidateMinimization);
   runButton.addEventListener('click', invalidateMinimization, { capture: true });
   stopButton.addEventListener('click', () => {
