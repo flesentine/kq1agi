@@ -50,10 +50,12 @@ function mapCounts(map) {
 }
 
 async function cohortKey(stage) {
-  return hashCanonicalJsonV1({
-    gameHash: String(stage?.source?.gameHash ?? ''),
-    editConfigHash: String(stage?.source?.editConfigHash ?? ''),
-  });
+  const gameHash = String(stage?.gameHash ?? stage?.source?.gameHash ?? '');
+  const editConfigHash = String(stage?.editConfigHash ?? stage?.source?.editConfigHash ?? '');
+  if (!gameHash || !editConfigHash) {
+    throw new Error('Provenance coverage matrix stage identity is missing.');
+  }
+  return hashCanonicalJsonV1({ gameHash, editConfigHash });
 }
 
 function selectedPackageMap(packages) {
