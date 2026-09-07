@@ -34,6 +34,12 @@ import {
   serializeMinimizerCheckpointEvidenceCoverageProfileV1,
 } from './certification-minimizer-checkpoint-coverage.mjs';
 import {
+  createMinimizerCheckpointCollectionEventV1,
+  createMinimizerCheckpointCollectionProvenanceV1,
+  createMinimizerCheckpointCollectionRunIdV1,
+  serializeMinimizerCheckpointCollectionProvenanceV1,
+} from './certification-minimizer-checkpoint-provenance.mjs';
+import {
   encodeRandomReplay,
   freezePlayRecordingV1,
   getPlayRecordingStats,
@@ -168,6 +174,15 @@ function checkpointEvidenceCoverageText(profile) {
     `Phase -1I.8 coverage ${shortHash(profile.hash)} · DESCRIPTIVE_ONLY`,
     `cohorts=${profile.cohortCount} · concentration flags: ${flags}`,
     'coverage flags are descriptive, not review blockers · threshold UNSET · accelerationAllowed=false',
+  ].join('\n');
+}
+
+function checkpointCollectionProvenanceText(provenance) {
+  if (!provenance) return 'collection provenance: unavailable until a live Phase -1E/-1F stage is collected';
+  return [
+    `Phase -1I.9 collection provenance ${shortHash(provenance.hash)} · COLLECTION_IDENTITY_ONLY`,
+    `live events=${provenance.eventCount} · distinct stage hashes=${provenance.distinctStageHashes.length}`,
+    'imported evidence cannot mint collection events · accelerationAllowed=false',
   ].join('\n');
 }
 
@@ -388,6 +403,17 @@ function installPhase1D() {
     exportEvidenceCohortsButton.insertAdjacentElement('afterend', exportEvidenceCoverageButton);
   }
 
+  let exportCollectionProvenanceButton = document.getElementById('certify-export-collection-provenance-button');
+  if (!exportCollectionProvenanceButton) {
+    exportCollectionProvenanceButton = document.createElement('button');
+    exportCollectionProvenanceButton.id = 'certify-export-collection-provenance-button';
+    exportCollectionProvenanceButton.type = 'button';
+    exportCollectionProvenanceButton.textContent = 'EXPORT PROVENANCE';
+    exportCollectionProvenanceButton.title = 'Download Phase -1I.9 provenance for live evidence collected in this browser session';
+    exportCollectionProvenanceButton.disabled = true;
+    exportEvidenceCoverageButton.insertAdjacentElement('afterend', exportCollectionProvenanceButton);
+  }
+
   let importEvidenceInput = document.getElementById('certify-import-evidence-input');
   if (!importEvidenceInput) {
     importEvidenceInput = document.createElement('input');
@@ -412,6 +438,17 @@ function installPhase1D() {
   let latestEvidenceReview = null;
   let latestEvidenceCohortReview = null;
   let latestEvidenceCoverageProfile = null;
+  const collectionProvenanceEvents = [];
+  let collectionRunId = null;
+  let latestCollectionProvenance = null;
+  try {
+    collectionRunId = createMinimizerCheckpointCollectionRunIdV1();
+    globalThis.__kq1agiCheckpointCollectionRunId = collectionRunId;
+    globalThis.__kq1agiCheckpointCollectionProvenanceError = null;
+  } catch (error) {
+    globalThis.__kq1agiCheckpointCollectionRunId = null;
+    globalThis.__kq1agiCheckpointCollectionProvenanceError = String(error?.message ?? error);
+  }
 
   const setStatus = (text, state) => {
     status.textContent = text;
@@ -439,6 +476,7 @@ function installPhase1D() {
     exportEvidenceReviewButton.disabled = value || !latestEvidenceReview;
     exportEvidenceCohortsButton.disabled = value || !latestEvidenceCohortReview;
     exportEvidenceCoverageButton.disabled = value || !latestEvidenceCoverageProfile;
+    exportCollectionProvenanceButton.disabled = value || !latestCollectionProvenance;
     runButton.disabled = value;
     if (refreshButton) refreshButton.disabled = value;
     gameSelect.disabled = value;
@@ -506,6 +544,31 @@ function installPhase1D() {
     return latestEvidenceCoverageProfile;
   }
 
+  async function recordLiveCollectionProvenance(stageEvidence) {
+    if (!collectionRunId || !latestShadowEvidenceReport) return null;
+    try {
+      const event = await createMinimizerCheckpointCollectionEventV1({
+        collectionRunId,
+        ordinal: collectionProvenanceEvents.length,
+        stageHash: stageEvidence.hash,
+      });
+      collectionProvenanceEvents.push(event);
+      latestCollectionProvenance = await createMinimizerCheckpointCollectionProvenanceV1({
+        collectionRunId,
+        evidenceReport: latestShadowEvidenceReport,
+        events: collectionProvenanceEvents,
+      });
+      globalThis.__kq1agiCheckpointCollectionProvenance = latestCollectionProvenance;
+      globalThis.__kq1agiCheckpointCollectionProvenanceError = null;
+    } catch (error) {
+      latestCollectionProvenance = null;
+      globalThis.__kq1agiCheckpointCollectionProvenance = null;
+      globalThis.__kq1agiCheckpointCollectionProvenanceError = String(error?.message ?? error);
+    }
+    exportCollectionProvenanceButton.disabled = replayRunning || !latestCollectionProvenance;
+    return latestCollectionProvenance;
+  }
+
   async function recordShadowEvidenceStage(stage, context, shadowState, observations, collectionErrorCandidateHashes, outcome) {
     try {
       const stageEvidence = await createMinimizerCheckpointStageEvidenceV1({
@@ -522,6 +585,7 @@ function installPhase1D() {
       globalThis.__kq1agiCheckpointShadowEvidenceReport = latestShadowEvidenceReport;
       globalThis.__kq1agiCheckpointShadowEvidenceReportError = null;
       exportShadowEvidenceButton.disabled = replayRunning || !latestShadowEvidenceReport;
+      await recordLiveCollectionProvenance(stageEvidence);
       try {
         latestEvidenceCorpus = await createMinimizerCheckpointEvidenceCorpusV1([
           ...importedEvidenceArtifacts,
@@ -615,6 +679,18 @@ function installPhase1D() {
     const link = document.createElement('a');
     link.href = url;
     link.download = `kq1agi-checkpoint-evidence-coverage-${latestEvidenceCoverageProfile.hash.slice(7, 19)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  function exportCollectionProvenance() {
+    if (!latestCollectionProvenance) return;
+    const body = serializeMinimizerCheckpointCollectionProvenanceV1(latestCollectionProvenance);
+    const blob = new Blob([body], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kq1agi-checkpoint-collection-provenance-${latestCollectionProvenance.hash.slice(7, 19)}.json`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
@@ -1388,6 +1464,7 @@ function installPhase1D() {
   exportEvidenceReviewButton.addEventListener('click', exportEvidenceReview);
   exportEvidenceCohortsButton.addEventListener('click', exportEvidenceCohorts);
   exportEvidenceCoverageButton.addEventListener('click', exportEvidenceCoverage);
+  exportCollectionProvenanceButton.addEventListener('click', exportCollectionProvenance);
   gameSelect.addEventListener('change', invalidateMinimization);
   runButton.addEventListener('click', invalidateMinimization, { capture: true });
   stopButton.addEventListener('click', () => {
