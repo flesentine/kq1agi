@@ -906,7 +906,7 @@ function installPhase1D() {
       exportProvenanceCensusButton.disabled = replayRunning || !latestProvenanceCensus;
       exportProvenanceCoverageButton.disabled = replayRunning || !latestProvenanceCoverageMatrix;
       setStatus('PROVENANCE COVERAGE READY', 'MATCH');
-      progress.textContent = `Phase -1I.10/−1I.11 imported ${sidecars.length} provenance sidecar(s) · census + coverage validation PASS`;
+      progress.textContent = `Phase -1I.10/-1I.11 imported ${sidecars.length} provenance sidecar(s) · census + coverage validation PASS`;
       detail.textContent = [
         checkpointProvenanceCensusText(census),
         '',
