@@ -187,6 +187,14 @@ assert.deepEqual(cohortB.collectionRunIds, [runA]);
 assert.equal(cohortB.toolObservedCollectionEvents, 1);
 assert.equal(cohortB.distinctStageHashes, 1);
 assert.equal(cohortB.crossRunRepeatedStageHashes, 0);
+assert.equal(
+  mixed.cohorts.reduce((sum, cohort) => sum + cohort.crossRunRepeatedStageHashes, 0),
+  mixed.crossRunRepeatedStageHashes,
+);
+assert.equal(
+  new Set(mixed.cohorts.flatMap(cohort => cohort.collectionRunIds)).size,
+  mixed.uniqueCollectionRuns,
+);
 assert.deepEqual(cohortB.phaseEventCounts, { 'phase-1e': 1, 'phase-1f': 0 });
 assert.deepEqual(cohortB.phaseDeterministicStageCounts, { 'phase-1e': 1, 'phase-1f': 0 });
 assert.deepEqual(cohortB.sourceRecordingHashes, [sha('7')]);
@@ -253,6 +261,18 @@ const provenanceImportEnd = phase1dSource.indexOf('async function importEvidence
 const provenanceImportSection = phase1dSource.slice(provenanceImportStart, provenanceImportEnd);
 assert.equal(provenanceImportSection.includes('importedEvidenceArtifacts'), false);
 assert.equal(provenanceImportSection.includes('createMinimizerCheckpointEvidenceCorpusV1'), false);
+
+const candidatePackagesIndex = provenanceImportSection.indexOf('const candidatePackages = [');
+const censusIndex = provenanceImportSection.indexOf('await createMinimizerCheckpointProvenanceCensusV1(candidatePackages)');
+const coverageIndex = provenanceImportSection.indexOf('await createMinimizerCheckpointProvenanceCohortCoverageV1(candidatePackages)');
+const commitIndex = provenanceImportSection.indexOf('importedProvenancePackages.push(...committedBatch)');
+assert.ok(
+  candidatePackagesIndex >= 0
+    && censusIndex > candidatePackagesIndex
+    && coverageIndex > censusIndex
+    && commitIndex > coverageIndex,
+  'Provenance import must validate I.10 and I.11 before committing the batch.',
+);
 
 const evidenceImportStart = phase1dSource.indexOf('async function importEvidenceFiles()');
 const evidenceImportEnd = phase1dSource.indexOf('function refreshJournal()', evidenceImportStart);
