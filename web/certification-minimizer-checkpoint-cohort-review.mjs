@@ -54,6 +54,7 @@ async function buildCohortRecord(identity, stages) {
     reviewHash: review.hash,
     reviewStatus: review.reviewStatus,
     blockers: review.blockers,
+    sourceRecordingHashes: review.identities.sourceRecordingHashes,
     evidence: review.evidence,
     savedTicks: review.savedTicks,
     accelerationAllowed: false,
