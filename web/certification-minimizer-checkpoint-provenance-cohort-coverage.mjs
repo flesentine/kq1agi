@@ -185,8 +185,17 @@ export async function createMinimizerCheckpointProvenanceCohortCoverageV1(packag
     (sum, cohort) => sum + cohort.distinctStageHashes,
     0,
   );
+  const unionCollectionRunIds = new Set(
+    cohorts.flatMap(cohort => cohort.collectionRunIds ?? []),
+  );
+  const crossRunRepeatedStageHashes = cohorts.reduce(
+    (sum, cohort) => sum + cohort.crossRunRepeatedStageHashes,
+    0,
+  );
   if (toolObservedCollectionEvents !== census.toolObservedCollectionEvents
-      || distinctStageHashes !== census.distinctStageHashes) {
+      || distinctStageHashes !== census.distinctStageHashes
+      || unionCollectionRunIds.size !== census.uniqueCollectionRuns
+      || crossRunRepeatedStageHashes !== census.crossRunRepeatedStageHashes) {
     throw new Error('Provenance cohort coverage population disagrees with Phase -1I.10 census.');
   }
 
