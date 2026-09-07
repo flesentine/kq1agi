@@ -26,6 +26,7 @@ node scripts/test_certification_minimizer_checkpoint_corpus.mjs
 node scripts/test_certification_minimizer_checkpoint_review.mjs
 node scripts/test_certification_minimizer_checkpoint_cohort_review.mjs
 node scripts/test_certification_minimizer_checkpoint_coverage.mjs
+node scripts/test_certification_minimizer_checkpoint_provenance.mjs
 node scripts/test_certification_recording_hash.mjs
 node scripts/test_certification_replay_host.mjs
 node scripts/test_phase1d_recording_boundary.mjs
@@ -113,6 +114,7 @@ cp web/certification-minimizer-checkpoint-corpus.mjs "$OUT/certification-minimiz
 cp web/certification-minimizer-checkpoint-review.mjs "$OUT/certification-minimizer-checkpoint-review.mjs"
 cp web/certification-minimizer-checkpoint-cohort-review.mjs "$OUT/certification-minimizer-checkpoint-cohort-review.mjs"
 cp web/certification-minimizer-checkpoint-coverage.mjs "$OUT/certification-minimizer-checkpoint-coverage.mjs"
+cp web/certification-minimizer-checkpoint-provenance.mjs "$OUT/certification-minimizer-checkpoint-provenance.mjs"
 cp web/certification-replay-host.mjs "$OUT/certification-replay-host.mjs"
 cp web/certification-phase1d.mjs "$OUT/certification-phase1d.mjs"
 cp web/certification-minimizer.mjs "$OUT/certification-minimizer.mjs"
@@ -133,6 +135,7 @@ test -f "$OUT/certification-minimizer-checkpoint-corpus.mjs"
 test -f "$OUT/certification-minimizer-checkpoint-review.mjs"
 test -f "$OUT/certification-minimizer-checkpoint-cohort-review.mjs"
 test -f "$OUT/certification-minimizer-checkpoint-coverage.mjs"
+test -f "$OUT/certification-minimizer-checkpoint-provenance.mjs"
 test -f "$OUT/certification-input-minimizer.mjs"
 test -f "$OUT/certification-edit-minimizer.mjs"
 test -f "$OUT/PHASE_1I.md"
@@ -166,6 +169,10 @@ grep -q 'createMinimizerCheckpointEvidenceCoverageProfileV1' "$OUT/certification
 grep -q 'DESCRIPTIVE_ONLY' "$OUT/certification-minimizer-checkpoint-coverage.mjs"
 grep -q 'accelerationAllowed: false' "$OUT/certification-minimizer-checkpoint-coverage.mjs"
 grep -q "status: 'UNSET'" "$OUT/certification-minimizer-checkpoint-coverage.mjs"
+grep -q 'createMinimizerCheckpointCollectionRunIdV1' "$OUT/certification-minimizer-checkpoint-provenance.mjs"
+grep -q 'COLLECTION_IDENTITY_ONLY' "$OUT/certification-minimizer-checkpoint-provenance.mjs"
+grep -q 'IMPORTED_EVIDENCE_DOES_NOT_MINT_COLLECTION_EVENTS' "$OUT/certification-minimizer-checkpoint-provenance.mjs"
+grep -q 'accelerationAllowed: false' "$OUT/certification-minimizer-checkpoint-provenance.mjs"
 grep -q 'checkpointShadowSummaryText' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-export-shadow-evidence-button' "$OUT/certification-phase1d.mjs"
 grep -q '__kq1agiCheckpointShadowEvidenceReport' "$OUT/certification-phase1d.mjs"
@@ -178,6 +185,9 @@ grep -q 'certify-export-evidence-cohorts-button' "$OUT/certification-phase1d.mjs
 grep -q '__kq1agiCheckpointEvidenceCohortReview' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-export-evidence-coverage-button' "$OUT/certification-phase1d.mjs"
 grep -q '__kq1agiCheckpointEvidenceCoverageProfile' "$OUT/certification-phase1d.mjs"
+grep -q 'certify-export-collection-provenance-button' "$OUT/certification-phase1d.mjs"
+grep -q '__kq1agiCheckpointCollectionRunId' "$OUT/certification-phase1d.mjs"
+grep -q '__kq1agiCheckpointCollectionProvenance' "$OUT/certification-phase1d.mjs"
 ! grep -q 'shadowResults.push(shadow)' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-reduce-inputs-button' "$OUT/certification-phase1d.mjs"
 grep -q 'minimizeInputGroupsV1' "$OUT/certification-phase1d.mjs"
@@ -201,6 +211,7 @@ printf '%s\n' \
   'Phase -1I.6 derives a deterministic evidence review from a validated corpus, surfaces explicit blockers, leaves all numeric evidence thresholds UNSET, exports accelerationAllowed=false, and keeps full replay mandatory.' \
   'Phase -1I.7 partitions a validated corpus by exact GAMEFILES + EditConfig identity, reuses the Phase -1I.6 review for each cohort, keeps the global mixed-identity review separate, leaves thresholds UNSET, and never enables acceleration.' \
   'Phase -1I.8 profiles evidence breadth inside each exact identity cohort across minimizer stage, source recording, target divergence tick, checkpoint tick/hash, observations, and collection gaps; coverage flags remain DESCRIPTIVE_ONLY and never enable acceleration.' \
+  'Phase -1I.9 mints a cryptographically random browser collection-run identity only for newly collected live Phase -1E/-1F stage events, binds those events to the session evidence report, never lets imported evidence mint independence, and keeps replay authority unchanged.' \
   > "$OUT/ARTIFACT.txt"
 
 find "$OUT" -maxdepth 2 -type f | sort
