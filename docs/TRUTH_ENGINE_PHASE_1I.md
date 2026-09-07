@@ -948,6 +948,168 @@ A current live Phase -1I.9 report+sidecar pair automatically contributes to the 
 - Phase -1G remains outside provenance census execution.
 - Full replay remains authoritative for every minimizer candidate.
 
+## Phase -1I.11 — provenance-backed exact-identity coverage
+
+Phase -1I.11 maps the canonical Phase -1I.10 provenance census back onto the exact GAMEFILES + EditConfig identity boundary already used by Phase -1I.7.
+
+The purpose is to answer a more precise question than the global census:
+
+> For one exact game/edit identity, how many distinct browser collection runs and tool-observed collection events actually contributed, which deterministic Phase -1E/-1F stages were seen, and which stage hashes were repeated across runs?
+
+This remains descriptive provenance accounting. It does not change the Phase -1I.5 population, Phase -1I.6 review, or replay authority.
+
+### Canonical census first
+
+Phase -1I.11 does not reimplement:
+
+- exact duplicate package idempotence;
+- same-run snapshot prefix collapse;
+- conflicting same-run history rejection; or
+- cross-session event identity.
+
+It first derives the normal Phase -1I.10 census from the supplied report+provenance packages.
+
+Only the selected canonical census population is then joined back to validated Phase -1I.4 stage metadata.
+
+### Exact identity join
+
+Each deterministic stage hash is mapped to the exact identity pair:
+
+- GAMEFILES SHA-256; plus
+- EditConfig SHA-256.
+
+The cohort key is the canonical SHA-256 of that pair, matching the Phase -1I.7 identity boundary.
+
+For every census stage population, Phase -1I.11 resolves the exact validated stage record and carries compact metadata:
+
+- deterministic stage hash;
+- minimizer stage, Phase -1E or Phase -1F;
+- source recording hash;
+- target divergence tick;
+- checkpoint status/reason/tick/hash;
+- tool-observed event count;
+- collection-run count; and
+- sorted collection-run IDs.
+
+If the same deterministic stage hash appears in multiple supplied reports, its canonical stage content must agree. A conflicting same-hash stage representation is rejected rather than guessed.
+
+### Per-cohort provenance coverage
+
+Each exact GAMEFILES + EditConfig cohort reports:
+
+- contributing collection-run count and sorted IDs;
+- tool-observed collection events;
+- distinct deterministic stage hashes;
+- deterministic stage hashes repeated across multiple collection runs;
+- maximum collection runs observed for one deterministic stage;
+- Phase -1E event count;
+- Phase -1F event count;
+- Phase -1E deterministic-stage count;
+- Phase -1F deterministic-stage count;
+- source-recording hashes;
+- target divergence ticks;
+- captured checkpoint ticks;
+- checkpoint hashes;
+- unavailable-checkpoint reasons; and
+- compact per-stage provenance populations.
+
+The sum of per-cohort tool-observed events and deterministic stage hashes must exactly equal the canonical Phase -1I.10 census totals.
+
+### Cross-identity collection runs
+
+One browser collection run can legitimately collect evidence under more than one GAMEFILES/EditConfig identity, for example if the operator changes imported game/edit state within one browser session before later live collections.
+
+Phase -1I.11 therefore also reports:
+
+- `crossIdentityCollectionRuns`; and
+- sorted `crossIdentityCollectionRunIds`.
+
+This is descriptive provenance context. It does not merge the identities into one scientific cohort.
+
+### Descriptive concentration flags
+
+Each cohort may report:
+
+- `missingPhase1E`;
+- `missingPhase1F`;
+- `singleCollectionRun`;
+- `singleDeterministicStage`;
+- `noCrossRunStageRepeat`;
+- `singleSourceRecording`; and
+- `singleTargetTick`.
+
+These flags are not blockers and are not sufficiency criteria.
+
+For example, a cohort may have clean Phase -1I.6 equivalence evidence but Phase -1I.11 may still show only one provenance-backed collection run.
+
+### Policy boundary
+
+Every Phase -1I.11 artifact declares:
+
+- `policy: full-replay-authoritative`;
+- `policyFrozen: false`;
+- `policyDecision: EVIDENCE_ONLY`;
+- `accelerationAllowed: false`;
+- `coverageDecision: DESCRIPTIVE_ONLY`;
+- `provenanceDecision: COLLECTION_IDENTITY_ONLY`; and
+- `cohortIdentity: GAMEFILES_HASH_PLUS_EDITCONFIG_HASH`.
+
+Threshold policy remains explicitly `UNSET`.
+
+No numeric minimum is defined for:
+
+- collection runs per cohort;
+- collection events per cohort;
+- cross-run deterministic-stage repetitions per cohort;
+- distinct source recordings per cohort; or
+- target-tick coverage per cohort.
+
+Phase -1I.11 therefore cannot convert provenance breadth into acceleration permission.
+
+### Browser workflow
+
+The provenance import path now derives both:
+
+- the Phase -1I.10 census; and
+- the Phase -1I.11 exact-identity provenance coverage.
+
+The new artifact is exposed as:
+
+`globalThis.__kq1agiCheckpointProvenanceCohortCoverage`
+
+and can be downloaded with **EXPORT PROV COVERAGE**.
+
+A provenance import batch is transactional across both derived artifacts:
+
+1. parse and individually validate the selected report/sidecar files;
+2. deduplicate exact sidecar hashes for browser storage;
+3. build a candidate Phase -1I.10 census;
+4. build candidate Phase -1I.11 provenance cohort coverage;
+5. only after both succeed, commit the new provenance packages and derived artifacts.
+
+A join failure therefore cannot partially advance the census.
+
+The normal Phase -1I.5 evidence import path remains separate and does not create or update provenance cohort coverage.
+
+### Phase -1I.11 acceptance criteria
+
+- Phase -1I.10 census is the authoritative provenance population source.
+- Exact duplicate provenance packages remain idempotent.
+- Same-run prefix supersession and conflict rejection remain inherited from I.10.
+- Stage metadata is joined only from hash-valid Phase -1I.4 reports.
+- Stage identity is exactly GAMEFILES hash + EditConfig hash.
+- Per-cohort event/stage totals reconcile exactly to the I.10 census.
+- A deterministic stage repeated in two collection runs remains one stage hash with two tool-observed events.
+- A single browser collection run spanning multiple identities is surfaced explicitly without pooling those identities.
+- Phase -1E and Phase -1F event/stage breadth are reported independently.
+- Source-recording, target-tick, checkpoint, and unavailable-checkpoint dimensions remain visible.
+- Provenance import validates both I.10 and I.11 before committing a new batch.
+- Normal evidence import does not update provenance coverage.
+- `DESCRIPTIVE_ONLY`, `COLLECTION_IDENTITY_ONLY`, `accelerationAllowed=false`, and threshold policy `UNSET` remain mandatory.
+- Raw worker/oracle payloads are never included.
+- Phase -1G remains outside provenance cohort coverage execution.
+- Full replay remains authoritative for every minimizer candidate.
+
 ## Next slice
 
-Collect real Phase -1E/-1F evidence in multiple Phase -1I.9-aware browser sessions and use the Phase -1I.10 census to distinguish repeated tool-observed collection events from conservative deterministic corpus deduplication. Only after real provenance-backed populations exist should a separate review propose any numeric sufficiency threshold; Phase -1I.10 itself defines none.
+Collect real Phase -1E/-1F evidence in multiple Phase -1I.9-aware browser sessions and inspect the resulting I.10 census together with I.11 exact-identity provenance coverage. The next policy-bearing step should remain blocked until a real provenance-backed population exists; no synthetic fixture should be used to invent a numeric sufficiency threshold.
