@@ -124,6 +124,7 @@ export async function createMinimizerCheckpointCollectionProvenanceV1({
   if (!Array.isArray(events) || events.length === 0) {
     throw new Error('Collection provenance requires at least one live collection event.');
   }
+  rejectForbiddenKeys(events);
   if (events.length > MAX_EVENTS) {
     throw new Error('Collection provenance exceeds the event safety limit.');
   }
