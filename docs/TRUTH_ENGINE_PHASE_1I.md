@@ -791,6 +791,163 @@ An imported corpus may still drive the I.6/I.7/I.8 review surfaces, but it canno
 - Phase -1G has no provenance collection path.
 - Full replay remains authoritative for every minimizer candidate.
 
+## Phase -1I.10 — cross-session provenance census
+
+Phase -1I.10 aggregates validated Phase -1I.9 provenance across browser collection sessions without changing the conservative Phase -1I.5 corpus population.
+
+Each census input is an exact pair:
+
+- one hash-valid Phase -1I.4 evidence report; and
+- one Phase -1I.9 provenance sidecar whose `evidenceReportHash` matches that report.
+
+The sidecar is revalidated against the report before it contributes anything.
+
+### Exact duplicate imports are idempotent
+
+Importing the exact same report+sidecar package more than once does not change the canonical census.
+
+Packages are first deduplicated by provenance SHA-256. Exact duplicate imports therefore contribute:
+
+- zero additional collection runs;
+- zero additional collection events;
+- zero additional deterministic stage identities; and
+- no census hash change.
+
+This keeps the census independent of accidental repeated file selection.
+
+### Multiple snapshots from one collection run
+
+A single browser collection run may be exported more than once as additional live Phase -1E/-1F stages are collected.
+
+For example:
+
+- snapshot A may contain event ordinal 0; and
+- a later snapshot B from the same collection-run ID may contain ordinals 0 and 1.
+
+Those are not separate runs and the shared prefix event must not be double-counted.
+
+Phase -1I.10 therefore groups distinct provenance snapshots by collection-run ID and requires them to form one consistent event-prefix chain.
+
+For one run:
+
+- event ordinals must remain identical across the shared prefix;
+- event hashes must remain identical across the shared prefix;
+- stage hashes must remain identical across the shared prefix; and
+- only the longest valid snapshot contributes to the census.
+
+Shorter consistent snapshots are reported as `supersededSnapshots`.
+
+If two snapshots for the same collection-run ID have the same event count but different provenance, or if a longer snapshot changes any earlier event, the census rejects the run as conflicting rather than guessing which history is correct.
+
+### Census counts
+
+After exact duplicate removal and same-run prefix collapse, the deterministic census reports:
+
+- `uniqueProvenanceSnapshots` — distinct validated sidecar snapshots before same-run supersession;
+- `supersededSnapshots` — shorter consistent snapshots from runs that have a later snapshot;
+- `uniqueCollectionRuns` — distinct collection-run IDs;
+- `toolObservedCollectionEvents` — sum of event counts from the selected longest snapshot for each run;
+- `distinctEventHashes`;
+- `distinctStageHashes`;
+- `crossRunRepeatedStageHashes` — deterministic stage hashes observed in more than one collection run; and
+- `maxCollectionRunsPerStage`.
+
+Each selected run retains:
+
+- collection-run ID;
+- selected provenance hash;
+- exact evidence-report hash;
+- event count;
+- distinct stage hashes;
+- event hashes; and
+- number of distinct validated snapshots seen for that run.
+
+The census also reports per deterministic stage hash:
+
+- total tool-observed event count;
+- number of contributing collection runs; and
+- sorted contributing collection-run IDs.
+
+This allows byte-identical deterministic stage evidence to remain one Phase -1I.5 stage record while separately showing that the tool observed that stage in multiple live collection runs.
+
+### Scientific boundary
+
+Phase -1I.10 is descriptive provenance accounting.
+
+`toolObservedCollectionEvents` is **not** a replacement for:
+
+- Phase -1I.5 unique sample population;
+- Phase -1I.6 clean-equivalent sample count;
+- a statistical independence claim;
+- a minimum sample threshold; or
+- an acceleration-policy criterion.
+
+The census explicitly carries:
+
+- `policy: full-replay-authoritative`;
+- `policyFrozen: false`;
+- `policyDecision: EVIDENCE_ONLY`;
+- `accelerationAllowed: false`;
+- `censusDecision: DESCRIPTIVE_ONLY`; and
+- `provenanceDecision: COLLECTION_IDENTITY_ONLY`.
+
+Its threshold policy remains `UNSET`, with null minimums for:
+
+- collection runs;
+- collection events; and
+- cross-run deterministic-stage repetitions.
+
+The census also preserves the Phase -1I.9 caveat that tool-observed collection-run identity is not authenticated proof of physical or human independence.
+
+### Browser workflow
+
+The certification panel adds a **separate** provenance import path.
+
+**IMPORT PROVENANCE** accepts:
+
+- Phase -1I.4 reports; and
+- Phase -1I.9 provenance sidecars.
+
+Every sidecar must find its exact report by `evidenceReportHash`.
+
+The provenance import path does not add artifacts to the Phase -1I.5 evidence corpus and cannot change the I.6 review, I.7 cohort review, or I.8 coverage profile.
+
+Provenance import is transactional:
+
+1. selected reports/sidecars are parsed and individually validated;
+2. sidecars are paired with exact reports;
+3. a candidate census is built from the prior valid packages plus the new batch and any current live sidecar;
+4. only if the complete candidate census validates is the new batch committed to browser state.
+
+A conflicting new batch therefore cannot poison the previously valid census.
+
+The resulting census is exposed as:
+
+`globalThis.__kq1agiCheckpointProvenanceCensus`
+
+and can be downloaded with **EXPORT CENSUS**.
+
+A current live Phase -1I.9 report+sidecar pair automatically contributes to the census alongside imported packages.
+
+### Phase -1I.10 acceptance criteria
+
+- Every census package revalidates the I.9 sidecar against its exact I.4 report.
+- Exact duplicate package imports are fully idempotent and do not alter the census hash.
+- Distinct snapshots from one collection run count only through the longest consistent prefix history.
+- Shared-prefix event ordinal/hash/stage identity must remain exact.
+- Conflicting same-run histories are rejected.
+- One deterministic stage observed in two different collection-run IDs contributes two tool-observed events but one deterministic stage hash.
+- Cross-run stage repetition is reported separately from Phase -1I.5 corpus population.
+- Census ordering/hash are deterministic independent of package input order.
+- Provenance import is separate from evidence import.
+- Provenance import validates the complete candidate census before committing the new batch.
+- Invalid/conflicting imports preserve the last valid census.
+- Phase -1I.5 corpus/review/cohort/coverage counts remain unchanged by provenance imports.
+- `accelerationAllowed=false`, `DESCRIPTIVE_ONLY`, and threshold policy `UNSET` remain mandatory.
+- Raw worker/oracle payloads are never included.
+- Phase -1G remains outside provenance census execution.
+- Full replay remains authoritative for every minimizer candidate.
+
 ## Next slice
 
-Collect real Phase -1E/-1F evidence using Phase -1I.9-aware browser sessions and export each session's evidence report plus provenance sidecar. A later aggregation slice may combine those sidecars to count distinguishable tool-observed collection events across sessions without changing the conservative Phase -1I.5 corpus counts. No numeric acceleration threshold should be proposed until real provenance-backed evidence exists.
+Collect real Phase -1E/-1F evidence in multiple Phase -1I.9-aware browser sessions and use the Phase -1I.10 census to distinguish repeated tool-observed collection events from conservative deterministic corpus deduplication. Only after real provenance-backed populations exist should a separate review propose any numeric sufficiency threshold; Phase -1I.10 itself defines none.
