@@ -47,6 +47,10 @@ import {
   serializeMinimizerCheckpointProvenanceCensusV1,
 } from './certification-minimizer-checkpoint-provenance-census.mjs';
 import {
+  createMinimizerCheckpointProvenanceCohortCoverageV1,
+  serializeMinimizerCheckpointProvenanceCohortCoverageV1,
+} from './certification-minimizer-checkpoint-provenance-cohort-coverage.mjs';
+import {
   encodeRandomReplay,
   freezePlayRecordingV1,
   getPlayRecordingStats,
@@ -191,6 +195,16 @@ function checkpointProvenanceCensusText(census) {
     `runs=${census.uniqueCollectionRuns} · tool-observed events=${census.toolObservedCollectionEvents} · deterministic stages=${census.distinctStageHashes}`,
     `unique sidecar snapshots=${census.uniqueProvenanceSnapshots} · superseded same-run snapshots=${census.supersededSnapshots} · stages repeated across runs=${census.crossRunRepeatedStageHashes}`,
     'I.5 corpus counts unchanged · threshold UNSET · accelerationAllowed=false',
+  ].join('\n');
+}
+
+function checkpointProvenanceCohortCoverageText(coverage) {
+  if (!coverage) return 'provenance cohort coverage: unavailable';
+  return [
+    `Phase -1I.11 provenance cohort coverage ${shortHash(coverage.hash)} · DESCRIPTIVE_ONLY`,
+    `cohorts=${coverage.cohortCount} · runs=${coverage.uniqueCollectionRuns} · tool-observed events=${coverage.toolObservedCollectionEvents} · deterministic stages=${coverage.distinctStageHashes}`,
+    `cross-run repeated stages=${coverage.crossRunRepeatedStageHashes} · cross-identity collection runs=${coverage.crossIdentityCollectionRuns}`,
+    'exact GAMEFILES + EditConfig identity · I.5 counts unchanged · threshold UNSET · accelerationAllowed=false',
   ].join('\n');
 }
 
@@ -443,6 +457,17 @@ function installPhase1D() {
     importProvenanceButton.insertAdjacentElement('afterend', exportProvenanceCensusButton);
   }
 
+  let exportProvenanceCoverageButton = document.getElementById('certify-export-provenance-coverage-button');
+  if (!exportProvenanceCoverageButton) {
+    exportProvenanceCoverageButton = document.createElement('button');
+    exportProvenanceCoverageButton.id = 'certify-export-provenance-coverage-button';
+    exportProvenanceCoverageButton.type = 'button';
+    exportProvenanceCoverageButton.textContent = 'EXPORT PROV COVERAGE';
+    exportProvenanceCoverageButton.title = 'Download the Phase -1I.11 provenance-backed GAMEFILES + EditConfig cohort coverage';
+    exportProvenanceCoverageButton.disabled = true;
+    exportProvenanceCensusButton.insertAdjacentElement('afterend', exportProvenanceCoverageButton);
+  }
+
   let importProvenanceInput = document.getElementById('certify-import-provenance-input');
   if (!importProvenanceInput) {
     importProvenanceInput = document.createElement('input');
@@ -451,7 +476,7 @@ function installPhase1D() {
     importProvenanceInput.accept = '.json,application/json';
     importProvenanceInput.multiple = true;
     importProvenanceInput.hidden = true;
-    exportProvenanceCensusButton.insertAdjacentElement('afterend', importProvenanceInput);
+    exportProvenanceCoverageButton.insertAdjacentElement('afterend', importProvenanceInput);
   }
 
   let importEvidenceInput = document.getElementById('certify-import-evidence-input');
@@ -483,6 +508,7 @@ function installPhase1D() {
   let collectionRunId = null;
   let latestCollectionProvenance = null;
   let latestProvenanceCensus = null;
+  let latestProvenanceCohortCoverage = null;
   try {
     collectionRunId = createMinimizerCheckpointCollectionRunIdV1();
     globalThis.__kq1agiCheckpointCollectionRunId = collectionRunId;
@@ -521,6 +547,7 @@ function installPhase1D() {
     exportCollectionProvenanceButton.disabled = value || !latestCollectionProvenance;
     importProvenanceButton.disabled = value;
     exportProvenanceCensusButton.disabled = value || !latestProvenanceCensus;
+    exportProvenanceCoverageButton.disabled = value || !latestProvenanceCohortCoverage;
     runButton.disabled = value;
     if (refreshButton) refreshButton.disabled = value;
     gameSelect.disabled = value;
@@ -623,8 +650,11 @@ function installPhase1D() {
     ];
     if (!packages.length) {
       latestProvenanceCensus = null;
+      latestProvenanceCohortCoverage = null;
       globalThis.__kq1agiCheckpointProvenanceCensus = null;
+      globalThis.__kq1agiCheckpointProvenanceCohortCoverage = null;
       exportProvenanceCensusButton.disabled = true;
+      exportProvenanceCoverageButton.disabled = true;
       return null;
     }
     try {
@@ -636,7 +666,19 @@ function installPhase1D() {
       globalThis.__kq1agiCheckpointProvenanceCensus = null;
       globalThis.__kq1agiCheckpointProvenanceCensusError = String(error?.message ?? error);
     }
+    try {
+      latestProvenanceCohortCoverage = latestProvenanceCensus
+        ? await createMinimizerCheckpointProvenanceCohortCoverageV1(packages)
+        : null;
+      globalThis.__kq1agiCheckpointProvenanceCohortCoverage = latestProvenanceCohortCoverage;
+      globalThis.__kq1agiCheckpointProvenanceCohortCoverageError = null;
+    } catch (error) {
+      latestProvenanceCohortCoverage = null;
+      globalThis.__kq1agiCheckpointProvenanceCohortCoverage = null;
+      globalThis.__kq1agiCheckpointProvenanceCohortCoverageError = String(error?.message ?? error);
+    }
     exportProvenanceCensusButton.disabled = replayRunning || !latestProvenanceCensus;
+    exportProvenanceCoverageButton.disabled = replayRunning || !latestProvenanceCohortCoverage;
     return latestProvenanceCensus;
   }
 
@@ -778,6 +820,18 @@ function installPhase1D() {
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
+  function exportProvenanceCoverage() {
+    if (!latestProvenanceCohortCoverage) return;
+    const body = serializeMinimizerCheckpointProvenanceCohortCoverageV1(latestProvenanceCohortCoverage);
+    const blob = new Blob([body], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kq1agi-checkpoint-provenance-coverage-${latestProvenanceCohortCoverage.hash.slice(7, 19)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
   async function importProvenanceFiles() {
     const files = [...(importProvenanceInput.files ?? [])];
     importProvenanceInput.value = '';
@@ -837,14 +891,23 @@ function installPhase1D() {
           : []),
       ];
       const census = await createMinimizerCheckpointProvenanceCensusV1(candidatePackages);
+      const provenanceCoverage = await createMinimizerCheckpointProvenanceCohortCoverageV1(candidatePackages);
       importedProvenancePackages.push(...committedBatch);
       latestProvenanceCensus = census;
+      latestProvenanceCohortCoverage = provenanceCoverage;
       globalThis.__kq1agiCheckpointProvenanceCensus = census;
+      globalThis.__kq1agiCheckpointProvenanceCohortCoverage = provenanceCoverage;
       globalThis.__kq1agiCheckpointProvenanceCensusError = null;
+      globalThis.__kq1agiCheckpointProvenanceCohortCoverageError = null;
       exportProvenanceCensusButton.disabled = replayRunning || !latestProvenanceCensus;
-      setStatus('PROVENANCE CENSUS READY', 'MATCH');
-      progress.textContent = `Phase -1I.10 imported ${sidecars.length} provenance sidecar(s) · exact report binding PASS`;
-      detail.textContent = checkpointProvenanceCensusText(census);
+      exportProvenanceCoverageButton.disabled = replayRunning || !latestProvenanceCohortCoverage;
+      setStatus('PROVENANCE COVERAGE READY', 'MATCH');
+      progress.textContent = `Phase -1I.10/−1I.11 imported ${sidecars.length} provenance sidecar(s) · exact report binding PASS · cohort coverage ready`;
+      detail.textContent = [
+        checkpointProvenanceCensusText(census),
+        '',
+        checkpointProvenanceCohortCoverageText(provenanceCoverage),
+      ].join('\n');
     } catch (error) {
       globalThis.__kq1agiCheckpointProvenanceCensusError = String(error?.message ?? error);
       setStatus('PROVENANCE IMPORT REJECTED', 'ERROR');
@@ -1628,6 +1691,7 @@ function installPhase1D() {
   });
   importProvenanceInput.addEventListener('change', importProvenanceFiles);
   exportProvenanceCensusButton.addEventListener('click', exportProvenanceCensus);
+  exportProvenanceCoverageButton.addEventListener('click', exportProvenanceCoverage);
   gameSelect.addEventListener('change', invalidateMinimization);
   runButton.addEventListener('click', invalidateMinimization, { capture: true });
   stopButton.addEventListener('click', () => {
