@@ -39,6 +39,18 @@ const identityASource2 = Object.freeze({
   edit: identityA.edit,
   checkpoint: sha('a'),
 });
+const sameGameDifferentEdit = Object.freeze({
+  source: sha('b'),
+  game: identityA.game,
+  edit: sha('d'),
+  checkpoint: sha('e'),
+});
+const differentGameSameEdit = Object.freeze({
+  source: sha('f'),
+  game: sha('0'),
+  edit: identityA.edit,
+  checkpoint: sha('1'),
+});
 
 async function observation({
   candidate,
@@ -226,6 +238,34 @@ const sameIdentityBundle = await createMinimizerCheckpointEvidenceCohortReviewV1
 assert.equal(sameIdentityBundle.cohortCount, 1, 'Different source recordings must stay in one GAMEFILES/EditConfig cohort.');
 assert.equal(sameIdentityBundle.cohorts[0].evidence.distinctSourceRecordings, 2);
 assert.equal(sameIdentityBundle.cohorts[0].reviewStatus, 'CLEAN_EVIDENCE_THRESHOLD_UNSET');
+
+const sameGameDifferentEditObs = await observation({
+  candidate: sha('4'),
+  sourceHash: sameGameDifferentEdit.source,
+  checkpointHash: sameGameDifferentEdit.checkpoint,
+  savedTicks: 6,
+});
+const editSplitBundle = await createMinimizerCheckpointEvidenceCohortReviewV1(
+  await corpusFromStages([
+    await stage(identityA, cleanA),
+    await stage(sameGameDifferentEdit, sameGameDifferentEditObs, { stageName: 'phase-1f' }),
+  ]),
+);
+assert.equal(editSplitBundle.cohortCount, 2, 'Changing only EditConfig identity must split cohorts.');
+
+const differentGameSameEditObs = await observation({
+  candidate: sha('5'),
+  sourceHash: differentGameSameEdit.source,
+  checkpointHash: differentGameSameEdit.checkpoint,
+  savedTicks: 8,
+});
+const gameSplitBundle = await createMinimizerCheckpointEvidenceCohortReviewV1(
+  await corpusFromStages([
+    await stage(identityA, cleanA),
+    await stage(differentGameSameEdit, differentGameSameEditObs, { stageName: 'phase-1f' }),
+  ]),
+);
+assert.equal(gameSplitBundle.cohortCount, 2, 'Changing only GAMEFILES identity must split cohorts.');
 
 const mismatchA = await observation({
   candidate: sha('a'),
