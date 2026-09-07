@@ -280,6 +280,7 @@ const phase1dSource = await readFile(new URL('../web/certification-phase1d.mjs',
 assert.equal(phase1dSource.includes('certify-export-provenance-coverage-button'), true);
 assert.equal(phase1dSource.includes('__kq1agiCheckpointProvenanceCoverageMatrix'), true);
 assert.equal(phase1dSource.includes('serializeMinimizerCheckpointProvenanceCoverageMatrixV1'), true);
+assert.equal(phase1dSource.includes('Phase -1I.10/−1I.11'), false);
 
 const provenanceImportStart = phase1dSource.indexOf('async function importProvenanceFiles()');
 const provenanceImportEnd = phase1dSource.indexOf('async function importEvidenceFiles()', provenanceImportStart);
