@@ -820,9 +820,19 @@ function installPhase1D() {
         batch.push(Object.freeze({ evidenceReport, provenance }));
       }
 
+      const candidatePackages = [
+        ...importedProvenancePackages,
+        ...batch,
+        ...(latestCollectionProvenance && latestShadowEvidenceReport
+          ? [{ evidenceReport: latestShadowEvidenceReport, provenance: latestCollectionProvenance }]
+          : []),
+      ];
+      const census = await createMinimizerCheckpointProvenanceCensusV1(candidatePackages);
       importedProvenancePackages.push(...batch);
-      const census = await refreshProvenanceCensus();
-      if (!census) throw new Error(globalThis.__kq1agiCheckpointProvenanceCensusError || 'Provenance census unavailable.');
+      latestProvenanceCensus = census;
+      globalThis.__kq1agiCheckpointProvenanceCensus = census;
+      globalThis.__kq1agiCheckpointProvenanceCensusError = null;
+      exportProvenanceCensusButton.disabled = replayRunning || !latestProvenanceCensus;
       setStatus('PROVENANCE CENSUS READY', 'MATCH');
       progress.textContent = `Phase -1I.10 imported ${sidecars.length} provenance sidecar(s) · exact report binding PASS`;
       detail.textContent = checkpointProvenanceCensusText(census);
