@@ -189,7 +189,7 @@ function checkpointProvenanceCensusText(census) {
   return [
     `Phase -1I.10 provenance census ${shortHash(census.hash)} · DESCRIPTIVE_ONLY`,
     `runs=${census.uniqueCollectionRuns} · tool-observed events=${census.toolObservedCollectionEvents} · deterministic stages=${census.distinctStageHashes}`,
-    `duplicate snapshots=${census.duplicateSnapshots} · superseded same-run snapshots=${census.supersededSnapshots} · stages repeated across runs=${census.crossRunRepeatedStageHashes}`,
+    `unique sidecar snapshots=${census.uniqueProvenanceSnapshots} · superseded same-run snapshots=${census.supersededSnapshots} · stages repeated across runs=${census.crossRunRepeatedStageHashes}`,
     'I.5 corpus counts unchanged · threshold UNSET · accelerationAllowed=false',
   ].join('\n');
 }
