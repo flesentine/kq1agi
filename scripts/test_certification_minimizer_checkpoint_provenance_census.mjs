@@ -254,10 +254,12 @@ assert.ok(provenanceImportStart >= 0 && provenanceImportEnd > provenanceImportSt
 const provenanceImportSection = phase1dSource.slice(provenanceImportStart, provenanceImportEnd);
 assert.equal(provenanceImportSection.includes('importedEvidenceArtifacts'), false);
 assert.equal(provenanceImportSection.includes('createMinimizerCheckpointEvidenceCorpusV1'), false);
+assert.equal(provenanceImportSection.includes('knownProvenanceHashes'), true);
+assert.equal(provenanceImportSection.includes('committedBatch.push(item)'), true);
 const candidateIndex = provenanceImportSection.indexOf('const candidatePackages = [');
 const censusIndex = provenanceImportSection.indexOf('await createMinimizerCheckpointProvenanceCensusV1(candidatePackages)');
-const commitIndex = provenanceImportSection.indexOf('importedProvenancePackages.push(...batch)');
-assert.ok(candidateIndex >= 0 && censusIndex > candidateIndex && commitIndex > censusIndex, 'Provenance import must validate the candidate census before committing the batch.');
+const commitIndex = provenanceImportSection.indexOf('importedProvenancePackages.push(...committedBatch)');
+assert.ok(candidateIndex >= 0 && censusIndex > candidateIndex && commitIndex > censusIndex, 'Provenance import must validate the candidate census before committing the deduplicated batch.');
 
 const editStart = phase1dSource.indexOf('async function startReduceEdits()');
 const editEnd = phase1dSource.indexOf('replayButton.addEventListener', editStart);
