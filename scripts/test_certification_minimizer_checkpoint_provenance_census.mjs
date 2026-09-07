@@ -249,9 +249,11 @@ const evidenceImportSection = phase1dSource.slice(evidenceImportStart, evidenceI
 assert.equal(evidenceImportSection.includes('importedProvenancePackages.push'), false);
 
 const provenanceImportStart = phase1dSource.indexOf('async function importProvenanceFiles()');
-const provenanceImportEnd = phase1dSource.indexOf('function refreshJournal()', provenanceImportStart);
+const provenanceImportEnd = phase1dSource.indexOf('async function importEvidenceFiles()', provenanceImportStart);
 assert.ok(provenanceImportStart >= 0 && provenanceImportEnd > provenanceImportStart);
 const provenanceImportSection = phase1dSource.slice(provenanceImportStart, provenanceImportEnd);
+assert.equal(provenanceImportSection.includes('importedEvidenceArtifacts'), false);
+assert.equal(provenanceImportSection.includes('createMinimizerCheckpointEvidenceCorpusV1'), false);
 const candidateIndex = provenanceImportSection.indexOf('const candidatePackages = [');
 const censusIndex = provenanceImportSection.indexOf('await createMinimizerCheckpointProvenanceCensusV1(candidatePackages)');
 const commitIndex = provenanceImportSection.indexOf('importedProvenancePackages.push(...batch)');
