@@ -109,9 +109,7 @@ assert.equal(single.policyDecision, 'EVIDENCE_ONLY');
 assert.equal(single.accelerationAllowed, false);
 assert.equal(single.censusDecision, 'DESCRIPTIVE_ONLY');
 assert.equal(single.provenanceDecision, 'COLLECTION_IDENTITY_ONLY');
-assert.equal(single.inputPackages, 1);
 assert.equal(single.uniqueProvenanceSnapshots, 1);
-assert.equal(single.duplicateSnapshots, 0);
 assert.equal(single.supersededSnapshots, 0);
 assert.equal(single.uniqueCollectionRuns, 1);
 assert.equal(single.toolObservedCollectionEvents, 1);
@@ -136,18 +134,16 @@ const duplicate = await createMinimizerCheckpointProvenanceCensusV1([
   packageA1,
   packageA1,
 ]);
-assert.equal(duplicate.inputPackages, 2);
 assert.equal(duplicate.uniqueProvenanceSnapshots, 1);
-assert.equal(duplicate.duplicateSnapshots, 1);
 assert.equal(duplicate.uniqueCollectionRuns, 1);
 assert.equal(duplicate.toolObservedCollectionEvents, 1);
+assert.equal(duplicate.hash, single.hash, 'Exact duplicate package re-import must be census-idempotent.');
 
 const prefix = await createMinimizerCheckpointProvenanceCensusV1([
   packageA1,
   packageA2,
 ]);
 assert.equal(prefix.uniqueProvenanceSnapshots, 2);
-assert.equal(prefix.duplicateSnapshots, 0);
 assert.equal(prefix.supersededSnapshots, 1);
 assert.equal(prefix.uniqueCollectionRuns, 1);
 assert.equal(prefix.toolObservedCollectionEvents, 2);
@@ -251,6 +247,15 @@ const evidenceImportStart = phase1dSource.indexOf('async function importEvidence
 const evidenceImportEnd = phase1dSource.indexOf('function refreshJournal()', evidenceImportStart);
 const evidenceImportSection = phase1dSource.slice(evidenceImportStart, evidenceImportEnd);
 assert.equal(evidenceImportSection.includes('importedProvenancePackages.push'), false);
+
+const provenanceImportStart = phase1dSource.indexOf('async function importProvenanceFiles()');
+const provenanceImportEnd = phase1dSource.indexOf('function refreshJournal()', provenanceImportStart);
+assert.ok(provenanceImportStart >= 0 && provenanceImportEnd > provenanceImportStart);
+const provenanceImportSection = phase1dSource.slice(provenanceImportStart, provenanceImportEnd);
+const candidateIndex = provenanceImportSection.indexOf('const candidatePackages = [');
+const censusIndex = provenanceImportSection.indexOf('await createMinimizerCheckpointProvenanceCensusV1(candidatePackages)');
+const commitIndex = provenanceImportSection.indexOf('importedProvenancePackages.push(...batch)');
+assert.ok(candidateIndex >= 0 && censusIndex > candidateIndex && commitIndex > censusIndex, 'Provenance import must validate the candidate census before committing the batch.');
 
 const editStart = phase1dSource.indexOf('async function startReduceEdits()');
 const editEnd = phase1dSource.indexOf('replayButton.addEventListener', editStart);
