@@ -820,15 +820,24 @@ function installPhase1D() {
         batch.push(Object.freeze({ evidenceReport, provenance }));
       }
 
+      const knownProvenanceHashes = new Set(
+        importedProvenancePackages.map(item => item.provenance.hash),
+      );
+      const committedBatch = [];
+      for (const item of batch) {
+        if (knownProvenanceHashes.has(item.provenance.hash)) continue;
+        knownProvenanceHashes.add(item.provenance.hash);
+        committedBatch.push(item);
+      }
       const candidatePackages = [
         ...importedProvenancePackages,
-        ...batch,
+        ...committedBatch,
         ...(latestCollectionProvenance && latestShadowEvidenceReport
           ? [{ evidenceReport: latestShadowEvidenceReport, provenance: latestCollectionProvenance }]
           : []),
       ];
       const census = await createMinimizerCheckpointProvenanceCensusV1(candidatePackages);
-      importedProvenancePackages.push(...batch);
+      importedProvenancePackages.push(...committedBatch);
       latestProvenanceCensus = census;
       globalThis.__kq1agiCheckpointProvenanceCensus = census;
       globalThis.__kq1agiCheckpointProvenanceCensusError = null;
