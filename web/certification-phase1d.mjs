@@ -602,6 +602,7 @@ function installPhase1D() {
   let latestCollectionProvenance = null;
   let latestCollectionPackage = null;
   const collectionWorkspaceStore = createMinimizerCheckpointCollectionWorkspaceStoreV1();
+  let collectionPackageImportRunning = false;
   let latestCollectionManifest = null;
   globalThis.__kq1agiCheckpointCollectionManifest = null;
   globalThis.__kq1agiCheckpointCollectionManifestError = null;
@@ -645,7 +646,7 @@ function installPhase1D() {
     exportEvidenceCoverageButton.disabled = value || !latestEvidenceCoverageProfile;
     exportCollectionProvenanceButton.disabled = value || !latestCollectionProvenance;
     exportCollectionPackageButton.disabled = value || !latestCollectionPackage;
-    importCollectionPackagesButton.disabled = value;
+    importCollectionPackagesButton.disabled = value || collectionPackageImportRunning;
     exportCollectionManifestButton.disabled = value || !latestCollectionManifest;
     importProvenanceButton.disabled = value;
     exportProvenanceCensusButton.disabled = value || !latestProvenanceCensus;
@@ -989,7 +990,14 @@ function installPhase1D() {
     const files = [...(importCollectionPackagesInput.files ?? [])];
     importCollectionPackagesInput.value = '';
     if (!files.length) return;
+    if (collectionPackageImportRunning) {
+      setStatus('COLLECTION IMPORT BUSY', 'WAITING');
+      progress.textContent = 'Phase -1I.15 package import already in progress';
+      return;
+    }
 
+    collectionPackageImportRunning = true;
+    importCollectionPackagesButton.disabled = true;
     try {
       const workspacePackageCount = collectionWorkspaceStore.snapshot().packageCount;
       if (workspacePackageCount + files.length
@@ -1018,6 +1026,9 @@ function installPhase1D() {
       setStatus('COLLECTION IMPORT REJECTED', 'ERROR');
       progress.textContent = 'Phase -1I.15 collection-set import rejected; prior workspace retained';
       detail.textContent = String(error?.stack ?? error);
+    } finally {
+      collectionPackageImportRunning = false;
+      importCollectionPackagesButton.disabled = replayRunning;
     }
   }
 
