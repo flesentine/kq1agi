@@ -29,6 +29,7 @@ node scripts/test_certification_minimizer_checkpoint_coverage.mjs
 node scripts/test_certification_minimizer_checkpoint_provenance.mjs
 node scripts/test_certification_minimizer_checkpoint_provenance_census.mjs
 node scripts/test_certification_minimizer_checkpoint_provenance_coverage.mjs
+node scripts/test_certification_minimizer_checkpoint_provenance_session_topology.mjs
 node scripts/test_certification_recording_hash.mjs
 node scripts/test_certification_replay_host.mjs
 node scripts/test_phase1d_recording_boundary.mjs
@@ -119,6 +120,7 @@ cp web/certification-minimizer-checkpoint-coverage.mjs "$OUT/certification-minim
 cp web/certification-minimizer-checkpoint-provenance.mjs "$OUT/certification-minimizer-checkpoint-provenance.mjs"
 cp web/certification-minimizer-checkpoint-provenance-census.mjs "$OUT/certification-minimizer-checkpoint-provenance-census.mjs"
 cp web/certification-minimizer-checkpoint-provenance-coverage.mjs "$OUT/certification-minimizer-checkpoint-provenance-coverage.mjs"
+cp web/certification-minimizer-checkpoint-provenance-session-topology.mjs "$OUT/certification-minimizer-checkpoint-provenance-session-topology.mjs"
 cp web/certification-replay-host.mjs "$OUT/certification-replay-host.mjs"
 cp web/certification-phase1d.mjs "$OUT/certification-phase1d.mjs"
 cp web/certification-minimizer.mjs "$OUT/certification-minimizer.mjs"
@@ -142,6 +144,7 @@ test -f "$OUT/certification-minimizer-checkpoint-coverage.mjs"
 test -f "$OUT/certification-minimizer-checkpoint-provenance.mjs"
 test -f "$OUT/certification-minimizer-checkpoint-provenance-census.mjs"
 test -f "$OUT/certification-minimizer-checkpoint-provenance-coverage.mjs"
+test -f "$OUT/certification-minimizer-checkpoint-provenance-session-topology.mjs"
 test -f "$OUT/certification-input-minimizer.mjs"
 test -f "$OUT/certification-edit-minimizer.mjs"
 test -f "$OUT/PHASE_1I.md"
@@ -189,6 +192,11 @@ grep -q 'GAMEFILES_HASH_PLUS_EDITCONFIG_HASH' "$OUT/certification-minimizer-chec
 grep -q 'PROVENANCE_COVERAGE_IS_DESCRIPTIVE_NOT_SUFFICIENCY' "$OUT/certification-minimizer-checkpoint-provenance-coverage.mjs"
 grep -q 'accelerationAllowed: false' "$OUT/certification-minimizer-checkpoint-provenance-coverage.mjs"
 grep -q "status: 'UNSET'" "$OUT/certification-minimizer-checkpoint-provenance-coverage.mjs"
+grep -q 'createMinimizerCheckpointProvenanceSessionTopologyV1' "$OUT/certification-minimizer-checkpoint-provenance-session-topology.mjs"
+grep -q 'MULTI_IDENTITY_RUNS_ARE_DESCRIPTIVE_NOT_BLOCKERS' "$OUT/certification-minimizer-checkpoint-provenance-session-topology.mjs"
+grep -q 'GAMEFILES_HASH_PLUS_EDITCONFIG_HASH' "$OUT/certification-minimizer-checkpoint-provenance-session-topology.mjs"
+grep -q 'accelerationAllowed: false' "$OUT/certification-minimizer-checkpoint-provenance-session-topology.mjs"
+grep -q "status: 'UNSET'" "$OUT/certification-minimizer-checkpoint-provenance-session-topology.mjs"
 grep -q 'checkpointShadowSummaryText' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-export-shadow-evidence-button' "$OUT/certification-phase1d.mjs"
 grep -q '__kq1agiCheckpointShadowEvidenceReport' "$OUT/certification-phase1d.mjs"
@@ -209,6 +217,8 @@ grep -q 'certify-export-provenance-census-button' "$OUT/certification-phase1d.mj
 grep -q '__kq1agiCheckpointProvenanceCensus' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-export-provenance-coverage-button' "$OUT/certification-phase1d.mjs"
 grep -q '__kq1agiCheckpointProvenanceCoverageMatrix' "$OUT/certification-phase1d.mjs"
+grep -q 'certify-export-provenance-topology-button' "$OUT/certification-phase1d.mjs"
+grep -q '__kq1agiCheckpointProvenanceSessionTopology' "$OUT/certification-phase1d.mjs"
 ! grep -q 'shadowResults.push(shadow)' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-reduce-inputs-button' "$OUT/certification-phase1d.mjs"
 grep -q 'minimizeInputGroupsV1' "$OUT/certification-phase1d.mjs"
@@ -235,6 +245,7 @@ printf '%s\n' \
   'Phase -1I.9 mints a cryptographically random browser collection-run identity only for newly collected live Phase -1E/-1F stage events, binds those events to the session evidence report, never lets imported evidence mint independence, and keeps replay authority unchanged.' \
   'Phase -1I.10 validates report+provenance pairs across sessions, makes exact duplicate imports idempotent, collapses same-run snapshots to the longest consistent event prefix, rejects conflicting same-run histories, counts tool-observed collection events separately from conservative corpus population, and never enables acceleration.' \
   'Phase -1I.11 resolves selected provenance events back to exact Phase -1I.4 stage metadata and reports per GAMEFILES + EditConfig cohort coverage across Phase -1E/-1F, source recordings, target/checkpoint ticks, and cross-run repeated deterministic stages; the matrix remains DESCRIPTIVE_ONLY.' \
+  'Phase -1I.12 presents the canonical provenance population from the collection-run perspective, surfaces browser runs spanning multiple exact GAMEFILES + EditConfig identities without pooling or blocking them, links back to I.10/I.11 hashes, remains DESCRIPTIVE_ONLY, and never enables acceleration.' \
   > "$OUT/ARTIFACT.txt"
 
 find "$OUT" -maxdepth 2 -type f | sort

@@ -1124,6 +1124,126 @@ Provenance imports remain separate from normal evidence imports and cannot chang
 - Phase -1G remains outside provenance coverage execution.
 - Full replay remains authoritative for every minimizer candidate.
 
+## Phase -1I.12 — collection-run session topology
+
+Phase -1I.12 presents the same canonical provenance population from the collection-run perspective.
+
+Phase -1I.11 answers which runs/events belong to each exact GAMEFILES + EditConfig identity cohort. Phase -1I.12 answers the inverse question: which exact identities did one selected browser collection run touch?
+
+This is useful because one browser session may collect valid evidence under more than one game/edit identity. That fact should be visible, but it must not merge those identities or become an evidence blocker.
+
+### Canonical inputs
+
+Phase -1I.12 derives:
+
+- the normal Phase -1I.10 provenance census; and
+- the normal Phase -1I.11 provenance coverage matrix.
+
+The topology records both hashes and rejects any census/matrix mismatch.
+
+Only the selected longest Phase -1I.10 snapshot for each collection run contributes events, so duplicate import and same-run prefix behavior remain inherited from I.10.
+
+### Per-run topology
+
+Each selected collection run records:
+
+- collection-run ID;
+- selected provenance hash;
+- exact evidence-report hash;
+- event count;
+- distinct deterministic-stage count;
+- number of exact GAMEFILES + EditConfig identities touched;
+- whether the run is multi-identity;
+- sorted identity cohort keys; and
+- one compact record per touched identity.
+
+Each run/identity record includes:
+
+- exact GAMEFILES hash;
+- exact EditConfig hash;
+- tool-observed event count;
+- distinct event count;
+- deterministic-stage count;
+- Phase -1E / Phase -1F event counts;
+- source-recording hashes;
+- target divergence ticks;
+- deterministic stage hashes; and
+- event hashes.
+
+The sum of per-identity events must exactly equal the selected run event count.
+
+### Multi-identity runs
+
+The top-level artifact reports:
+
+- `multiIdentityCollectionRuns`;
+- sorted `multiIdentityCollectionRunIds`; and
+- `maxIdentitiesPerRun`.
+
+A multi-identity run is descriptive browser-session context only.
+
+It does **not**:
+
+- merge identities into one cohort;
+- mark the evidence invalid;
+- change Phase -1I.6 blockers;
+- change Phase -1I.5 population counts; or
+- authorize acceleration.
+
+### Policy boundary
+
+Every Phase -1I.12 artifact declares:
+
+- `policy: full-replay-authoritative`;
+- `policyFrozen: false`;
+- `policyDecision: EVIDENCE_ONLY`;
+- `accelerationAllowed: false`;
+- `topologyDecision: DESCRIPTIVE_ONLY`;
+- `provenanceDecision: COLLECTION_IDENTITY_ONLY`; and
+- `cohortIdentity: GAMEFILES_HASH_PLUS_EDITCONFIG_HASH`.
+
+Threshold policy remains `UNSET`, with null maximums for identities per run and multi-identity run count.
+
+The purpose is observation, not a rule.
+
+### Browser workflow
+
+The provenance transaction now derives and validates all three artifacts before committing a new provenance batch:
+
+1. Phase -1I.10 census;
+2. Phase -1I.11 provenance coverage matrix; and
+3. Phase -1I.12 session topology.
+
+The topology is exposed as:
+
+`globalThis.__kq1agiCheckpointProvenanceSessionTopology`
+
+and can be downloaded with **EXPORT RUN TOPOLOGY**.
+
+If any linked hash disagrees, the batch is rejected before provenance browser state advances.
+
+Normal evidence import remains separate.
+
+### Phase -1I.12 acceptance criteria
+
+- I.10 remains the canonical selected-run/event population.
+- I.11 remains the canonical exact-identity cohort population.
+- I.12 links to both exact hashes.
+- Every selected run resolves to its exact selected Phase -1I.4 report.
+- Per-run identity event totals reconcile to the run event count.
+- Global run/event totals reconcile to I.10.
+- The union of topology cohort keys matches the I.11 matrix cohort keys.
+- A run touching multiple identities is surfaced explicitly without pooling those identities.
+- Exact duplicate provenance packages remain topology-idempotent.
+- Same-run prefix semantics remain inherited from I.10.
+- Conflicting same-run history remains rejected.
+- Provenance import validates I.10, I.11, and I.12 before committing a new batch.
+- Normal evidence import does not update session topology.
+- `DESCRIPTIVE_ONLY`, `COLLECTION_IDENTITY_ONLY`, `accelerationAllowed=false`, and threshold policy `UNSET` remain mandatory.
+- Raw worker/oracle payloads are never included.
+- Phase -1G remains outside session-topology execution.
+- Full replay remains authoritative for every minimizer candidate.
+
 ## Next slice
 
-Collect real provenance-backed Phase -1E/-1F evidence across multiple browser sessions and inspect the Phase -1I.11 matrix for actual identity/stage/source/tick breadth. At that point the scientific dependency is real data, not another synthetic threshold scaffold: no numeric sufficiency or acceleration rule should be proposed until that real population exists.
+Collect real provenance-backed Phase -1E/-1F evidence across multiple browser sessions and inspect I.10, I.11, and I.12 together. The next policy-bearing step remains blocked on real evidence; no synthetic fixture should be used to invent a numeric sufficiency or acceleration threshold.
