@@ -47,6 +47,10 @@ import {
   serializeMinimizerCheckpointProvenanceCensusV1,
 } from './certification-minimizer-checkpoint-provenance-census.mjs';
 import {
+  createMinimizerCheckpointProvenanceCoverageMatrixV1,
+  serializeMinimizerCheckpointProvenanceCoverageMatrixV1,
+} from './certification-minimizer-checkpoint-provenance-coverage.mjs';
+import {
   encodeRandomReplay,
   freezePlayRecordingV1,
   getPlayRecordingStats,
@@ -191,6 +195,19 @@ function checkpointProvenanceCensusText(census) {
     `runs=${census.uniqueCollectionRuns} · tool-observed events=${census.toolObservedCollectionEvents} · deterministic stages=${census.distinctStageHashes}`,
     `unique sidecar snapshots=${census.uniqueProvenanceSnapshots} · superseded same-run snapshots=${census.supersededSnapshots} · stages repeated across runs=${census.crossRunRepeatedStageHashes}`,
     'I.5 corpus counts unchanged · threshold UNSET · accelerationAllowed=false',
+  ].join('\n');
+}
+
+function checkpointProvenanceCoverageText(matrix) {
+  if (!matrix) return 'provenance coverage: unavailable';
+  const flags = Object.entries(matrix.flagCounts ?? {})
+    .map(([flag, count]) => `${flag}=${count}`)
+    .join(', ') || 'none';
+  return [
+    `Phase -1I.11 provenance coverage ${shortHash(matrix.hash)} · DESCRIPTIVE_ONLY`,
+    `cohorts=${matrix.cohortCount} · runs=${matrix.uniqueCollectionRuns} · events=${matrix.toolObservedCollectionEvents} · deterministic stages=${matrix.distinctStageHashes}`,
+    `coverage flags: ${flags}`,
+    'provenance coverage is descriptive · I.5 counts unchanged · threshold UNSET · accelerationAllowed=false',
   ].join('\n');
 }
 
@@ -443,6 +460,17 @@ function installPhase1D() {
     importProvenanceButton.insertAdjacentElement('afterend', exportProvenanceCensusButton);
   }
 
+  let exportProvenanceCoverageButton = document.getElementById('certify-export-provenance-coverage-button');
+  if (!exportProvenanceCoverageButton) {
+    exportProvenanceCoverageButton = document.createElement('button');
+    exportProvenanceCoverageButton.id = 'certify-export-provenance-coverage-button';
+    exportProvenanceCoverageButton.type = 'button';
+    exportProvenanceCoverageButton.textContent = 'EXPORT PROV COVERAGE';
+    exportProvenanceCoverageButton.title = 'Download the Phase -1I.11 provenance-backed coverage matrix';
+    exportProvenanceCoverageButton.disabled = true;
+    exportProvenanceCensusButton.insertAdjacentElement('afterend', exportProvenanceCoverageButton);
+  }
+
   let importProvenanceInput = document.getElementById('certify-import-provenance-input');
   if (!importProvenanceInput) {
     importProvenanceInput = document.createElement('input');
@@ -483,6 +511,7 @@ function installPhase1D() {
   let collectionRunId = null;
   let latestCollectionProvenance = null;
   let latestProvenanceCensus = null;
+  let latestProvenanceCoverageMatrix = null;
   try {
     collectionRunId = createMinimizerCheckpointCollectionRunIdV1();
     globalThis.__kq1agiCheckpointCollectionRunId = collectionRunId;
@@ -521,6 +550,7 @@ function installPhase1D() {
     exportCollectionProvenanceButton.disabled = value || !latestCollectionProvenance;
     importProvenanceButton.disabled = value;
     exportProvenanceCensusButton.disabled = value || !latestProvenanceCensus;
+    exportProvenanceCoverageButton.disabled = value || !latestProvenanceCoverageMatrix;
     runButton.disabled = value;
     if (refreshButton) refreshButton.disabled = value;
     gameSelect.disabled = value;
@@ -623,20 +653,33 @@ function installPhase1D() {
     ];
     if (!packages.length) {
       latestProvenanceCensus = null;
+      latestProvenanceCoverageMatrix = null;
       globalThis.__kq1agiCheckpointProvenanceCensus = null;
+      globalThis.__kq1agiCheckpointProvenanceCoverageMatrix = null;
       exportProvenanceCensusButton.disabled = true;
+      exportProvenanceCoverageButton.disabled = true;
       return null;
     }
     try {
       latestProvenanceCensus = await createMinimizerCheckpointProvenanceCensusV1(packages);
+      latestProvenanceCoverageMatrix = await createMinimizerCheckpointProvenanceCoverageMatrixV1(packages);
+      if (latestProvenanceCoverageMatrix.provenanceCensusHash !== latestProvenanceCensus.hash) {
+        throw new Error('Provenance coverage matrix census hash mismatch.');
+      }
       globalThis.__kq1agiCheckpointProvenanceCensus = latestProvenanceCensus;
+      globalThis.__kq1agiCheckpointProvenanceCoverageMatrix = latestProvenanceCoverageMatrix;
       globalThis.__kq1agiCheckpointProvenanceCensusError = null;
+      globalThis.__kq1agiCheckpointProvenanceCoverageMatrixError = null;
     } catch (error) {
       latestProvenanceCensus = null;
+      latestProvenanceCoverageMatrix = null;
       globalThis.__kq1agiCheckpointProvenanceCensus = null;
+      globalThis.__kq1agiCheckpointProvenanceCoverageMatrix = null;
       globalThis.__kq1agiCheckpointProvenanceCensusError = String(error?.message ?? error);
+      globalThis.__kq1agiCheckpointProvenanceCoverageMatrixError = String(error?.message ?? error);
     }
     exportProvenanceCensusButton.disabled = replayRunning || !latestProvenanceCensus;
+    exportProvenanceCoverageButton.disabled = replayRunning || !latestProvenanceCoverageMatrix;
     return latestProvenanceCensus;
   }
 
@@ -778,6 +821,18 @@ function installPhase1D() {
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
+  function exportProvenanceCoverage() {
+    if (!latestProvenanceCoverageMatrix) return;
+    const body = serializeMinimizerCheckpointProvenanceCoverageMatrixV1(latestProvenanceCoverageMatrix);
+    const blob = new Blob([body], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kq1agi-checkpoint-provenance-coverage-${latestProvenanceCoverageMatrix.hash.slice(7, 19)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
   async function importProvenanceFiles() {
     const files = [...(importProvenanceInput.files ?? [])];
     importProvenanceInput.value = '';
@@ -837,14 +892,26 @@ function installPhase1D() {
           : []),
       ];
       const census = await createMinimizerCheckpointProvenanceCensusV1(candidatePackages);
+      const provenanceCoverage = await createMinimizerCheckpointProvenanceCoverageMatrixV1(candidatePackages);
+      if (provenanceCoverage.provenanceCensusHash !== census.hash) {
+        throw new Error('Provenance coverage matrix census hash mismatch.');
+      }
       importedProvenancePackages.push(...committedBatch);
       latestProvenanceCensus = census;
+      latestProvenanceCoverageMatrix = provenanceCoverage;
       globalThis.__kq1agiCheckpointProvenanceCensus = census;
+      globalThis.__kq1agiCheckpointProvenanceCoverageMatrix = provenanceCoverage;
       globalThis.__kq1agiCheckpointProvenanceCensusError = null;
+      globalThis.__kq1agiCheckpointProvenanceCoverageMatrixError = null;
       exportProvenanceCensusButton.disabled = replayRunning || !latestProvenanceCensus;
-      setStatus('PROVENANCE CENSUS READY', 'MATCH');
-      progress.textContent = `Phase -1I.10 imported ${sidecars.length} provenance sidecar(s) · exact report binding PASS`;
-      detail.textContent = checkpointProvenanceCensusText(census);
+      exportProvenanceCoverageButton.disabled = replayRunning || !latestProvenanceCoverageMatrix;
+      setStatus('PROVENANCE COVERAGE READY', 'MATCH');
+      progress.textContent = `Phase -1I.10/-1I.11 imported ${sidecars.length} provenance sidecar(s) · census + coverage validation PASS`;
+      detail.textContent = [
+        checkpointProvenanceCensusText(census),
+        '',
+        checkpointProvenanceCoverageText(provenanceCoverage),
+      ].join('\n');
     } catch (error) {
       globalThis.__kq1agiCheckpointProvenanceCensusError = String(error?.message ?? error);
       setStatus('PROVENANCE IMPORT REJECTED', 'ERROR');
@@ -1628,6 +1695,7 @@ function installPhase1D() {
   });
   importProvenanceInput.addEventListener('change', importProvenanceFiles);
   exportProvenanceCensusButton.addEventListener('click', exportProvenanceCensus);
+  exportProvenanceCoverageButton.addEventListener('click', exportProvenanceCoverage);
   gameSelect.addEventListener('change', invalidateMinimization);
   runButton.addEventListener('click', invalidateMinimization, { capture: true });
   stopButton.addEventListener('click', () => {

@@ -948,6 +948,182 @@ A current live Phase -1I.9 report+sidecar pair automatically contributes to the 
 - Phase -1G remains outside provenance census execution.
 - Full replay remains authoritative for every minimizer candidate.
 
+## Phase -1I.11 — provenance-backed coverage matrix
+
+Phase -1I.11 joins the selected Phase -1I.10 provenance events back to the exact Phase -1I.4 stage metadata they reference.
+
+Phase -1I.10 answers:
+
+- how many collection runs were observed;
+- how many tool-observed collection events survived duplicate/snapshot collapse; and
+- which deterministic stage hashes repeated across runs.
+
+Phase -1I.11 adds the missing scientific context:
+
+- which exact GAMEFILES + EditConfig identity each event belongs to;
+- whether the event came from Phase -1E or Phase -1F;
+- which source recording was involved;
+- which target divergence tick was involved;
+- which checkpoint tick/hash or unavailable-checkpoint reason applied; and
+- whether one deterministic stage was observed in multiple collection runs.
+
+### Same census authority
+
+Phase -1I.11 first derives the normal Phase -1I.10 census from the same report+sidecar packages.
+
+It then resolves each **selected** census run snapshot back to its exact report and stage hashes.
+
+The matrix records the Phase -1I.10 census hash as `provenanceCensusHash`.
+
+If the UI independently derives the census and matrix and those hashes disagree, the provenance transaction is rejected.
+
+Phase -1I.11 therefore cannot silently use a different snapshot-selection policy from Phase -1I.10.
+
+### Exact identity cohort
+
+The coverage matrix partitions selected events by the same exact identity boundary used by Phase -1I.7:
+
+- GAMEFILES SHA-256; plus
+- EditConfig SHA-256.
+
+The deterministic cohort key is the canonical SHA-256 of those two hashes.
+
+Source recording identity is not part of the cohort key, so multiple source recordings for one GAMEFILES/EditConfig pair remain visible inside one provenance-backed cohort.
+
+### Event counts versus deterministic-stage counts
+
+Phase -1I.11 deliberately reports both:
+
+- `eventStageCounts`; and
+- `deterministicStageCounts`.
+
+For example, suppose the exact same Phase -1E stage hash was collected once in browser run A and once in browser run B, while one Phase -1F stage was collected only in run A.
+
+The matrix reports:
+
+- Phase -1E tool-observed events = 2;
+- Phase -1E deterministic stages = 1;
+- Phase -1F tool-observed events = 1;
+- Phase -1F deterministic stages = 1.
+
+This preserves the distinction between repeated tool collection and deterministic evidence population.
+
+Two observed events do **not** become two Phase -1I.5 unique samples merely because they came from different collection-run IDs.
+
+### Per-cohort provenance coverage
+
+Each identity cohort records:
+
+- exact GAMEFILES hash;
+- exact EditConfig hash;
+- sorted collection-run IDs;
+- tool-observed collection-event count;
+- distinct event-hash count;
+- distinct deterministic-stage-hash count;
+- event counts by Phase -1E / Phase -1F;
+- deterministic-stage counts by Phase -1E / Phase -1F;
+- sorted source-recording hashes;
+- sorted target divergence ticks;
+- sorted captured checkpoint ticks;
+- sorted checkpoint hashes;
+- sorted unavailable-checkpoint reasons;
+- deterministic stage hashes observed in multiple collection runs; and
+- one compact stage entry per deterministic stage.
+
+Each compact stage entry records:
+
+- stage hash;
+- minimizer stage;
+- source-recording hash;
+- GAMEFILES hash;
+- EditConfig hash;
+- target divergence tick;
+- checkpoint status/reason/tick/hash;
+- tool-observed event count;
+- contributing collection-run count; and
+- sorted contributing collection-run IDs.
+
+### Descriptive coverage flags
+
+The matrix exposes deterministic descriptive flags such as:
+
+- `missingPhase1E`;
+- `missingPhase1F`;
+- `singleCollectionRun`;
+- `singleSourceRecording`;
+- `singleTargetTick`;
+- `noCapturedCheckpoint`;
+- `singleCapturedCheckpointTick`; and
+- `noCrossRunRepeatedStage`.
+
+These are coverage observations only.
+
+They are not Phase -1I.6 blockers and they are not threshold decisions.
+
+### Policy boundary
+
+Every matrix declares:
+
+- `policy: full-replay-authoritative`;
+- `policyFrozen: false`;
+- `policyDecision: EVIDENCE_ONLY`;
+- `accelerationAllowed: false`;
+- `matrixDecision: DESCRIPTIVE_ONLY`; and
+- `provenanceDecision: COLLECTION_IDENTITY_ONLY`.
+
+Its threshold policy remains `UNSET`.
+
+No numeric minimum is defined for:
+
+- collection runs per cohort;
+- Phase -1E events;
+- Phase -1F events;
+- distinct source recordings;
+- target-tick coverage; or
+- cross-run deterministic-stage repetitions.
+
+Phase -1I.11 cannot convert collection breadth into acceleration authority.
+
+### Browser workflow
+
+The existing Phase -1I.10 **IMPORT PROVENANCE** transaction now derives both:
+
+- the Phase -1I.10 census; and
+- the Phase -1I.11 provenance-backed coverage matrix.
+
+Both must validate before the new provenance batch commits to browser state.
+
+The matrix is exposed as:
+
+`globalThis.__kq1agiCheckpointProvenanceCoverageMatrix`
+
+and can be downloaded using **EXPORT PROV COVERAGE**.
+
+A current live Phase -1I.9 report+sidecar pair contributes to both the census and matrix automatically.
+
+Provenance imports remain separate from normal evidence imports and cannot change the Phase -1I.5 corpus, Phase -1I.6 review, Phase -1I.7 cohort review, or Phase -1I.8 deterministic coverage profile.
+
+### Phase -1I.11 acceptance criteria
+
+- Matrix generation derives and links to the normal Phase -1I.10 census.
+- Only the longest selected Phase -1I.10 snapshot for each collection run contributes events.
+- Every selected event resolves to a stage in its exact selected Phase -1I.4 report.
+- Repeated metadata for one deterministic stage hash must be identical.
+- Cohort identity is exact GAMEFILES hash + EditConfig hash.
+- Event counts and deterministic-stage counts are reported separately.
+- Same deterministic stage observed in two collection runs remains one deterministic stage but contributes two tool-observed events.
+- Phase -1E and Phase -1F coverage are reported independently.
+- Source-recording, target-tick, checkpoint-tick/hash, and unavailable-checkpoint dimensions remain visible.
+- Exact duplicate provenance packages do not alter the matrix hash.
+- Same-run prefix snapshots inherit Phase -1I.10 longest-prefix semantics.
+- Matrix ordering/hash are deterministic independent of package input order.
+- Matrix validation completes before a provenance import batch commits.
+- Provenance import remains isolated from Phase -1I.5 evidence import.
+- `accelerationAllowed=false`, `DESCRIPTIVE_ONLY`, and threshold policy `UNSET` remain mandatory.
+- Raw worker/oracle payloads are never included.
+- Phase -1G remains outside provenance coverage execution.
+- Full replay remains authoritative for every minimizer candidate.
+
 ## Next slice
 
-Collect real Phase -1E/-1F evidence in multiple Phase -1I.9-aware browser sessions and use the Phase -1I.10 census to distinguish repeated tool-observed collection events from conservative deterministic corpus deduplication. Only after real provenance-backed populations exist should a separate review propose any numeric sufficiency threshold; Phase -1I.10 itself defines none.
+Collect real provenance-backed Phase -1E/-1F evidence across multiple browser sessions and inspect the Phase -1I.11 matrix for actual identity/stage/source/tick breadth. At that point the scientific dependency is real data, not another synthetic threshold scaffold: no numeric sufficiency or acceleration rule should be proposed until that real population exists.
