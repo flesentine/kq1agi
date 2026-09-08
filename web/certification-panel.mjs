@@ -212,6 +212,7 @@ function installCertificationPanel() {
   let running = false;
   let refreshing = false;
   let externalBusyCount = 0;
+  const busyListeners = new Set();
 
   const setStatus = (text, state = 'IDLE') => {
     status.textContent = text;
@@ -219,12 +220,22 @@ function installCertificationPanel() {
   };
 
   const applyControlState = () => {
-    const busy = running || refreshing || externalBusyCount > 0;
+    const baseBusy = running || refreshing;
+    const externallyBusy = externalBusyCount > 0;
+    const busy = baseBusy || externallyBusy;
     runButton.disabled = busy || !gameSelect.value;
     refreshButton.disabled = busy;
     gameSelect.disabled = busy;
     barrierInput.disabled = busy;
     stopButton.disabled = !running;
+    const snapshot = Object.freeze({ baseBusy, externalBusy: externallyBusy });
+    for (const listener of busyListeners) {
+      try {
+        listener(snapshot);
+      } catch {
+        // Busy-state observers must never break the base certification controller.
+      }
+    }
   };
 
   const setRunning = value => {
@@ -244,6 +255,17 @@ function installCertificationPanel() {
     releaseExternalBusy: () => {
       if (externalBusyCount > 0) externalBusyCount -= 1;
       applyControlState();
+    },
+    subscribeBusy: listener => {
+      if (typeof listener !== 'function') {
+        throw new TypeError('Certification panel busy listener must be a function.');
+      }
+      busyListeners.add(listener);
+      listener(Object.freeze({
+        baseBusy: running || refreshing,
+        externalBusy: externalBusyCount > 0,
+      }));
+      return () => busyListeners.delete(listener);
     },
   });
   globalThis.__kq1agiCertificationPanelController = panelController;
