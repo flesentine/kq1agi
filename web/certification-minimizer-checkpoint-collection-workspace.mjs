@@ -29,23 +29,32 @@ export async function updateMinimizerCheckpointCollectionWorkspaceV1({
     throw new TypeError('Collection workspace package populations must be arrays.');
   }
 
-  const submittedCount = currentPackages.length + incomingPackages.length;
-  if (submittedCount === 0) {
+  if (currentPackages.length === 0 && incomingPackages.length === 0) {
     throw new Error('Collection workspace requires at least one Phase -1I.13 package.');
   }
-  if (submittedCount > MinimizerCheckpointCollectionManifestLayout.MAX_PACKAGES) {
-    throw new Error('Collection workspace exceeds the package safety limit.');
+  if (currentPackages.length > MinimizerCheckpointCollectionManifestLayout.MAX_PACKAGES) {
+    throw new Error('Collection workspace current population exceeds the package safety limit.');
+  }
+  if (incomingPackages.length > MinimizerCheckpointCollectionManifestLayout.MAX_PACKAGES) {
+    throw new Error('Collection workspace incoming batch exceeds the package safety limit.');
   }
 
   const uniqueByHash = new Map();
+  const validatedReferences = new WeakSet();
   for (const collectionPackage of [...currentPackages, ...incomingPackages]) {
     if (collectionPackage?.schema !== MinimizerCheckpointCollectionPackageLayout.PACKAGE_SCHEMA) {
       throw new Error('Collection workspace accepts Phase -1I.13 packages only.');
     }
-    await validateMinimizerCheckpointCollectionPackageV1(collectionPackage);
+    if (!validatedReferences.has(collectionPackage)) {
+      await validateMinimizerCheckpointCollectionPackageV1(collectionPackage);
+      validatedReferences.add(collectionPackage);
+    }
     if (!uniqueByHash.has(collectionPackage.hash)) {
       uniqueByHash.set(collectionPackage.hash, collectionPackage);
     }
+  }
+  if (uniqueByHash.size > MinimizerCheckpointCollectionManifestLayout.MAX_PACKAGES) {
+    throw new Error('Collection workspace exceeds the unique package capacity.');
   }
 
   const packages = Object.freeze(
