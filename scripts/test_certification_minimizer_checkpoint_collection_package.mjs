@@ -169,6 +169,20 @@ assert.equal(serialized.includes('"packageDecision": "COLLECTION_ARCHIVE_ONLY"')
 assert.equal(serialized.includes('"accelerationAllowed": false'), true);
 assert.equal(serialized.includes('"workerPayload":'), false);
 
+const tamperedCaveats = structuredClone(collectionPackage);
+tamperedCaveats.caveats[0] = 'TAMPERED_POLICY_CAVEAT';
+await assert.rejects(
+  validateMinimizerCheckpointCollectionPackageV1(tamperedCaveats),
+  /hash mismatch/,
+);
+
+const tamperedExtraField = structuredClone(collectionPackage);
+tamperedExtraField.unexpectedArchiveField = 'tampered';
+await assert.rejects(
+  validateMinimizerCheckpointCollectionPackageV1(tamperedExtraField),
+  /hash mismatch/,
+);
+
 const tamperedDerived = structuredClone(collectionPackage);
 tamperedDerived.derived.provenanceCensusHash = sha('f');
 await assert.rejects(
