@@ -183,6 +183,18 @@ await assert.rejects(
   /hash mismatch/,
 );
 
+const tamperedProto = structuredClone(collectionPackage);
+Object.defineProperty(tamperedProto, '__proto__', {
+  value: Object.freeze({ tampered: true }),
+  enumerable: true,
+  configurable: true,
+  writable: true,
+});
+await assert.rejects(
+  validateMinimizerCheckpointCollectionPackageV1(tamperedProto),
+  /hash mismatch/,
+);
+
 const tamperedDerived = structuredClone(collectionPackage);
 tamperedDerived.derived.provenanceCensusHash = sha('f');
 await assert.rejects(
