@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import {
   createMinimizerCheckpointEvidenceReportV1,
@@ -179,5 +180,51 @@ await assert.rejects(
   }),
   /package safety limit/,
 );
+
+const phase1dSource = await readFile(
+  new URL('../web/certification-phase1d.mjs', import.meta.url),
+  'utf8',
+);
+assert.equal(
+  phase1dSource.includes("from './certification-minimizer-checkpoint-collection-workspace.mjs'"),
+  true,
+);
+assert.equal(phase1dSource.includes('certify-import-collection-packages-button'), true);
+assert.equal(phase1dSource.includes('certify-export-collection-manifest-button'), true);
+assert.equal(phase1dSource.includes('certify-import-collection-packages-input'), true);
+assert.equal(phase1dSource.includes('__kq1agiCheckpointCollectionManifest'), true);
+assert.equal(phase1dSource.includes('serializeMinimizerCheckpointCollectionManifestV1'), true);
+assert.equal(phase1dSource.includes('updateMinimizerCheckpointCollectionWorkspaceV1'), true);
+
+const workspaceImportStart = phase1dSource.indexOf('async function importCollectionPackageFiles()');
+const workspaceImportEnd = phase1dSource.indexOf('function exportProvenanceCensus()', workspaceImportStart);
+assert.ok(workspaceImportStart >= 0 && workspaceImportEnd > workspaceImportStart);
+const workspaceImportSection = phase1dSource.slice(workspaceImportStart, workspaceImportEnd);
+assert.equal(workspaceImportSection.includes('MinimizerCheckpointCollectionPackageLayout.PACKAGE_SCHEMA'), true);
+assert.equal(workspaceImportSection.includes('commitCollectionWorkspace(batch)'), true);
+assert.equal(workspaceImportSection.includes('createMinimizerCheckpointCollectionRunIdV1'), false);
+assert.equal(workspaceImportSection.includes('createMinimizerCheckpointCollectionEventV1'), false);
+assert.equal(workspaceImportSection.includes('createMinimizerCheckpointCollectionProvenanceV1'), false);
+assert.equal(workspaceImportSection.includes('collectionProvenanceEvents.push'), false);
+assert.equal(workspaceImportSection.includes('importedProvenancePackages.push'), false);
+
+const workspaceCommitStart = phase1dSource.indexOf('async function commitCollectionWorkspace(');
+const workspaceCommitEnd = phase1dSource.indexOf(
+  'async function refreshCollectionWorkspaceFromLivePackage()',
+  workspaceCommitStart,
+);
+assert.ok(workspaceCommitStart >= 0 && workspaceCommitEnd > workspaceCommitStart);
+const workspaceCommitSection = phase1dSource.slice(workspaceCommitStart, workspaceCommitEnd);
+assert.equal(workspaceCommitSection.includes('updateMinimizerCheckpointCollectionWorkspaceV1'), true);
+assert.equal(workspaceCommitSection.indexOf('collectionWorkspacePackages.splice')
+  > workspaceCommitSection.indexOf('await updateMinimizerCheckpointCollectionWorkspaceV1'), true,
+  'Browser workspace state must commit only after the candidate validates.');
+
+const liveStart = phase1dSource.indexOf('async function recordLiveCollectionProvenance(');
+const liveEnd = phase1dSource.indexOf('async function refreshProvenanceCensus()', liveStart);
+assert.ok(liveStart >= 0 && liveEnd > liveStart);
+const liveSection = phase1dSource.slice(liveStart, liveEnd);
+assert.equal(liveSection.includes('createMinimizerCheckpointCollectionPackageV1'), true);
+assert.equal(liveSection.includes('refreshCollectionWorkspaceFromLivePackage()'), true);
 
 console.log('minimizer checkpoint collection workspace tests: PASS');
