@@ -606,6 +606,7 @@ function installPhase1D() {
   let basePanelBusy = !!certificationPanelController?.isBaseBusy?.();
   let externalPanelBusy = !!certificationPanelController?.isExternallyBusy?.();
   let handlingCertificationPanelBusyNotification = false;
+  let replayPanelBusyHeld = false;
   let collectionPackageImportRunning = false;
   let latestCollectionManifest = null;
   globalThis.__kq1agiCheckpointCollectionManifest = null;
@@ -681,6 +682,23 @@ function installPhase1D() {
       handlingCertificationPanelBusyNotification = false;
     }
   }) ?? null;
+
+  const acquireReplayPanelBusy = label => {
+    if (replayPanelBusyHeld || !certificationPanelController) return true;
+    if (!certificationPanelController.acquireExternalBusy()) {
+      setStatus('CERTIFICATION BUSY', 'WAITING');
+      progress.textContent = `${label} waits for the base CERTIFY controller to become idle`;
+      return false;
+    }
+    replayPanelBusyHeld = true;
+    return true;
+  };
+
+  const releaseReplayPanelBusy = () => {
+    if (!replayPanelBusyHeld || !certificationPanelController) return;
+    replayPanelBusyHeld = false;
+    certificationPanelController.releaseExternalBusy();
+  };
 
   async function refreshEvidenceReview() {
     if (!latestEvidenceCorpus) {
@@ -1424,6 +1442,7 @@ function installPhase1D() {
     const rawEvents = boundary.rawEvents;
     const overflowed = boundary.overflowed;
 
+    if (!acquireReplayPanelBusy('Phase -1D replay')) return;
     stopRequested = false;
     setReplayRunning(true);
     setStatus('FREEZING PLAY WINDOW', 'BUSY');
@@ -1478,6 +1497,7 @@ function installPhase1D() {
       replayHost?.terminate();
       replayHost = null;
       setReplayRunning(false);
+      releaseReplayPanelBusy();
       refreshJournal();
     }
   }
@@ -1496,6 +1516,7 @@ function installPhase1D() {
       return;
     }
 
+    if (!acquireReplayPanelBusy('Phase -1E checkpoint minimization')) return;
     stopRequested = false;
     setReplayRunning(true);
     setStatus('MINIMIZING', 'BUSY');
@@ -1637,6 +1658,7 @@ function installPhase1D() {
       replayHost?.terminate();
       replayHost = null;
       setReplayRunning(false);
+      releaseReplayPanelBusy();
       refreshJournal();
     }
   }
@@ -1653,6 +1675,7 @@ function installPhase1D() {
       return;
     }
 
+    if (!acquireReplayPanelBusy('Phase -1F input reduction')) return;
     stopRequested = false;
     setReplayRunning(true);
     const groups = groupReplayInputEventsV1(context.recording);
@@ -1836,6 +1859,7 @@ function installPhase1D() {
       replayHost?.terminate();
       replayHost = null;
       setReplayRunning(false);
+      releaseReplayPanelBusy();
       refreshJournal();
     }
   }
@@ -1850,6 +1874,7 @@ function installPhase1D() {
       return;
     }
 
+    if (!acquireReplayPanelBusy('Phase -1F EditConfig reduction')) return;
     stopRequested = false;
     setReplayRunning(true);
     let groups = [];
@@ -1950,6 +1975,7 @@ function installPhase1D() {
       replayHost?.terminate();
       replayHost = null;
       setReplayRunning(false);
+      releaseReplayPanelBusy();
       refreshJournal();
     }
   }
