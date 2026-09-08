@@ -1446,10 +1446,12 @@ Every exported manifest remains:
 - Individual files larger than 16 MiB are rejected.
 - A selection that would exceed the package safety bound is rejected before any selected file is read or parsed.
 - Browser package-file parsing is itself serialized, so overlapping picker actions cannot bypass that early bound or multiply file-read memory pressure.
+- The base CERTIFY controller and Phase -1I share one busy contract: I.15 cannot start while base refresh/certification is active, base controls cannot be re-enabled underneath an I.15 read, and base STOP remains available during a real certification run.
 - Replay/live mutation controls stay locked for the duration of package-file parsing, keeping the preflight workspace population stable until the queued commit begins.
 - Exact duplicate package hashes are workspace-idempotent.
 - Candidate workspace construction is non-mutating until complete validation succeeds.
 - Browser workspace commits are serialized so concurrent imports/live updates cannot lose a previously committed batch.
+- Shared busy-state notifications are one-way during callbacks so control-state refresh cannot recurse.
 - A rejected/tampered/conflicting import leaves prior workspace state unchanged.
 - Live I.13 packages can join the same workspace without changing I.9 provenance semantics.
 - The workspace exports the exact I.14 manifest produced from its committed package population.
