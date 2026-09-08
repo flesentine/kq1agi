@@ -246,6 +246,7 @@ function installCertificationPanel() {
   const panelController = Object.freeze({
     isBaseBusy: () => running || refreshing,
     isExternallyBusy: () => externalBusyCount > 0,
+    refreshControlState: () => applyControlState(),
     acquireExternalBusy: () => {
       if (running || refreshing) return false;
       externalBusyCount += 1;
