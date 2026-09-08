@@ -61,6 +61,51 @@ export async function updateMinimizerCheckpointCollectionWorkspaceV1({
   });
 }
 
+
+function emptyWorkspaceSnapshot() {
+  return Object.freeze({
+    packages: Object.freeze([]),
+    manifest: null,
+    packageCount: 0,
+    packageHashes: Object.freeze([]),
+  });
+}
+
+/**
+ * Stateful serialized workspace used by the browser.
+ *
+ * Each commit starts only after the previous commit settles, so concurrent UI
+ * imports cannot snapshot the same stale population and overwrite one another.
+ * Failed commits leave the last successful snapshot intact and do not poison
+ * later queued commits.
+ */
+export function createMinimizerCheckpointCollectionWorkspaceStoreV1() {
+  let committed = emptyWorkspaceSnapshot();
+  let queue = Promise.resolve();
+
+  const commit = incomingPackages => {
+    const capturedIncoming = Array.isArray(incomingPackages)
+      ? [...incomingPackages]
+      : incomingPackages;
+    const operation = queue.then(async () => {
+      const candidate = await updateMinimizerCheckpointCollectionWorkspaceV1({
+        currentPackages: committed.packages,
+        incomingPackages: capturedIncoming,
+      });
+      committed = candidate;
+      return committed;
+    });
+
+    queue = operation.catch(() => undefined);
+    return operation;
+  };
+
+  return Object.freeze({
+    commit,
+    snapshot: () => committed,
+  });
+}
+
 export const MinimizerCheckpointCollectionWorkspaceLayout = Object.freeze({
   MAX_PACKAGES: MinimizerCheckpointCollectionManifestLayout.MAX_PACKAGES,
 });
