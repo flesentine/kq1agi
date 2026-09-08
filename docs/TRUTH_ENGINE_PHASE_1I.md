@@ -1444,6 +1444,7 @@ Every exported manifest remains:
 
 - Browser workspace imports accept validated I.13 packages only.
 - Individual files larger than 16 MiB are rejected.
+- Incoming package selections larger than 64 MiB in aggregate are rejected before any selected file is read or parsed.
 - An incoming browser selection larger than 4,096 files is rejected before any selected file is read or parsed.
 - Final workspace capacity is enforced on validated unique package hashes after deduplication, so exact duplicate packages remain idempotent even when the workspace is already at capacity.
 - Browser package-file parsing is itself serialized, so overlapping picker actions cannot bypass that early bound or multiply file-read memory pressure.
