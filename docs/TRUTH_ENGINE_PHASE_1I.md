@@ -1446,6 +1446,7 @@ Every exported manifest remains:
 - Individual files larger than 16 MiB are rejected.
 - A selection that would exceed the package safety bound is rejected before any selected file is read or parsed.
 - Browser package-file parsing is itself serialized, so overlapping picker actions cannot bypass that early bound or multiply file-read memory pressure.
+- Replay/live mutation controls stay locked for the duration of package-file parsing, keeping the preflight workspace population stable until the queued commit begins.
 - Exact duplicate package hashes are workspace-idempotent.
 - Candidate workspace construction is non-mutating until complete validation succeeds.
 - Browser workspace commits are serialized so concurrent imports/live updates cannot lose a previously committed batch.
