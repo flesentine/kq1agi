@@ -64,7 +64,8 @@ import {
   serializeMinimizerCheckpointCollectionManifestV1,
 } from './certification-minimizer-checkpoint-collection-manifest.mjs';
 import {
-  updateMinimizerCheckpointCollectionWorkspaceV1,
+  createMinimizerCheckpointCollectionWorkspaceStoreV1,
+  MinimizerCheckpointCollectionWorkspaceLayout,
 } from './certification-minimizer-checkpoint-collection-workspace.mjs';
 import {
   encodeRandomReplay,
@@ -600,7 +601,7 @@ function installPhase1D() {
   let collectionRunId = null;
   let latestCollectionProvenance = null;
   let latestCollectionPackage = null;
-  const collectionWorkspacePackages = [];
+  const collectionWorkspaceStore = createMinimizerCheckpointCollectionWorkspaceStoreV1();
   let latestCollectionManifest = null;
   globalThis.__kq1agiCheckpointCollectionManifest = null;
   globalThis.__kq1agiCheckpointCollectionManifestError = null;
@@ -966,16 +967,8 @@ function installPhase1D() {
   }
 
   async function commitCollectionWorkspace(incomingPackages) {
-    const candidate = await updateMinimizerCheckpointCollectionWorkspaceV1({
-      currentPackages: collectionWorkspacePackages,
-      incomingPackages,
-    });
-    collectionWorkspacePackages.splice(
-      0,
-      collectionWorkspacePackages.length,
-      ...candidate.packages,
-    );
-    latestCollectionManifest = candidate.manifest;
+    const committed = await collectionWorkspaceStore.commit(incomingPackages);
+    latestCollectionManifest = committed.manifest;
     globalThis.__kq1agiCheckpointCollectionManifest = latestCollectionManifest;
     globalThis.__kq1agiCheckpointCollectionManifestError = null;
     exportCollectionManifestButton.disabled = replayRunning || !latestCollectionManifest;
@@ -998,6 +991,12 @@ function installPhase1D() {
     if (!files.length) return;
 
     try {
+      const workspacePackageCount = collectionWorkspaceStore.snapshot().packageCount;
+      if (workspacePackageCount + files.length
+          > MinimizerCheckpointCollectionWorkspaceLayout.MAX_PACKAGES) {
+        throw new Error('Collection workspace exceeds the package safety limit.');
+      }
+
       const batch = [];
       for (const file of files) {
         if (file.size > 16 * 1024 * 1024) {
