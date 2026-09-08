@@ -187,7 +187,7 @@ const tamperedReport = structuredClone(collectionPackage);
 tamperedReport.evidenceReport.population.totalObservations = 999;
 await assert.rejects(
   validateMinimizerCheckpointCollectionPackageV1(tamperedReport),
-  /summary mismatch|hash mismatch|validation mismatch/,
+  /population mismatch|summary mismatch|hash mismatch|validation mismatch/,
 );
 
 const forbidden = structuredClone(collectionPackage);
