@@ -51,6 +51,10 @@ import {
   serializeMinimizerCheckpointProvenanceCoverageMatrixV1,
 } from './certification-minimizer-checkpoint-provenance-coverage.mjs';
 import {
+  createMinimizerCheckpointProvenanceSessionTopologyV1,
+  serializeMinimizerCheckpointProvenanceSessionTopologyV1,
+} from './certification-minimizer-checkpoint-provenance-session-topology.mjs';
+import {
   encodeRandomReplay,
   freezePlayRecordingV1,
   getPlayRecordingStats,
@@ -208,6 +212,15 @@ function checkpointProvenanceCoverageText(matrix) {
     `cohorts=${matrix.cohortCount} · runs=${matrix.uniqueCollectionRuns} · events=${matrix.toolObservedCollectionEvents} · deterministic stages=${matrix.distinctStageHashes}`,
     `coverage flags: ${flags}`,
     'provenance coverage is descriptive · I.5 counts unchanged · threshold UNSET · accelerationAllowed=false',
+  ].join('\n');
+}
+
+function checkpointProvenanceTopologyText(topology) {
+  if (!topology) return 'provenance session topology: unavailable';
+  return [
+    `Phase -1I.12 session topology ${shortHash(topology.hash)} · DESCRIPTIVE_ONLY`,
+    `runs=${topology.uniqueCollectionRuns} · events=${topology.toolObservedCollectionEvents} · multi-identity runs=${topology.multiIdentityCollectionRuns} · max identities/run=${topology.maxIdentitiesPerRun}`,
+    'multi-identity sessions are descriptive, not blockers · I.5 counts unchanged · threshold UNSET · accelerationAllowed=false',
   ].join('\n');
 }
 
@@ -471,6 +484,17 @@ function installPhase1D() {
     exportProvenanceCensusButton.insertAdjacentElement('afterend', exportProvenanceCoverageButton);
   }
 
+  let exportProvenanceTopologyButton = document.getElementById('certify-export-provenance-topology-button');
+  if (!exportProvenanceTopologyButton) {
+    exportProvenanceTopologyButton = document.createElement('button');
+    exportProvenanceTopologyButton.id = 'certify-export-provenance-topology-button';
+    exportProvenanceTopologyButton.type = 'button';
+    exportProvenanceTopologyButton.textContent = 'EXPORT RUN TOPOLOGY';
+    exportProvenanceTopologyButton.title = 'Download the Phase -1I.12 run-centric exact-identity session topology';
+    exportProvenanceTopologyButton.disabled = true;
+    exportProvenanceCoverageButton.insertAdjacentElement('afterend', exportProvenanceTopologyButton);
+  }
+
   let importProvenanceInput = document.getElementById('certify-import-provenance-input');
   if (!importProvenanceInput) {
     importProvenanceInput = document.createElement('input');
@@ -512,6 +536,7 @@ function installPhase1D() {
   let latestCollectionProvenance = null;
   let latestProvenanceCensus = null;
   let latestProvenanceCoverageMatrix = null;
+  let latestProvenanceSessionTopology = null;
   try {
     collectionRunId = createMinimizerCheckpointCollectionRunIdV1();
     globalThis.__kq1agiCheckpointCollectionRunId = collectionRunId;
@@ -551,6 +576,7 @@ function installPhase1D() {
     importProvenanceButton.disabled = value;
     exportProvenanceCensusButton.disabled = value || !latestProvenanceCensus;
     exportProvenanceCoverageButton.disabled = value || !latestProvenanceCoverageMatrix;
+    exportProvenanceTopologyButton.disabled = value || !latestProvenanceSessionTopology;
     runButton.disabled = value;
     if (refreshButton) refreshButton.disabled = value;
     gameSelect.disabled = value;
@@ -654,32 +680,44 @@ function installPhase1D() {
     if (!packages.length) {
       latestProvenanceCensus = null;
       latestProvenanceCoverageMatrix = null;
+      latestProvenanceSessionTopology = null;
       globalThis.__kq1agiCheckpointProvenanceCensus = null;
       globalThis.__kq1agiCheckpointProvenanceCoverageMatrix = null;
+      globalThis.__kq1agiCheckpointProvenanceSessionTopology = null;
       exportProvenanceCensusButton.disabled = true;
       exportProvenanceCoverageButton.disabled = true;
+      exportProvenanceTopologyButton.disabled = true;
       return null;
     }
     try {
       latestProvenanceCensus = await createMinimizerCheckpointProvenanceCensusV1(packages);
       latestProvenanceCoverageMatrix = await createMinimizerCheckpointProvenanceCoverageMatrixV1(packages);
-      if (latestProvenanceCoverageMatrix.provenanceCensusHash !== latestProvenanceCensus.hash) {
-        throw new Error('Provenance coverage matrix census hash mismatch.');
+      latestProvenanceSessionTopology = await createMinimizerCheckpointProvenanceSessionTopologyV1(packages);
+      if (latestProvenanceCoverageMatrix.provenanceCensusHash !== latestProvenanceCensus.hash
+          || latestProvenanceSessionTopology.provenanceCensusHash !== latestProvenanceCensus.hash
+          || latestProvenanceSessionTopology.provenanceCoverageMatrixHash !== latestProvenanceCoverageMatrix.hash) {
+        throw new Error('Provenance derived artifact hash mismatch.');
       }
       globalThis.__kq1agiCheckpointProvenanceCensus = latestProvenanceCensus;
       globalThis.__kq1agiCheckpointProvenanceCoverageMatrix = latestProvenanceCoverageMatrix;
+      globalThis.__kq1agiCheckpointProvenanceSessionTopology = latestProvenanceSessionTopology;
       globalThis.__kq1agiCheckpointProvenanceCensusError = null;
       globalThis.__kq1agiCheckpointProvenanceCoverageMatrixError = null;
+      globalThis.__kq1agiCheckpointProvenanceSessionTopologyError = null;
     } catch (error) {
       latestProvenanceCensus = null;
       latestProvenanceCoverageMatrix = null;
+      latestProvenanceSessionTopology = null;
       globalThis.__kq1agiCheckpointProvenanceCensus = null;
       globalThis.__kq1agiCheckpointProvenanceCoverageMatrix = null;
+      globalThis.__kq1agiCheckpointProvenanceSessionTopology = null;
       globalThis.__kq1agiCheckpointProvenanceCensusError = String(error?.message ?? error);
       globalThis.__kq1agiCheckpointProvenanceCoverageMatrixError = String(error?.message ?? error);
+      globalThis.__kq1agiCheckpointProvenanceSessionTopologyError = String(error?.message ?? error);
     }
     exportProvenanceCensusButton.disabled = replayRunning || !latestProvenanceCensus;
     exportProvenanceCoverageButton.disabled = replayRunning || !latestProvenanceCoverageMatrix;
+    exportProvenanceTopologyButton.disabled = replayRunning || !latestProvenanceSessionTopology;
     return latestProvenanceCensus;
   }
 
@@ -833,6 +871,18 @@ function installPhase1D() {
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
+  function exportProvenanceTopology() {
+    if (!latestProvenanceSessionTopology) return;
+    const body = serializeMinimizerCheckpointProvenanceSessionTopologyV1(latestProvenanceSessionTopology);
+    const blob = new Blob([body], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kq1agi-checkpoint-provenance-topology-${latestProvenanceSessionTopology.hash.slice(7, 19)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
   async function importProvenanceFiles() {
     const files = [...(importProvenanceInput.files ?? [])];
     importProvenanceInput.value = '';
@@ -893,24 +943,33 @@ function installPhase1D() {
       ];
       const census = await createMinimizerCheckpointProvenanceCensusV1(candidatePackages);
       const provenanceCoverage = await createMinimizerCheckpointProvenanceCoverageMatrixV1(candidatePackages);
-      if (provenanceCoverage.provenanceCensusHash !== census.hash) {
-        throw new Error('Provenance coverage matrix census hash mismatch.');
+      const provenanceTopology = await createMinimizerCheckpointProvenanceSessionTopologyV1(candidatePackages);
+      if (provenanceCoverage.provenanceCensusHash !== census.hash
+          || provenanceTopology.provenanceCensusHash !== census.hash
+          || provenanceTopology.provenanceCoverageMatrixHash !== provenanceCoverage.hash) {
+        throw new Error('Provenance derived artifact hash mismatch.');
       }
       importedProvenancePackages.push(...committedBatch);
       latestProvenanceCensus = census;
       latestProvenanceCoverageMatrix = provenanceCoverage;
+      latestProvenanceSessionTopology = provenanceTopology;
       globalThis.__kq1agiCheckpointProvenanceCensus = census;
       globalThis.__kq1agiCheckpointProvenanceCoverageMatrix = provenanceCoverage;
+      globalThis.__kq1agiCheckpointProvenanceSessionTopology = provenanceTopology;
       globalThis.__kq1agiCheckpointProvenanceCensusError = null;
       globalThis.__kq1agiCheckpointProvenanceCoverageMatrixError = null;
+      globalThis.__kq1agiCheckpointProvenanceSessionTopologyError = null;
       exportProvenanceCensusButton.disabled = replayRunning || !latestProvenanceCensus;
       exportProvenanceCoverageButton.disabled = replayRunning || !latestProvenanceCoverageMatrix;
-      setStatus('PROVENANCE COVERAGE READY', 'MATCH');
-      progress.textContent = `Phase -1I.10/-1I.11 imported ${sidecars.length} provenance sidecar(s) · census + coverage validation PASS`;
+      exportProvenanceTopologyButton.disabled = replayRunning || !latestProvenanceSessionTopology;
+      setStatus('PROVENANCE TOPOLOGY READY', 'MATCH');
+      progress.textContent = `Phase -1I.10/-1I.12 imported ${sidecars.length} provenance sidecar(s) · census + coverage + topology validation PASS`;
       detail.textContent = [
         checkpointProvenanceCensusText(census),
         '',
         checkpointProvenanceCoverageText(provenanceCoverage),
+        '',
+        checkpointProvenanceTopologyText(provenanceTopology),
       ].join('\n');
     } catch (error) {
       globalThis.__kq1agiCheckpointProvenanceCensusError = String(error?.message ?? error);
@@ -1696,6 +1755,7 @@ function installPhase1D() {
   importProvenanceInput.addEventListener('change', importProvenanceFiles);
   exportProvenanceCensusButton.addEventListener('click', exportProvenanceCensus);
   exportProvenanceCoverageButton.addEventListener('click', exportProvenanceCoverage);
+  exportProvenanceTopologyButton.addEventListener('click', exportProvenanceTopology);
   gameSelect.addEventListener('change', invalidateMinimization);
   runButton.addEventListener('click', invalidateMinimization, { capture: true });
   stopButton.addEventListener('click', () => {
