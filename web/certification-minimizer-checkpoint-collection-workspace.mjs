@@ -102,17 +102,21 @@ export function createMinimizerCheckpointCollectionWorkspaceStoreV1() {
   let queue = Promise.resolve();
 
   const commit = incomingPackages => {
-    const capturedIncoming = Array.isArray(incomingPackages)
-      ? incomingPackages.map(collectionPackage => structuredClone(collectionPackage))
-      : incomingPackages;
+    let capturedIncoming;
+    try {
+      capturedIncoming = Array.isArray(incomingPackages)
+        ? incomingPackages.map(collectionPackage => structuredClone(collectionPackage))
+        : incomingPackages;
+    } catch (error) {
+      return Promise.reject(error);
+    }
+
     const operation = queue.then(async () => {
       const candidate = await updateMinimizerCheckpointCollectionWorkspaceV1({
         currentPackages: committed.packages,
         incomingPackages: capturedIncoming,
       });
-      for (const collectionPackage of candidate.packages) {
-        deepFreeze(collectionPackage);
-      }
+      deepFreeze(candidate);
       committed = candidate;
       return committed;
     });
