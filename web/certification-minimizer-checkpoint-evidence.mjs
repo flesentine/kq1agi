@@ -15,7 +15,7 @@ function canonicalValue(value) {
     if (typeof value === 'number' && !Number.isFinite(value)) return null;
     return value;
   }
-  const out = {};
+  const out = Object.create(null);
   for (const key of Object.keys(value).sort()) {
     const item = value[key];
     if (item === undefined) continue;
