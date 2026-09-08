@@ -117,4 +117,6 @@ export function createMinimizerCheckpointCollectionWorkspaceStoreV1() {
 
 export const MinimizerCheckpointCollectionWorkspaceLayout = Object.freeze({
   MAX_PACKAGES: MinimizerCheckpointCollectionManifestLayout.MAX_PACKAGES,
+  MAX_IMPORT_FILE_BYTES: 16 * 1024 * 1024,
+  MAX_IMPORT_BATCH_BYTES: 64 * 1024 * 1024,
 });
