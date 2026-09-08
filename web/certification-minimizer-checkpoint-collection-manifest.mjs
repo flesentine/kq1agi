@@ -9,6 +9,7 @@ import {
 } from './certification-minimizer-checkpoint-collection-package.mjs';
 import {
   createMinimizerCheckpointProvenanceCensusV1,
+  MinimizerCheckpointProvenanceCensusLayout,
 } from './certification-minimizer-checkpoint-provenance-census.mjs';
 import {
   createMinimizerCheckpointProvenanceCoverageMatrixV1,
@@ -49,6 +50,9 @@ function packageSummary(collectionPackage) {
 async function normalizePackages(collectionPackages) {
   if (!Array.isArray(collectionPackages) || collectionPackages.length === 0) {
     throw new Error('Collection manifest requires at least one Phase -1I.13 package.');
+  }
+  if (collectionPackages.length > MinimizerCheckpointProvenanceCensusLayout.MAX_PACKAGES) {
+    throw new Error('Collection manifest exceeds the package safety limit.');
   }
 
   const uniqueByHash = new Map();
@@ -178,4 +182,5 @@ export function serializeMinimizerCheckpointCollectionManifestV1(manifest) {
 export const MinimizerCheckpointCollectionManifestLayout = Object.freeze({
   MANIFEST_SCHEMA,
   POLICY,
+  MAX_PACKAGES: MinimizerCheckpointProvenanceCensusLayout.MAX_PACKAGES,
 });
