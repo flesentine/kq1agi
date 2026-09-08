@@ -1049,10 +1049,17 @@ function installPhase1D() {
       if (files.length > MinimizerCheckpointCollectionWorkspaceLayout.MAX_PACKAGES) {
         throw new Error('Collection workspace incoming batch exceeds the package safety limit.');
       }
+      const incomingBatchBytes = files.reduce(
+        (total, file) => total + Number(file.size ?? 0),
+        0,
+      );
+      if (incomingBatchBytes > MinimizerCheckpointCollectionWorkspaceLayout.MAX_IMPORT_BATCH_BYTES) {
+        throw new Error('Collection workspace incoming files exceed the aggregate byte safety limit.');
+      }
 
       const batch = [];
       for (const file of files) {
-        if (file.size > 16 * 1024 * 1024) {
+        if (file.size > MinimizerCheckpointCollectionWorkspaceLayout.MAX_IMPORT_FILE_BYTES) {
           throw new Error(`Collection package file is larger than 16 MiB: ${file.name}`);
         }
         const parsed = JSON.parse(await file.text());
