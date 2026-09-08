@@ -1444,9 +1444,11 @@ Every exported manifest remains:
 
 - Browser workspace imports accept validated I.13 packages only.
 - Individual files larger than 16 MiB are rejected.
-- A selection that would exceed the package safety bound is rejected before any selected file is read or parsed.
+- An incoming browser selection larger than 4,096 files is rejected before any selected file is read or parsed.
+- Final workspace capacity is enforced on validated unique package hashes after deduplication, so exact duplicate packages remain idempotent even when the workspace is already at capacity.
 - Browser package-file parsing is itself serialized, so overlapping picker actions cannot bypass that early bound or multiply file-read memory pressure.
-- The base CERTIFY controller and Phase -1I share one busy contract: I.15 cannot start while base refresh/certification is active, base controls cannot be re-enabled underneath an I.15 read, and base STOP remains available during a real certification run.\n- Phase -1D replay/minimization/reduction work also registers with that shared controller before starting and releases it in `finally`, so closing/reopening CERTIFY cannot refresh the base selector or disable Phase -1D STOP underneath active work.
+- The base CERTIFY controller and Phase -1I share one busy contract: I.15 cannot start while base refresh/certification is active, base controls cannot be re-enabled underneath an I.15 read, and base STOP remains available during a real certification run.
+- Phase -1D replay/minimization/reduction work also registers with that shared controller before starting and releases it in `finally`, so closing/reopening CERTIFY cannot refresh the base selector or disable Phase -1D STOP underneath active work.
 - Replay/live mutation controls stay locked for the duration of package-file parsing, keeping the preflight workspace population stable until the queued commit begins.
 - Exact duplicate package hashes are workspace-idempotent.
 - Candidate workspace construction is non-mutating until complete validation succeeds.
