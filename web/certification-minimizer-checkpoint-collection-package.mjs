@@ -158,6 +158,11 @@ export async function validateMinimizerCheckpointCollectionPackageV1(collectionP
     throw new Error('Collection package hash is invalid.');
   }
 
+  const { hash: submittedHash, ...submittedUnsigned } = collectionPackage;
+  if (await hashCanonicalJsonV1(submittedUnsigned) !== submittedHash) {
+    throw new Error('Collection package hash mismatch.');
+  }
+
   const expected = await createMinimizerCheckpointCollectionPackageV1({
     evidenceReport: collectionPackage.evidenceReport,
     provenance: collectionPackage.provenance,
