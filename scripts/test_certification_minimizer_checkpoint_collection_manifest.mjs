@@ -96,6 +96,7 @@ const stage2 = await makeStage({
 
 const packageA1 = await makePackage({ collectionRunId: runA, stages: [stage1] });
 const packageA2 = await makePackage({ collectionRunId: runA, stages: [stage1, stage2] });
+const packageAConflict = await makePackage({ collectionRunId: runA, stages: [stage2] });
 const packageB = await makePackage({ collectionRunId: runB, stages: [stage1] });
 
 const manifest = await createMinimizerCheckpointCollectionManifestV1([
@@ -176,16 +177,29 @@ await assert.rejects(
   /population mismatch/,
 );
 
-const conflictingPackage = structuredClone(packageA2);
-conflictingPackage.provenance.events[0].eventHash = sha('f');
 await assert.rejects(
-  createMinimizerCheckpointCollectionManifestV1([conflictingPackage]),
+  createMinimizerCheckpointCollectionManifestV1([packageA1, packageAConflict]),
+  /Conflicting provenance snapshots share collection run/,
+  'Individually valid same-run histories with equal length but different events must reach and fail the I.10 conflict rule.',
+);
+
+const corruptedPackage = structuredClone(packageA2);
+corruptedPackage.provenance.events[0].eventHash = sha('f');
+await assert.rejects(
+  createMinimizerCheckpointCollectionManifestV1([corruptedPackage]),
   /hash mismatch|provenance|validation/i,
 );
 
 await assert.rejects(
   createMinimizerCheckpointCollectionManifestV1([]),
   /at least one/,
+);
+
+await assert.rejects(
+  createMinimizerCheckpointCollectionManifestV1(
+    Array(MinimizerCheckpointCollectionManifestLayout.MAX_PACKAGES + 1).fill(packageB),
+  ),
+  /package safety limit/,
 );
 
 console.log('minimizer checkpoint collection manifest tests: PASS');
