@@ -605,6 +605,7 @@ function installPhase1D() {
   const certificationPanelController = globalThis.__kq1agiCertificationPanelController ?? null;
   let basePanelBusy = !!certificationPanelController?.isBaseBusy?.();
   let externalPanelBusy = !!certificationPanelController?.isExternallyBusy?.();
+  let handlingCertificationPanelBusyNotification = false;
   let collectionPackageImportRunning = false;
   let latestCollectionManifest = null;
   globalThis.__kq1agiCheckpointCollectionManifest = null;
@@ -663,15 +664,22 @@ function installPhase1D() {
       gameSelect.disabled = true;
       if (barrierInput) barrierInput.disabled = true;
       stopButton.disabled = false;
-    } else if (!basePanelBusy && !externalPanelBusy) {
+    } else if (!basePanelBusy
+        && !externalPanelBusy
+        && !handlingCertificationPanelBusyNotification) {
       certificationPanelController?.refreshControlState?.();
     }
   };
 
   const unsubscribeCertificationPanelBusy = certificationPanelController?.subscribeBusy?.(state => {
-    basePanelBusy = !!state?.baseBusy;
-    externalPanelBusy = !!state?.externalBusy;
-    setReplayRunning(replayRunning);
+    handlingCertificationPanelBusyNotification = true;
+    try {
+      basePanelBusy = !!state?.baseBusy;
+      externalPanelBusy = !!state?.externalBusy;
+      setReplayRunning(replayRunning);
+    } finally {
+      handlingCertificationPanelBusyNotification = false;
+    }
   }) ?? null;
 
   async function refreshEvidenceReview() {
