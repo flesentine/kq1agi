@@ -1362,6 +1362,48 @@ A package therefore cannot manufacture a new independent collection merely becau
 - `COLLECTION_ARCHIVE_ONLY`, `accelerationAllowed=false`, and full-replay authority remain mandatory.
 - Phase -1G remains outside package creation/import execution.
 
+## Phase -1I.14 — deterministic collection-set manifest
+
+Phase -1I.14 adds a deterministic archive manifest over one or more validated Phase -1I.13 collection packages.
+
+The manifest:
+
+- validates every I.13 package before inclusion;
+- enforces the Phase -1I.10 package safety limit before expensive validation;
+- collapses exact duplicate package hashes idempotently;
+- sorts package and collection-run identities with locale-independent lexical ordering;
+- records compact package/run summaries without embedding raw worker/oracle state;
+- rebuilds the canonical I.10 provenance census, I.11 exact-identity coverage matrix, and I.12 session topology over the complete package set;
+- binds those exact three derived hashes into one manifest hash; and
+- leaves same-run prefix/conflict semantics to the already-qualified I.10 reconciliation rules.
+
+Distinct snapshots from one collection run may both remain listed as archived package identities while the derived I.10 population selects only the longest consistent snapshot. Individually valid conflicting same-run histories reject through I.10.
+
+Every manifest declares:
+
+- `policy: full-replay-authoritative`;
+- `policyFrozen: false`;
+- `policyDecision: EVIDENCE_ONLY`;
+- `accelerationAllowed: false`; and
+- `manifestDecision: COLLECTION_SET_ARCHIVE_ONLY`.
+
+The manifest does not change Phase -1I.5 corpus counts, define evidence sufficiency, prove physical/human independence, alter Phase -1G, or permit any candidate to skip full replay.
+
+### Phase -1I.14 acceptance criteria
+
+- Every included I.13 package validates completely.
+- Exact duplicate package hashes are idempotent.
+- Manifest identity/order is deterministic and locale-independent.
+- The manifest hash is independent of package import order.
+- Archived package count remains distinct from reconciled run/event counts.
+- Same-run consistent prefixes reconcile through I.10.
+- Same-run conflicting histories reject through I.10.
+- I.10, I.11, and I.12 hashes are recomputed from the exact package set and bound into the manifest.
+- Manifest tampering and population mismatch are rejected.
+- The I.10 package safety limit is enforced before package validation.
+- Raw worker/oracle payloads are never included.
+- `COLLECTION_SET_ARCHIVE_ONLY`, `accelerationAllowed=false`, and full-replay authority remain mandatory.
+
 ## Next slice
 
-Use the Phase -1I.13 package during real provenance-backed Phase -1E/-1F browser sessions so each collected run can be archived as one self-contained artifact. The next scientific/policy decision remains blocked on real KQ1 evidence; no synthetic fixture should define a sufficiency or acceleration threshold.
+Use the Phase -1I.13 package and Phase -1I.14 manifest during real provenance-backed Phase -1E/-1F browser collection sessions. The next scientific/policy decision remains blocked on real KQ1 evidence; no synthetic fixture should define a sufficiency or acceleration threshold.
