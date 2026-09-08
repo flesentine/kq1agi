@@ -25,7 +25,6 @@ on:
       - 'web/certification-phase1d.mjs'
       - 'docs/TRUTH_ENGINE_PHASE_1B.md'
       - 'docs/TRUTH_ENGINE_PHASE_1I.md'
-      - 'docs/TRUTH_ENGINE_PHASE_1I14.md'
   push:
     branches: [main]
     paths:
@@ -49,7 +48,6 @@ on:
       - 'web/certification-phase1d.mjs'
       - 'docs/TRUTH_ENGINE_PHASE_1B.md'
       - 'docs/TRUTH_ENGINE_PHASE_1I.md'
-      - 'docs/TRUTH_ENGINE_PHASE_1I14.md'
 
 permissions:
   contents: read
