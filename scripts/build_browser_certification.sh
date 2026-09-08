@@ -245,6 +245,7 @@ grep -q 'certify-export-collection-manifest-button' "$OUT/certification-phase1d.
 grep -q '__kq1agiCheckpointCollectionManifest' "$OUT/certification-phase1d.mjs"
 grep -q 'createMinimizerCheckpointCollectionWorkspaceStoreV1' "$OUT/certification-phase1d.mjs"
 grep -q 'MinimizerCheckpointCollectionWorkspaceLayout.MAX_PACKAGES' "$OUT/certification-phase1d.mjs"
+grep -q 'collectionPackageImportRunning' "$OUT/certification-phase1d.mjs"
 ! grep -q 'shadowResults.push(shadow)' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-reduce-inputs-button' "$OUT/certification-phase1d.mjs"
 grep -q 'minimizeInputGroupsV1' "$OUT/certification-phase1d.mjs"
