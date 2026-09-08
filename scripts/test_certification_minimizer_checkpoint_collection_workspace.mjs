@@ -173,6 +173,16 @@ assert.equal(
   MinimizerCheckpointCollectionWorkspaceLayout.MAX_PACKAGES,
   MinimizerCheckpointCollectionManifestLayout.MAX_PACKAGES,
 );
+
+const duplicateAtRawCapacity = await updateMinimizerCheckpointCollectionWorkspaceV1({
+  currentPackages: Array(
+    MinimizerCheckpointCollectionWorkspaceLayout.MAX_PACKAGES,
+  ).fill(packageB),
+  incomingPackages: [packageB],
+});
+assert.equal(duplicateAtRawCapacity.packageCount, 1,
+  'An exact duplicate must remain idempotent even when raw submitted count exceeds the final unique capacity.');
+
 await assert.rejects(
   updateMinimizerCheckpointCollectionWorkspaceV1({
     incomingPackages: Array(
@@ -209,9 +219,10 @@ assert.equal(afterRejectedFollowup.packageCount, 3,
   'A rejected queued commit must not poison later commits.');
 assert.equal(afterRejectedFollowup.manifest.derived.toolObservedCollectionEvents, 3);
 
-const [phase1dSource, panelSource] = await Promise.all([
+const [phase1dSource, panelSource, workspaceSource] = await Promise.all([
   readFile(new URL('../web/certification-phase1d.mjs', import.meta.url), 'utf8'),
   readFile(new URL('../web/certification-panel.mjs', import.meta.url), 'utf8'),
+  readFile(new URL('../web/certification-minimizer-checkpoint-collection-workspace.mjs', import.meta.url), 'utf8'),
 ]);
 assert.equal(
   phase1dSource.includes("from './certification-minimizer-checkpoint-collection-workspace.mjs'"),
@@ -241,6 +252,10 @@ assert.equal(panelSource.includes('releaseExternalBusy'), true);
 assert.equal(panelSource.includes('subscribeBusy'), true);
 assert.equal(panelSource.includes('stopButton.disabled = !running'), true);
 assert.equal(panelSource.includes('if (running || refreshing || externalBusyCount > 0) return;'), true);
+assert.equal(workspaceSource.includes('submittedCount'), false);
+assert.equal(workspaceSource.includes('incomingPackages.length > MinimizerCheckpointCollectionManifestLayout.MAX_PACKAGES'), true);
+assert.equal(workspaceSource.includes('uniqueByHash.size > MinimizerCheckpointCollectionManifestLayout.MAX_PACKAGES'), true);
+assert.equal(workspaceSource.includes('validatedReferences'), true);
 
 const workspaceImportStart = phase1dSource.indexOf('async function importCollectionPackageFiles()');
 const workspaceImportEnd = phase1dSource.indexOf('function exportProvenanceCensus()', workspaceImportStart);
@@ -250,6 +265,11 @@ assert.equal(workspaceImportSection.includes('MinimizerCheckpointCollectionPacka
 assert.equal(workspaceImportSection.includes('commitCollectionWorkspace(batch)'), true);
 assert.equal(workspaceImportSection.includes('collectionPackageImportRunning'), true);
 assert.equal(workspaceImportSection.includes("setStatus('COLLECTION IMPORT BUSY'"), true);
+assert.equal(workspaceImportSection.includes('workspacePackageCount'), false,
+  'Browser preflight must not count already committed packages before deduplication.');
+assert.equal(workspaceImportSection.includes(
+  'if (files.length > MinimizerCheckpointCollectionWorkspaceLayout.MAX_PACKAGES)'
+), true);
 assert.equal(
   workspaceImportSection.indexOf('MinimizerCheckpointCollectionWorkspaceLayout.MAX_PACKAGES')
     < workspaceImportSection.indexOf('file.text()'),
