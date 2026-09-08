@@ -200,6 +200,24 @@ await assert.rejects(
   /package safety limit/,
 );
 
+const detachedStore = createMinimizerCheckpointCollectionWorkspaceStoreV1();
+const callerOwnedPackage = structuredClone(packageB);
+const originalCallerCaveat = callerOwnedPackage.caveats[0];
+const detachedCommitPromise = detachedStore.commit([callerOwnedPackage]);
+callerOwnedPackage.caveats[0] = 'CALLER_MUTATED_AFTER_COMMIT_CALL';
+const detachedCommit = await detachedCommitPromise;
+assert.equal(detachedCommit.packages[0].caveats[0], originalCallerCaveat,
+  'Commit must synchronously detach queued packages from caller-owned objects.');
+assert.equal(Object.isFrozen(detachedCommit.packages[0]), true);
+assert.equal(Object.isFrozen(detachedCommit.packages[0].caveats), true);
+assert.throws(
+  () => { detachedStore.snapshot().packages[0].caveats[0] = 'SNAPSHOT_MUTATION'; },
+  TypeError,
+  'Committed snapshot packages must be recursively frozen.',
+);
+assert.equal(detachedStore.snapshot().packages[0].caveats[0], originalCallerCaveat);
+assert.equal(detachedStore.snapshot().manifest.hash, detachedCommit.manifest.hash);
+
 const concurrentStore = createMinimizerCheckpointCollectionWorkspaceStoreV1();
 const [concurrentA, concurrentB] = await Promise.all([
   concurrentStore.commit([packageA1]),
@@ -264,6 +282,9 @@ assert.equal(workspaceSource.includes('submittedCount'), false);
 assert.equal(workspaceSource.includes('incomingPackages.length > MinimizerCheckpointCollectionManifestLayout.MAX_PACKAGES'), true);
 assert.equal(workspaceSource.includes('uniqueByHash.size > MinimizerCheckpointCollectionManifestLayout.MAX_PACKAGES'), true);
 assert.equal(workspaceSource.includes('validatedReferences'), true);
+assert.equal(workspaceSource.includes('structuredClone(collectionPackage)'), true);
+assert.equal(workspaceSource.includes('function deepFreeze('), true);
+assert.equal(workspaceSource.includes('deepFreeze(collectionPackage);'), true);
 assert.equal(workspaceSource.includes('MAX_IMPORT_FILE_BYTES: 16 * 1024 * 1024'), true);
 assert.equal(workspaceSource.includes('MAX_IMPORT_BATCH_BYTES: 64 * 1024 * 1024'), true);
 
