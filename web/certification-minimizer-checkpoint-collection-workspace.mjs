@@ -71,6 +71,15 @@ export async function updateMinimizerCheckpointCollectionWorkspaceV1({
 }
 
 
+function deepFreeze(value, seen = new WeakSet()) {
+  if (!value || typeof value !== 'object' || seen.has(value)) return value;
+  seen.add(value);
+  for (const child of Object.values(value)) {
+    deepFreeze(child, seen);
+  }
+  return Object.freeze(value);
+}
+
 function emptyWorkspaceSnapshot() {
   return Object.freeze({
     packages: Object.freeze([]),
@@ -94,13 +103,16 @@ export function createMinimizerCheckpointCollectionWorkspaceStoreV1() {
 
   const commit = incomingPackages => {
     const capturedIncoming = Array.isArray(incomingPackages)
-      ? [...incomingPackages]
+      ? incomingPackages.map(collectionPackage => structuredClone(collectionPackage))
       : incomingPackages;
     const operation = queue.then(async () => {
       const candidate = await updateMinimizerCheckpointCollectionWorkspaceV1({
         currentPackages: committed.packages,
         incomingPackages: capturedIncoming,
       });
+      for (const collectionPackage of candidate.packages) {
+        deepFreeze(collectionPackage);
+      }
       committed = candidate;
       return committed;
     });
