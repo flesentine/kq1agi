@@ -209,10 +209,10 @@ assert.equal(afterRejectedFollowup.packageCount, 3,
   'A rejected queued commit must not poison later commits.');
 assert.equal(afterRejectedFollowup.manifest.derived.toolObservedCollectionEvents, 3);
 
-const phase1dSource = await readFile(
-  new URL('../web/certification-phase1d.mjs', import.meta.url),
-  'utf8',
-);
+const [phase1dSource, panelSource] = await Promise.all([
+  readFile(new URL('../web/certification-phase1d.mjs', import.meta.url), 'utf8'),
+  readFile(new URL('../web/certification-panel.mjs', import.meta.url), 'utf8'),
+]);
 assert.equal(
   phase1dSource.includes("from './certification-minimizer-checkpoint-collection-workspace.mjs'"),
   true,
@@ -225,7 +225,15 @@ assert.equal(phase1dSource.includes('serializeMinimizerCheckpointCollectionManif
 assert.equal(phase1dSource.includes('createMinimizerCheckpointCollectionWorkspaceStoreV1'), true);
 assert.equal(phase1dSource.includes('MinimizerCheckpointCollectionWorkspaceLayout'), true);
 assert.equal(phase1dSource.includes('collectionPackageImportRunning'), true);
-assert.equal(phase1dSource.includes('const panelBusy = value || collectionPackageImportRunning'), true);
+assert.equal(phase1dSource.includes('certificationPanelController'), true);
+assert.equal(phase1dSource.includes('subscribeBusy'), true);
+assert.equal(phase1dSource.includes('handlingCertificationPanelBusyNotification'), true);
+assert.equal(panelSource.includes('__kq1agiCertificationPanelController'), true);
+assert.equal(panelSource.includes('acquireExternalBusy'), true);
+assert.equal(panelSource.includes('releaseExternalBusy'), true);
+assert.equal(panelSource.includes('subscribeBusy'), true);
+assert.equal(panelSource.includes('stopButton.disabled = !running'), true);
+assert.equal(panelSource.includes('if (running || refreshing || externalBusyCount > 0) return;'), true);
 
 const workspaceImportStart = phase1dSource.indexOf('async function importCollectionPackageFiles()');
 const workspaceImportEnd = phase1dSource.indexOf('function exportProvenanceCensus()', workspaceImportStart);
@@ -248,11 +256,18 @@ assert.equal(
   'Browser file parsing must be serialized before any selected file is read.',
 );
 assert.equal(
+  workspaceImportSection.indexOf('acquireExternalBusy')
+    < workspaceImportSection.indexOf('file.text()'),
+  true,
+  'The base certification controller lock must be acquired before package-file parsing begins.',
+);
+assert.equal(
   workspaceImportSection.indexOf('setReplayRunning(replayRunning)')
     < workspaceImportSection.indexOf('file.text()'),
   true,
-  'Replay/live mutation controls must lock before package-file parsing begins.',
+  'Phase -1I controls must lock before package-file parsing begins.',
 );
+assert.equal(workspaceImportSection.includes('releaseExternalBusy'), true);
 assert.equal(workspaceImportSection.includes('collectionPackageImportRunning = false'), true);
 assert.equal(workspaceImportSection.includes('createMinimizerCheckpointCollectionRunIdV1'), false);
 assert.equal(workspaceImportSection.includes('createMinimizerCheckpointCollectionEventV1'), false);
