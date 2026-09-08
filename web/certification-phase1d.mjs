@@ -634,28 +634,29 @@ function installPhase1D() {
 
   const setReplayRunning = value => {
     replayRunning = value;
-    replayButton.disabled = value;
-    minimizeButton.disabled = value || !lastDivergenceContext;
-    reduceInputsButton.disabled = value || !lastMinimizedContext;
-    reduceEditsButton.disabled = value || !lastInputReducedContext;
-    exportShadowEvidenceButton.disabled = value || !latestShadowEvidenceReport;
-    importEvidenceButton.disabled = value;
-    exportEvidenceCorpusButton.disabled = value || !latestEvidenceCorpus;
-    exportEvidenceReviewButton.disabled = value || !latestEvidenceReview;
-    exportEvidenceCohortsButton.disabled = value || !latestEvidenceCohortReview;
-    exportEvidenceCoverageButton.disabled = value || !latestEvidenceCoverageProfile;
-    exportCollectionProvenanceButton.disabled = value || !latestCollectionProvenance;
-    exportCollectionPackageButton.disabled = value || !latestCollectionPackage;
-    importCollectionPackagesButton.disabled = value || collectionPackageImportRunning;
-    exportCollectionManifestButton.disabled = value || !latestCollectionManifest;
-    importProvenanceButton.disabled = value;
-    exportProvenanceCensusButton.disabled = value || !latestProvenanceCensus;
-    exportProvenanceCoverageButton.disabled = value || !latestProvenanceCoverageMatrix;
-    exportProvenanceTopologyButton.disabled = value || !latestProvenanceSessionTopology;
-    runButton.disabled = value;
-    if (refreshButton) refreshButton.disabled = value;
-    gameSelect.disabled = value;
-    if (barrierInput) barrierInput.disabled = value;
+    const panelBusy = value || collectionPackageImportRunning;
+    replayButton.disabled = panelBusy;
+    minimizeButton.disabled = panelBusy || !lastDivergenceContext;
+    reduceInputsButton.disabled = panelBusy || !lastMinimizedContext;
+    reduceEditsButton.disabled = panelBusy || !lastInputReducedContext;
+    exportShadowEvidenceButton.disabled = panelBusy || !latestShadowEvidenceReport;
+    importEvidenceButton.disabled = panelBusy;
+    exportEvidenceCorpusButton.disabled = panelBusy || !latestEvidenceCorpus;
+    exportEvidenceReviewButton.disabled = panelBusy || !latestEvidenceReview;
+    exportEvidenceCohortsButton.disabled = panelBusy || !latestEvidenceCohortReview;
+    exportEvidenceCoverageButton.disabled = panelBusy || !latestEvidenceCoverageProfile;
+    exportCollectionProvenanceButton.disabled = panelBusy || !latestCollectionProvenance;
+    exportCollectionPackageButton.disabled = panelBusy || !latestCollectionPackage;
+    importCollectionPackagesButton.disabled = panelBusy;
+    exportCollectionManifestButton.disabled = panelBusy || !latestCollectionManifest;
+    importProvenanceButton.disabled = panelBusy;
+    exportProvenanceCensusButton.disabled = panelBusy || !latestProvenanceCensus;
+    exportProvenanceCoverageButton.disabled = panelBusy || !latestProvenanceCoverageMatrix;
+    exportProvenanceTopologyButton.disabled = panelBusy || !latestProvenanceSessionTopology;
+    runButton.disabled = panelBusy;
+    if (refreshButton) refreshButton.disabled = panelBusy;
+    gameSelect.disabled = panelBusy;
+    if (barrierInput) barrierInput.disabled = panelBusy;
     stopButton.disabled = !value;
   };
 
@@ -997,7 +998,7 @@ function installPhase1D() {
     }
 
     collectionPackageImportRunning = true;
-    importCollectionPackagesButton.disabled = true;
+    setReplayRunning(replayRunning);
     try {
       const workspacePackageCount = collectionWorkspaceStore.snapshot().packageCount;
       if (workspacePackageCount + files.length
@@ -1028,7 +1029,7 @@ function installPhase1D() {
       detail.textContent = String(error?.stack ?? error);
     } finally {
       collectionPackageImportRunning = false;
-      importCollectionPackagesButton.disabled = replayRunning;
+      setReplayRunning(replayRunning);
     }
   }
 
