@@ -1413,7 +1413,7 @@ The certification panel adds:
 - **IMPORT PACKAGES** for one or more self-contained Phase -1I.13 session package files; and
 - **EXPORT MANIFEST** for the current deterministic Phase -1I.14 collection-set manifest.
 
-The workspace is transactional. A candidate package batch is fully validated and the I.14 manifest is rebuilt before browser workspace state commits. If any package is invalid or the I.10 same-run reconciliation chain rejects a conflict, the import is rejected and the previously committed package set/manifest remain intact.
+The workspace is transactional and commit-serialized. A candidate package batch is fully validated and the I.14 manifest is rebuilt before browser workspace state commits. Concurrent workspace commits queue behind the prior operation, so overlapping imports/live updates cannot overwrite one another. A failed queued commit preserves the last successful snapshot and does not poison later commits. If any package is invalid or the I.10 same-run reconciliation chain rejects a conflict, the import is rejected and the previously committed package set/manifest remain intact.
 
 Live Phase -1E/-1F collection packages also join the workspace after their I.13 package is successfully constructed. Repeated snapshots from the same live run therefore remain archive-visible while I.10 continues to reconcile only the longest consistent run history into derived event counts.
 
@@ -1444,8 +1444,10 @@ Every exported manifest remains:
 
 - Browser workspace imports accept validated I.13 packages only.
 - Individual files larger than 16 MiB are rejected.
+- A selection that would exceed the package safety bound is rejected before any selected file is read or parsed.
 - Exact duplicate package hashes are workspace-idempotent.
 - Candidate workspace construction is non-mutating until complete validation succeeds.
+- Browser workspace commits are serialized so concurrent imports/live updates cannot lose a previously committed batch.
 - A rejected/tampered/conflicting import leaves prior workspace state unchanged.
 - Live I.13 packages can join the same workspace without changing I.9 provenance semantics.
 - The workspace exports the exact I.14 manifest produced from its committed package population.
