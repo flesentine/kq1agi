@@ -1244,6 +1244,124 @@ Normal evidence import remains separate.
 - Phase -1G remains outside session-topology execution.
 - Full replay remains authoritative for every minimizer candidate.
 
+## Phase -1I.13 — self-contained live collection package
+
+Phase -1I.13 adds a practical archive format for real browser evidence collection.
+
+Before this slice, one operator had to keep the Phase -1I.4 evidence report and Phase -1I.9 provenance sidecar together manually. The provenance importer could pair them by report hash, but a lost/mismatched file made later review harder.
+
+Phase -1I.13 packages one live collection snapshot into one deterministic JSON artifact.
+
+### Package contents
+
+The schema is:
+
+`kq1agi-minimizer-checkpoint-collection-package-v1`
+
+Each package embeds the exact:
+
+- Phase -1I.4 evidence report; and
+- Phase -1I.9 provenance sidecar.
+
+The package also records:
+
+- collection-run ID;
+- report hash;
+- provenance hash;
+- event count;
+- deterministic stage hashes; and
+- singleton derived hashes for:
+  - Phase -1I.10 provenance census;
+  - Phase -1I.11 provenance coverage matrix; and
+  - Phase -1I.12 provenance session topology.
+
+The package summary also records the exact identity cohort count and whether that selected run is multi-identity.
+
+### Validation
+
+Package creation first validates the Phase -1I.9 sidecar against the embedded Phase -1I.4 report.
+
+It then derives I.10/I.11/I.12 from the singleton package population and verifies their linked hashes agree.
+
+Validation of an imported package recomputes the complete package from the embedded report+sidecar and requires exact agreement for:
+
+- report/provenance binding;
+- collection run;
+- event count;
+- deterministic stage hashes;
+- all derived hashes/summary fields; and
+- the top-level package SHA-256.
+
+Any forbidden raw worker/oracle state is rejected.
+
+### Archive-only policy boundary
+
+Every package declares:
+
+- `policy: full-replay-authoritative`;
+- `policyFrozen: false`;
+- `policyDecision: EVIDENCE_ONLY`;
+- `accelerationAllowed: false`; and
+- `packageDecision: COLLECTION_ARCHIVE_ONLY`.
+
+The package is not a new evidence population and it does not define any sufficiency or acceleration threshold.
+
+Its caveats explicitly state:
+
+- the package embeds existing report/provenance only;
+- importing the package does not mint collection identity;
+- collection-run identity is not authenticated physical/human independence;
+- Phase -1I.5 corpus counts remain unchanged; and
+- full replay remains mandatory.
+
+### Browser workflow
+
+After a live Phase -1E/-1F stage successfully produces the current Phase -1I.4 report and Phase -1I.9 provenance sidecar, the certification panel derives the matching Phase -1I.13 package.
+
+The package is exposed as:
+
+`globalThis.__kq1agiCheckpointCollectionPackage`
+
+and can be downloaded with **EXPORT SESSION PACKAGE**.
+
+Package construction failure disables only that package export. It does not discard an otherwise valid I.9 provenance sidecar or change I.10/I.11/I.12 state.
+
+### Direct provenance import
+
+**IMPORT PROVENANCE** now accepts three forms:
+
+- Phase -1I.4 report files;
+- Phase -1I.9 provenance sidecar files; or
+- one self-contained Phase -1I.13 collection package.
+
+When a package is imported:
+
+1. the package is fully validated;
+2. its embedded report+sidecar are extracted;
+3. those original artifacts enter the existing provenance transaction; and
+4. I.10/I.11/I.12 are derived exactly as before.
+
+Importing a package never calls the collection-run ID generator, never creates a collection event, and never appends to the live collection event list.
+
+A package therefore cannot manufacture a new independent collection merely because it was opened in a later browser session.
+
+### Phase -1I.13 acceptance criteria
+
+- Package creation requires one hash-valid I.4 report + I.9 sidecar pair.
+- Embedded provenance revalidates against the exact embedded report.
+- Singleton I.10/I.11/I.12 hashes are derived and bound into the package.
+- Package re-export of the same live snapshot is deterministic.
+- Package validation recomputes the complete archive and rejects tampering.
+- Raw worker/oracle payloads are rejected.
+- EXPORT SESSION PACKAGE is enabled only for a live current-session package.
+- Package construction failure does not invalidate I.9 provenance.
+- IMPORT PROVENANCE can accept the package directly.
+- Package import extracts the original report+sidecar without minting a new run ID/event.
+- Existing report+sidecar provenance import remains backward compatible.
+- Phase -1I.5 evidence import remains separate.
+- `COLLECTION_ARCHIVE_ONLY`, `accelerationAllowed=false`, and full-replay authority remain mandatory.
+- Phase -1G remains outside package creation/import execution.
+
 ## Next slice
 
-Collect real provenance-backed Phase -1E/-1F evidence across multiple browser sessions and inspect I.10, I.11, and I.12 together. The next policy-bearing step remains blocked on real evidence; no synthetic fixture should be used to invent a numeric sufficiency or acceleration threshold.
+Use the Phase -1I.13 package during real provenance-backed Phase -1E/-1F browser sessions so each collected run can be archived as one self-contained artifact. The next scientific/policy decision remains blocked on real KQ1 evidence; no synthetic fixture should define a sufficiency or acceleration threshold.
