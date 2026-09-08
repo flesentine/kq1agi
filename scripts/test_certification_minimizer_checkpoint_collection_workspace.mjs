@@ -225,6 +225,7 @@ assert.equal(phase1dSource.includes('serializeMinimizerCheckpointCollectionManif
 assert.equal(phase1dSource.includes('createMinimizerCheckpointCollectionWorkspaceStoreV1'), true);
 assert.equal(phase1dSource.includes('MinimizerCheckpointCollectionWorkspaceLayout'), true);
 assert.equal(phase1dSource.includes('collectionPackageImportRunning'), true);
+assert.equal(phase1dSource.includes('const panelBusy = value || collectionPackageImportRunning'), true);
 
 const workspaceImportStart = phase1dSource.indexOf('async function importCollectionPackageFiles()');
 const workspaceImportEnd = phase1dSource.indexOf('function exportProvenanceCensus()', workspaceImportStart);
@@ -246,6 +247,13 @@ assert.equal(
   true,
   'Browser file parsing must be serialized before any selected file is read.',
 );
+assert.equal(
+  workspaceImportSection.indexOf('setReplayRunning(replayRunning)')
+    < workspaceImportSection.indexOf('file.text()'),
+  true,
+  'Replay/live mutation controls must lock before package-file parsing begins.',
+);
+assert.equal(workspaceImportSection.includes('collectionPackageImportRunning = false'), true);
 assert.equal(workspaceImportSection.includes('createMinimizerCheckpointCollectionRunIdV1'), false);
 assert.equal(workspaceImportSection.includes('createMinimizerCheckpointCollectionEventV1'), false);
 assert.equal(workspaceImportSection.includes('createMinimizerCheckpointCollectionProvenanceV1'), false);
