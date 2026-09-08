@@ -224,6 +224,7 @@ assert.equal(phase1dSource.includes('__kq1agiCheckpointCollectionManifest'), tru
 assert.equal(phase1dSource.includes('serializeMinimizerCheckpointCollectionManifestV1'), true);
 assert.equal(phase1dSource.includes('createMinimizerCheckpointCollectionWorkspaceStoreV1'), true);
 assert.equal(phase1dSource.includes('MinimizerCheckpointCollectionWorkspaceLayout'), true);
+assert.equal(phase1dSource.includes('collectionPackageImportRunning'), true);
 
 const workspaceImportStart = phase1dSource.indexOf('async function importCollectionPackageFiles()');
 const workspaceImportEnd = phase1dSource.indexOf('function exportProvenanceCensus()', workspaceImportStart);
@@ -231,11 +232,19 @@ assert.ok(workspaceImportStart >= 0 && workspaceImportEnd > workspaceImportStart
 const workspaceImportSection = phase1dSource.slice(workspaceImportStart, workspaceImportEnd);
 assert.equal(workspaceImportSection.includes('MinimizerCheckpointCollectionPackageLayout.PACKAGE_SCHEMA'), true);
 assert.equal(workspaceImportSection.includes('commitCollectionWorkspace(batch)'), true);
+assert.equal(workspaceImportSection.includes('collectionPackageImportRunning'), true);
+assert.equal(workspaceImportSection.includes("setStatus('COLLECTION IMPORT BUSY'"), true);
 assert.equal(
   workspaceImportSection.indexOf('MinimizerCheckpointCollectionWorkspaceLayout.MAX_PACKAGES')
     < workspaceImportSection.indexOf('file.text()'),
   true,
   'Browser package-count rejection must happen before any selected file is read.',
+);
+assert.equal(
+  workspaceImportSection.indexOf('collectionPackageImportRunning = true')
+    < workspaceImportSection.indexOf('file.text()'),
+  true,
+  'Browser file parsing must be serialized before any selected file is read.',
 );
 assert.equal(workspaceImportSection.includes('createMinimizerCheckpointCollectionRunIdV1'), false);
 assert.equal(workspaceImportSection.includes('createMinimizerCheckpointCollectionEventV1'), false);
