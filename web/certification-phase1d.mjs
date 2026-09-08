@@ -55,6 +55,12 @@ import {
   serializeMinimizerCheckpointProvenanceSessionTopologyV1,
 } from './certification-minimizer-checkpoint-provenance-session-topology.mjs';
 import {
+  createMinimizerCheckpointCollectionPackageV1,
+  extractMinimizerCheckpointCollectionPackageV1,
+  MinimizerCheckpointCollectionPackageLayout,
+  serializeMinimizerCheckpointCollectionPackageV1,
+} from './certification-minimizer-checkpoint-collection-package.mjs';
+import {
   encodeRandomReplay,
   freezePlayRecordingV1,
   getPlayRecordingStats,
@@ -452,14 +458,25 @@ function installPhase1D() {
     exportEvidenceCoverageButton.insertAdjacentElement('afterend', exportCollectionProvenanceButton);
   }
 
+  let exportCollectionPackageButton = document.getElementById('certify-export-collection-package-button');
+  if (!exportCollectionPackageButton) {
+    exportCollectionPackageButton = document.createElement('button');
+    exportCollectionPackageButton.id = 'certify-export-collection-package-button';
+    exportCollectionPackageButton.type = 'button';
+    exportCollectionPackageButton.textContent = 'EXPORT SESSION PACKAGE';
+    exportCollectionPackageButton.title = 'Download one self-contained Phase -1I.13 live collection package';
+    exportCollectionPackageButton.disabled = true;
+    exportCollectionProvenanceButton.insertAdjacentElement('afterend', exportCollectionPackageButton);
+  }
+
   let importProvenanceButton = document.getElementById('certify-import-provenance-button');
   if (!importProvenanceButton) {
     importProvenanceButton = document.createElement('button');
     importProvenanceButton.id = 'certify-import-provenance-button';
     importProvenanceButton.type = 'button';
     importProvenanceButton.textContent = 'IMPORT PROVENANCE';
-    importProvenanceButton.title = 'Import Phase -1I.4 reports plus Phase -1I.9 provenance sidecars for cross-session census';
-    exportCollectionProvenanceButton.insertAdjacentElement('afterend', importProvenanceButton);
+    importProvenanceButton.title = 'Import Phase -1I.4 reports, Phase -1I.9 provenance sidecars, or self-contained Phase -1I.13 collection packages';
+    exportCollectionPackageButton.insertAdjacentElement('afterend', importProvenanceButton);
   }
 
   let exportProvenanceCensusButton = document.getElementById('certify-export-provenance-census-button');
@@ -534,6 +551,7 @@ function installPhase1D() {
   const importedProvenancePackages = [];
   let collectionRunId = null;
   let latestCollectionProvenance = null;
+  let latestCollectionPackage = null;
   let latestProvenanceCensus = null;
   let latestProvenanceCoverageMatrix = null;
   let latestProvenanceSessionTopology = null;
@@ -573,6 +591,7 @@ function installPhase1D() {
     exportEvidenceCohortsButton.disabled = value || !latestEvidenceCohortReview;
     exportEvidenceCoverageButton.disabled = value || !latestEvidenceCoverageProfile;
     exportCollectionProvenanceButton.disabled = value || !latestCollectionProvenance;
+    exportCollectionPackageButton.disabled = value || !latestCollectionPackage;
     importProvenanceButton.disabled = value;
     exportProvenanceCensusButton.disabled = value || !latestProvenanceCensus;
     exportProvenanceCoverageButton.disabled = value || !latestProvenanceCoverageMatrix;
@@ -665,7 +684,27 @@ function installPhase1D() {
       globalThis.__kq1agiCheckpointCollectionProvenance = null;
       globalThis.__kq1agiCheckpointCollectionProvenanceError = String(error?.message ?? error);
     }
+
+    if (latestCollectionProvenance) {
+      try {
+        latestCollectionPackage = await createMinimizerCheckpointCollectionPackageV1({
+          evidenceReport: latestShadowEvidenceReport,
+          provenance: latestCollectionProvenance,
+        });
+        globalThis.__kq1agiCheckpointCollectionPackage = latestCollectionPackage;
+        globalThis.__kq1agiCheckpointCollectionPackageError = null;
+      } catch (error) {
+        latestCollectionPackage = null;
+        globalThis.__kq1agiCheckpointCollectionPackage = null;
+        globalThis.__kq1agiCheckpointCollectionPackageError = String(error?.message ?? error);
+      }
+    } else {
+      latestCollectionPackage = null;
+      globalThis.__kq1agiCheckpointCollectionPackage = null;
+    }
+
     exportCollectionProvenanceButton.disabled = replayRunning || !latestCollectionProvenance;
+    exportCollectionPackageButton.disabled = replayRunning || !latestCollectionPackage;
     await refreshProvenanceCensus();
     return latestCollectionProvenance;
   }
@@ -847,6 +886,18 @@ function installPhase1D() {
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
+  function exportCollectionPackage() {
+    if (!latestCollectionPackage) return;
+    const body = serializeMinimizerCheckpointCollectionPackageV1(latestCollectionPackage);
+    const blob = new Blob([body], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kq1agi-checkpoint-collection-package-${latestCollectionPackage.hash.slice(7, 19)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
   function exportProvenanceCensus() {
     if (!latestProvenanceCensus) return;
     const body = serializeMinimizerCheckpointProvenanceCensusV1(latestProvenanceCensus);
@@ -909,6 +960,10 @@ function installPhase1D() {
           reportsByHash.set(parsed.hash, parsed);
         } else if (parsed?.schema === MinimizerCheckpointProvenanceLayout.PROVENANCE_SCHEMA) {
           sidecars.push(parsed);
+        } else if (parsed?.schema === MinimizerCheckpointCollectionPackageLayout.PACKAGE_SCHEMA) {
+          const extracted = await extractMinimizerCheckpointCollectionPackageV1(parsed);
+          reportsByHash.set(extracted.evidenceReport.hash, extracted.evidenceReport);
+          sidecars.push(extracted.provenance);
         } else {
           throw new Error(`Unsupported provenance import schema in ${file.name}`);
         }
@@ -1749,6 +1804,7 @@ function installPhase1D() {
   exportEvidenceCohortsButton.addEventListener('click', exportEvidenceCohorts);
   exportEvidenceCoverageButton.addEventListener('click', exportEvidenceCoverage);
   exportCollectionProvenanceButton.addEventListener('click', exportCollectionProvenance);
+  exportCollectionPackageButton.addEventListener('click', exportCollectionPackage);
   importProvenanceButton.addEventListener('click', () => {
     if (!replayRunning) importProvenanceInput.click();
   });
