@@ -228,6 +228,12 @@ assert.equal(phase1dSource.includes('collectionPackageImportRunning'), true);
 assert.equal(phase1dSource.includes('certificationPanelController'), true);
 assert.equal(phase1dSource.includes('subscribeBusy'), true);
 assert.equal(phase1dSource.includes('handlingCertificationPanelBusyNotification'), true);
+assert.equal(phase1dSource.includes('acquireReplayPanelBusy'), true);
+assert.equal(phase1dSource.includes('releaseReplayPanelBusy'), true);
+assert.equal((phase1dSource.match(/acquireReplayPanelBusy\('/g) ?? []).length, 5,
+  'Expected one helper definition plus four Phase -1D acquisition sites.');
+assert.equal((phase1dSource.match(/releaseReplayPanelBusy\(\);/g) ?? []).length, 4,
+  'Every Phase -1D work path must release the shared busy lock in finally.');
 assert.equal(panelSource.includes('__kq1agiCertificationPanelController'), true);
 assert.equal(panelSource.includes('acquireExternalBusy'), true);
 assert.equal(panelSource.includes('releaseExternalBusy'), true);
@@ -285,6 +291,18 @@ const workspaceCommitSection = phase1dSource.slice(workspaceCommitStart, workspa
 assert.equal(workspaceCommitSection.includes('collectionWorkspaceStore.commit(incomingPackages)'), true);
 assert.equal(workspaceCommitSection.includes('collectionWorkspacePackages.splice'), false);
 assert.equal(workspaceCommitSection.includes('updateMinimizerCheckpointCollectionWorkspaceV1'), false);
+
+for (const functionName of ['startReplay', 'startMinimize', 'startReduceInputs', 'startReduceEdits']) {
+  const start = phase1dSource.indexOf(`async function ${functionName}()`);
+  assert.ok(start >= 0, `Missing ${functionName}`);
+  const next = phase1dSource.indexOf('\n  async function ', start + 1);
+  const section = phase1dSource.slice(start, next >= 0 ? next : phase1dSource.length);
+  assert.equal(section.includes('acquireReplayPanelBusy('), true,
+    `${functionName} must acquire the shared base-panel lock.`);
+  assert.equal(section.includes('setReplayRunning(true)'), true);
+  assert.equal(section.includes('setReplayRunning(false);\n      releaseReplayPanelBusy();'), true,
+    `${functionName} must release the shared lock only after local replay state is cleared.`);
+}
 
 const liveStart = phase1dSource.indexOf('async function recordLiveCollectionProvenance(');
 const liveEnd = phase1dSource.indexOf('async function refreshProvenanceCensus()', liveStart);
