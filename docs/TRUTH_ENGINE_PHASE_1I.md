@@ -1404,6 +1404,57 @@ The manifest does not change Phase -1I.5 corpus counts, define evidence sufficie
 - Raw worker/oracle payloads are never included.
 - `COLLECTION_SET_ARCHIVE_ONLY`, `accelerationAllowed=false`, and full-replay authority remain mandatory.
 
+## Phase -1I.15 — browser collection-set workspace
+
+Phase -1I.15 makes the I.14 manifest usable during real browser collection without changing any evidence or replay authority.
+
+The certification panel adds:
+
+- **IMPORT PACKAGES** for one or more self-contained Phase -1I.13 session package files; and
+- **EXPORT MANIFEST** for the current deterministic Phase -1I.14 collection-set manifest.
+
+The workspace is transactional. A candidate package batch is fully validated and the I.14 manifest is rebuilt before browser workspace state commits. If any package is invalid or the I.10 same-run reconciliation chain rejects a conflict, the import is rejected and the previously committed package set/manifest remain intact.
+
+Live Phase -1E/-1F collection packages also join the workspace after their I.13 package is successfully constructed. Repeated snapshots from the same live run therefore remain archive-visible while I.10 continues to reconcile only the longest consistent run history into derived event counts.
+
+### Isolation boundary
+
+The I.15 package importer accepts I.13 packages only.
+
+It does not:
+
+- mint a collection-run ID;
+- create a collection event;
+- create or append a provenance sidecar;
+- append to the Phase -1I.9 provenance import population;
+- change Phase -1I.5 evidence corpus counts;
+- define a sufficiency threshold;
+- authorize acceleration; or
+- alter Phase -1G.
+
+Every exported manifest remains:
+
+- `policy: full-replay-authoritative`;
+- `policyFrozen: false`;
+- `policyDecision: EVIDENCE_ONLY`;
+- `accelerationAllowed: false`; and
+- `manifestDecision: COLLECTION_SET_ARCHIVE_ONLY`.
+
+### Phase -1I.15 acceptance criteria
+
+- Browser workspace imports accept validated I.13 packages only.
+- Individual files larger than 16 MiB are rejected.
+- Exact duplicate package hashes are workspace-idempotent.
+- Candidate workspace construction is non-mutating until complete validation succeeds.
+- A rejected/tampered/conflicting import leaves prior workspace state unchanged.
+- Live I.13 packages can join the same workspace without changing I.9 provenance semantics.
+- The workspace exports the exact I.14 manifest produced from its committed package population.
+- Importing packages into the workspace never calls the collection-run ID/event/provenance creation paths.
+- Browser global `__kq1agiCheckpointCollectionManifest` exposes the current manifest for qualification.
+- Existing provenance import remains separate and backward compatible.
+- I.5 evidence import remains separate.
+- Full replay remains authoritative and `accelerationAllowed=false`.
+
 ## Next slice
 
-Use the Phase -1I.13 package and Phase -1I.14 manifest during real provenance-backed Phase -1E/-1F browser collection sessions. The next scientific/policy decision remains blocked on real KQ1 evidence; no synthetic fixture should define a sufficiency or acceleration threshold.
+Use the Phase -1I.15 workspace during real provenance-backed Phase -1E/-1F KQ1 browser collection sessions and archive each session package plus the resulting collection-set manifest. The next scientific/policy decision remains blocked on real KQ1 evidence; no synthetic fixture should define a sufficiency or acceleration threshold.
