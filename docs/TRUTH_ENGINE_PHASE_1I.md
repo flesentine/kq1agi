@@ -1453,7 +1453,7 @@ Every exported manifest remains:
 - Replay/live mutation controls stay locked for the duration of package-file parsing, keeping the preflight workspace population stable until the queued commit begins.
 - Exact duplicate package hashes are workspace-idempotent.
 - Candidate workspace construction is non-mutating until complete validation succeeds.
-- Store commits synchronously detach incoming packages from caller-owned objects before queueing, and committed package graphs are recursively frozen before exposure through `snapshot()`.
+- Store commits synchronously detach incoming packages from caller-owned objects before queueing, and the complete committed snapshot graph—including packages and derived manifest—is recursively frozen before exposure through `snapshot()`.
 - Browser workspace commits are serialized so concurrent imports/live updates cannot lose a previously committed batch.
 - Shared busy-state notifications are one-way during callbacks so control-state refresh cannot recurse.
 - A rejected/tampered/conflicting import leaves prior workspace state unchanged.
