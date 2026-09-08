@@ -1046,10 +1046,8 @@ function installPhase1D() {
     collectionPackageImportRunning = true;
     setReplayRunning(replayRunning);
     try {
-      const workspacePackageCount = collectionWorkspaceStore.snapshot().packageCount;
-      if (workspacePackageCount + files.length
-          > MinimizerCheckpointCollectionWorkspaceLayout.MAX_PACKAGES) {
-        throw new Error('Collection workspace exceeds the package safety limit.');
+      if (files.length > MinimizerCheckpointCollectionWorkspaceLayout.MAX_PACKAGES) {
+        throw new Error('Collection workspace incoming batch exceeds the package safety limit.');
       }
 
       const batch = [];
