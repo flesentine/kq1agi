@@ -230,8 +230,9 @@ assert.equal(phase1dSource.includes('subscribeBusy'), true);
 assert.equal(phase1dSource.includes('handlingCertificationPanelBusyNotification'), true);
 assert.equal(phase1dSource.includes('acquireReplayPanelBusy'), true);
 assert.equal(phase1dSource.includes('releaseReplayPanelBusy'), true);
-assert.equal((phase1dSource.match(/acquireReplayPanelBusy\('/g) ?? []).length, 5,
-  'Expected one helper definition plus four Phase -1D acquisition sites.');
+assert.equal(phase1dSource.includes('const acquireReplayPanelBusy = label =>'), true);
+assert.equal((phase1dSource.match(/acquireReplayPanelBusy\('/g) ?? []).length, 4,
+  'Expected four Phase -1D acquisition sites.');
 assert.equal((phase1dSource.match(/releaseReplayPanelBusy\(\);/g) ?? []).length, 4,
   'Every Phase -1D work path must release the shared busy lock in finally.');
 assert.equal(panelSource.includes('__kq1agiCertificationPanelController'), true);
