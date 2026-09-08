@@ -16,6 +16,7 @@ import {
   MinimizerCheckpointCollectionManifestLayout,
 } from '../web/certification-minimizer-checkpoint-collection-manifest.mjs';
 import {
+  createMinimizerCheckpointCollectionWorkspaceStoreV1,
   MinimizerCheckpointCollectionWorkspaceLayout,
   updateMinimizerCheckpointCollectionWorkspaceV1,
 } from '../web/certification-minimizer-checkpoint-collection-workspace.mjs';
@@ -181,6 +182,33 @@ await assert.rejects(
   /package safety limit/,
 );
 
+const concurrentStore = createMinimizerCheckpointCollectionWorkspaceStoreV1();
+const [concurrentA, concurrentB] = await Promise.all([
+  concurrentStore.commit([packageA1]),
+  concurrentStore.commit([packageB]),
+]);
+assert.equal(concurrentA.packageCount, 1);
+assert.equal(concurrentB.packageCount, 2,
+  'Queued workspace commits must include the previously committed concurrent batch.');
+assert.equal(concurrentStore.snapshot().packageCount, 2);
+assert.deepEqual(
+  concurrentStore.snapshot().packageHashes,
+  concurrentB.packageHashes,
+);
+
+await assert.rejects(
+  concurrentStore.commit([packageAConflict]),
+  /Conflicting provenance snapshots share collection run/,
+);
+const afterRejectedConcurrent = concurrentStore.snapshot();
+assert.equal(afterRejectedConcurrent.packageCount, 2,
+  'Rejected queued commits must preserve the last successful workspace.');
+
+const afterRejectedFollowup = await concurrentStore.commit([packageA2]);
+assert.equal(afterRejectedFollowup.packageCount, 3,
+  'A rejected queued commit must not poison later commits.');
+assert.equal(afterRejectedFollowup.manifest.derived.toolObservedCollectionEvents, 3);
+
 const phase1dSource = await readFile(
   new URL('../web/certification-phase1d.mjs', import.meta.url),
   'utf8',
@@ -194,7 +222,8 @@ assert.equal(phase1dSource.includes('certify-export-collection-manifest-button')
 assert.equal(phase1dSource.includes('certify-import-collection-packages-input'), true);
 assert.equal(phase1dSource.includes('__kq1agiCheckpointCollectionManifest'), true);
 assert.equal(phase1dSource.includes('serializeMinimizerCheckpointCollectionManifestV1'), true);
-assert.equal(phase1dSource.includes('updateMinimizerCheckpointCollectionWorkspaceV1'), true);
+assert.equal(phase1dSource.includes('createMinimizerCheckpointCollectionWorkspaceStoreV1'), true);
+assert.equal(phase1dSource.includes('MinimizerCheckpointCollectionWorkspaceLayout'), true);
 
 const workspaceImportStart = phase1dSource.indexOf('async function importCollectionPackageFiles()');
 const workspaceImportEnd = phase1dSource.indexOf('function exportProvenanceCensus()', workspaceImportStart);
@@ -202,6 +231,12 @@ assert.ok(workspaceImportStart >= 0 && workspaceImportEnd > workspaceImportStart
 const workspaceImportSection = phase1dSource.slice(workspaceImportStart, workspaceImportEnd);
 assert.equal(workspaceImportSection.includes('MinimizerCheckpointCollectionPackageLayout.PACKAGE_SCHEMA'), true);
 assert.equal(workspaceImportSection.includes('commitCollectionWorkspace(batch)'), true);
+assert.equal(
+  workspaceImportSection.indexOf('MinimizerCheckpointCollectionWorkspaceLayout.MAX_PACKAGES')
+    < workspaceImportSection.indexOf('file.text()'),
+  true,
+  'Browser package-count rejection must happen before any selected file is read.',
+);
 assert.equal(workspaceImportSection.includes('createMinimizerCheckpointCollectionRunIdV1'), false);
 assert.equal(workspaceImportSection.includes('createMinimizerCheckpointCollectionEventV1'), false);
 assert.equal(workspaceImportSection.includes('createMinimizerCheckpointCollectionProvenanceV1'), false);
@@ -215,10 +250,9 @@ const workspaceCommitEnd = phase1dSource.indexOf(
 );
 assert.ok(workspaceCommitStart >= 0 && workspaceCommitEnd > workspaceCommitStart);
 const workspaceCommitSection = phase1dSource.slice(workspaceCommitStart, workspaceCommitEnd);
-assert.equal(workspaceCommitSection.includes('updateMinimizerCheckpointCollectionWorkspaceV1'), true);
-assert.equal(workspaceCommitSection.indexOf('collectionWorkspacePackages.splice')
-  > workspaceCommitSection.indexOf('await updateMinimizerCheckpointCollectionWorkspaceV1'), true,
-  'Browser workspace state must commit only after the candidate validates.');
+assert.equal(workspaceCommitSection.includes('collectionWorkspaceStore.commit(incomingPackages)'), true);
+assert.equal(workspaceCommitSection.includes('collectionWorkspacePackages.splice'), false);
+assert.equal(workspaceCommitSection.includes('updateMinimizerCheckpointCollectionWorkspaceV1'), false);
 
 const liveStart = phase1dSource.indexOf('async function recordLiveCollectionProvenance(');
 const liveEnd = phase1dSource.indexOf('async function refreshProvenanceCensus()', liveStart);
