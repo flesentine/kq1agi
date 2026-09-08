@@ -29,6 +29,12 @@ function isSha256(value) {
   return /^sha256:[0-9a-f]{64}$/.test(String(value ?? ''));
 }
 
+function lexicalCompare(left, right) {
+  const a = String(left);
+  const b = String(right);
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 function packageSummary(collectionPackage) {
   return Object.freeze({
     packageHash: collectionPackage.hash,
@@ -64,7 +70,7 @@ async function normalizePackages(collectionPackages) {
     uniqueByHash.set(collectionPackage.hash, collectionPackage);
   }
 
-  return Object.freeze([...uniqueByHash.values()].sort((a, b) => a.hash.localeCompare(b.hash)));
+  return Object.freeze([...uniqueByHash.values()].sort((a, b) => lexicalCompare(a.hash, b.hash)));
 }
 
 async function deriveSetArtifacts(packages) {
@@ -96,7 +102,7 @@ export async function createMinimizerCheckpointCollectionManifestV1(collectionPa
   const summaries = Object.freeze(packages.map(packageSummary));
   const collectionRunIds = Object.freeze([...new Set(
     summaries.map(item => item.collectionRunId),
-  )].sort());
+  )].sort(lexicalCompare));
   const unsigned = {
     schema: MANIFEST_SCHEMA,
     policy: POLICY,
