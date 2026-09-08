@@ -1445,6 +1445,7 @@ Every exported manifest remains:
 - Browser workspace imports accept validated I.13 packages only.
 - Individual files larger than 16 MiB are rejected.
 - A selection that would exceed the package safety bound is rejected before any selected file is read or parsed.
+- Browser package-file parsing is itself serialized, so overlapping picker actions cannot bypass that early bound or multiply file-read memory pressure.
 - Exact duplicate package hashes are workspace-idempotent.
 - Candidate workspace construction is non-mutating until complete validation succeeds.
 - Browser workspace commits are serialized so concurrent imports/live updates cannot lose a previously committed batch.
