@@ -173,6 +173,14 @@ assert.equal(
   MinimizerCheckpointCollectionWorkspaceLayout.MAX_PACKAGES,
   MinimizerCheckpointCollectionManifestLayout.MAX_PACKAGES,
 );
+assert.equal(
+  MinimizerCheckpointCollectionWorkspaceLayout.MAX_IMPORT_FILE_BYTES,
+  16 * 1024 * 1024,
+);
+assert.equal(
+  MinimizerCheckpointCollectionWorkspaceLayout.MAX_IMPORT_BATCH_BYTES,
+  64 * 1024 * 1024,
+);
 
 const duplicateAtRawCapacity = await updateMinimizerCheckpointCollectionWorkspaceV1({
   currentPackages: Array(
@@ -256,6 +264,8 @@ assert.equal(workspaceSource.includes('submittedCount'), false);
 assert.equal(workspaceSource.includes('incomingPackages.length > MinimizerCheckpointCollectionManifestLayout.MAX_PACKAGES'), true);
 assert.equal(workspaceSource.includes('uniqueByHash.size > MinimizerCheckpointCollectionManifestLayout.MAX_PACKAGES'), true);
 assert.equal(workspaceSource.includes('validatedReferences'), true);
+assert.equal(workspaceSource.includes('MAX_IMPORT_FILE_BYTES: 16 * 1024 * 1024'), true);
+assert.equal(workspaceSource.includes('MAX_IMPORT_BATCH_BYTES: 64 * 1024 * 1024'), true);
 
 const workspaceImportStart = phase1dSource.indexOf('async function importCollectionPackageFiles()');
 const workspaceImportEnd = phase1dSource.indexOf('function exportProvenanceCensus()', workspaceImportStart);
@@ -276,6 +286,21 @@ assert.equal(
   true,
   'Browser package-count rejection must happen before any selected file is read.',
 );
+assert.equal(
+  workspaceImportSection.indexOf('MAX_IMPORT_BATCH_BYTES')
+    < workspaceImportSection.indexOf('file.text()'),
+  true,
+  'Browser aggregate-byte rejection must happen before any selected file is read.',
+);
+assert.equal(
+  workspaceImportSection.indexOf('MAX_IMPORT_FILE_BYTES')
+    < workspaceImportSection.indexOf('file.text()'),
+  true,
+  'Browser per-file byte rejection must happen before the selected file is read.',
+);
+assert.equal(workspaceImportSection.includes(
+  'Collection workspace incoming files exceed the aggregate byte safety limit.'
+), true);
 assert.equal(
   workspaceImportSection.indexOf('collectionPackageImportRunning = true')
     < workspaceImportSection.indexOf('file.text()'),
