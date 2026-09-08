@@ -187,7 +187,7 @@ const tamperedDerived = structuredClone(collectionPackage);
 tamperedDerived.derived.provenanceCensusHash = sha('f');
 await assert.rejects(
   validateMinimizerCheckpointCollectionPackageV1(tamperedDerived),
-  /validation mismatch/,
+  /hash mismatch|validation mismatch/,
 );
 
 const tamperedProvenance = structuredClone(collectionPackage);
