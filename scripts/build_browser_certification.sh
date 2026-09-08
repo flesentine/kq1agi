@@ -32,6 +32,7 @@ node scripts/test_certification_minimizer_checkpoint_provenance_coverage.mjs
 node scripts/test_certification_minimizer_checkpoint_provenance_session_topology.mjs
 node scripts/test_certification_minimizer_checkpoint_collection_package.mjs
 node scripts/test_certification_minimizer_checkpoint_collection_manifest.mjs
+node scripts/test_certification_minimizer_checkpoint_collection_workspace.mjs
 node scripts/test_certification_recording_hash.mjs
 node scripts/test_certification_replay_host.mjs
 node scripts/test_phase1d_recording_boundary.mjs
@@ -125,6 +126,7 @@ cp web/certification-minimizer-checkpoint-provenance-coverage.mjs "$OUT/certific
 cp web/certification-minimizer-checkpoint-provenance-session-topology.mjs "$OUT/certification-minimizer-checkpoint-provenance-session-topology.mjs"
 cp web/certification-minimizer-checkpoint-collection-package.mjs "$OUT/certification-minimizer-checkpoint-collection-package.mjs"
 cp web/certification-minimizer-checkpoint-collection-manifest.mjs "$OUT/certification-minimizer-checkpoint-collection-manifest.mjs"
+cp web/certification-minimizer-checkpoint-collection-workspace.mjs "$OUT/certification-minimizer-checkpoint-collection-workspace.mjs"
 cp web/certification-replay-host.mjs "$OUT/certification-replay-host.mjs"
 cp web/certification-phase1d.mjs "$OUT/certification-phase1d.mjs"
 cp web/certification-minimizer.mjs "$OUT/certification-minimizer.mjs"
@@ -151,6 +153,7 @@ test -f "$OUT/certification-minimizer-checkpoint-provenance-coverage.mjs"
 test -f "$OUT/certification-minimizer-checkpoint-provenance-session-topology.mjs"
 test -f "$OUT/certification-minimizer-checkpoint-collection-package.mjs"
 test -f "$OUT/certification-minimizer-checkpoint-collection-manifest.mjs"
+test -f "$OUT/certification-minimizer-checkpoint-collection-workspace.mjs"
 test -f "$OUT/certification-input-minimizer.mjs"
 test -f "$OUT/certification-edit-minimizer.mjs"
 test -f "$OUT/PHASE_1I.md"
@@ -211,6 +214,8 @@ grep -q 'createMinimizerCheckpointCollectionManifestV1' "$OUT/certification-mini
 grep -q 'COLLECTION_SET_ARCHIVE_ONLY' "$OUT/certification-minimizer-checkpoint-collection-manifest.mjs"
 grep -q 'NO_EVIDENCE_SUFFICIENCY_THRESHOLD_IS_DEFINED' "$OUT/certification-minimizer-checkpoint-collection-manifest.mjs"
 grep -q 'accelerationAllowed: false' "$OUT/certification-minimizer-checkpoint-collection-manifest.mjs"
+grep -q 'updateMinimizerCheckpointCollectionWorkspaceV1' "$OUT/certification-minimizer-checkpoint-collection-workspace.mjs"
+grep -q 'Collection workspace accepts Phase -1I.13 packages only' "$OUT/certification-minimizer-checkpoint-collection-workspace.mjs"
 grep -q 'checkpointShadowSummaryText' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-export-shadow-evidence-button' "$OUT/certification-phase1d.mjs"
 grep -q '__kq1agiCheckpointShadowEvidenceReport' "$OUT/certification-phase1d.mjs"
@@ -235,6 +240,10 @@ grep -q 'certify-export-provenance-topology-button' "$OUT/certification-phase1d.
 grep -q '__kq1agiCheckpointProvenanceSessionTopology' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-export-collection-package-button' "$OUT/certification-phase1d.mjs"
 grep -q '__kq1agiCheckpointCollectionPackage' "$OUT/certification-phase1d.mjs"
+grep -q 'certify-import-collection-packages-button' "$OUT/certification-phase1d.mjs"
+grep -q 'certify-export-collection-manifest-button' "$OUT/certification-phase1d.mjs"
+grep -q '__kq1agiCheckpointCollectionManifest' "$OUT/certification-phase1d.mjs"
+grep -q 'updateMinimizerCheckpointCollectionWorkspaceV1' "$OUT/certification-phase1d.mjs"
 ! grep -q 'shadowResults.push(shadow)' "$OUT/certification-phase1d.mjs"
 grep -q 'certify-reduce-inputs-button' "$OUT/certification-phase1d.mjs"
 grep -q 'minimizeInputGroupsV1' "$OUT/certification-phase1d.mjs"
@@ -264,6 +273,7 @@ printf '%s\n' \
   'Phase -1I.12 presents the canonical provenance population from the collection-run perspective, surfaces browser runs spanning multiple exact GAMEFILES + EditConfig identities without pooling or blocking them, links back to I.10/I.11 hashes, remains DESCRIPTIVE_ONLY, and never enables acceleration.' \
   'Phase -1I.13 archives one live collection snapshot as a self-contained exact I.4 report + I.9 provenance package, binds singleton I.10/I.11/I.12 hashes, allows direct provenance re-import without minting identity, and leaves all evidence/replay authority unchanged.' \
   'Phase -1I.14 binds a deterministic set of validated I.13 packages, deduplicates exact package hashes, delegates same-run history reconciliation to I.10, binds the resulting I.10/I.11/I.12 hashes, defines no sufficiency threshold, and leaves full replay mandatory.' \
+  'Phase -1I.15 adds a transactional browser collection-set workspace: live and imported I.13 packages can populate the I.14 manifest, rejected imports leave prior workspace state intact, package import mints no provenance identity/event, and replay authority remains unchanged.' \
   > "$OUT/ARTIFACT.txt"
 
 find "$OUT" -maxdepth 2 -type f | sort
