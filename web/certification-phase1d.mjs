@@ -602,6 +602,9 @@ function installPhase1D() {
   let latestCollectionProvenance = null;
   let latestCollectionPackage = null;
   const collectionWorkspaceStore = createMinimizerCheckpointCollectionWorkspaceStoreV1();
+  const certificationPanelController = globalThis.__kq1agiCertificationPanelController ?? null;
+  let basePanelBusy = !!certificationPanelController?.isBaseBusy?.();
+  let externalPanelBusy = !!certificationPanelController?.isExternallyBusy?.();
   let collectionPackageImportRunning = false;
   let latestCollectionManifest = null;
   globalThis.__kq1agiCheckpointCollectionManifest = null;
@@ -634,7 +637,7 @@ function installPhase1D() {
 
   const setReplayRunning = value => {
     replayRunning = value;
-    const panelBusy = value || collectionPackageImportRunning;
+    const panelBusy = value || collectionPackageImportRunning || basePanelBusy || externalPanelBusy;
     replayButton.disabled = panelBusy;
     minimizeButton.disabled = panelBusy || !lastDivergenceContext;
     reduceInputsButton.disabled = panelBusy || !lastMinimizedContext;
@@ -653,12 +656,23 @@ function installPhase1D() {
     exportProvenanceCensusButton.disabled = panelBusy || !latestProvenanceCensus;
     exportProvenanceCoverageButton.disabled = panelBusy || !latestProvenanceCoverageMatrix;
     exportProvenanceTopologyButton.disabled = panelBusy || !latestProvenanceSessionTopology;
-    runButton.disabled = panelBusy;
-    if (refreshButton) refreshButton.disabled = panelBusy;
-    gameSelect.disabled = panelBusy;
-    if (barrierInput) barrierInput.disabled = panelBusy;
-    stopButton.disabled = !value;
+
+    if (value) {
+      runButton.disabled = true;
+      if (refreshButton) refreshButton.disabled = true;
+      gameSelect.disabled = true;
+      if (barrierInput) barrierInput.disabled = true;
+      stopButton.disabled = false;
+    } else if (!basePanelBusy && !externalPanelBusy) {
+      certificationPanelController?.refreshControlState?.();
+    }
   };
+
+  const unsubscribeCertificationPanelBusy = certificationPanelController?.subscribeBusy?.(state => {
+    basePanelBusy = !!state?.baseBusy;
+    externalPanelBusy = !!state?.externalBusy;
+    setReplayRunning(replayRunning);
+  }) ?? null;
 
   async function refreshEvidenceReview() {
     if (!latestEvidenceCorpus) {
@@ -997,6 +1011,12 @@ function installPhase1D() {
       return;
     }
 
+    if (!certificationPanelController?.acquireExternalBusy?.()) {
+      setStatus('COLLECTION IMPORT BUSY', 'WAITING');
+      progress.textContent = 'Phase -1I.15 waits for the base CERTIFY controller to become idle';
+      return;
+    }
+
     collectionPackageImportRunning = true;
     setReplayRunning(replayRunning);
     try {
@@ -1030,6 +1050,7 @@ function installPhase1D() {
     } finally {
       collectionPackageImportRunning = false;
       setReplayRunning(replayRunning);
+      certificationPanelController.releaseExternalBusy();
     }
   }
 
@@ -1959,7 +1980,10 @@ function installPhase1D() {
     stopRequested = true;
     setStatus('STOPPING…', 'BUSY');
   });
-  window.addEventListener('beforeunload', () => replayHost?.terminate());
+  window.addEventListener('beforeunload', () => {
+    unsubscribeCertificationPanelBusy?.();
+    replayHost?.terminate();
+  });
   setInterval(() => {
     if (!replayRunning && panel.getAttribute('aria-hidden') === 'false') refreshJournal();
   }, 1000);
