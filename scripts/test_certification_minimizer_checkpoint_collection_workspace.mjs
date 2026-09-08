@@ -210,6 +210,8 @@ assert.equal(detachedCommit.packages[0].caveats[0], originalCallerCaveat,
   'Commit must synchronously detach queued packages from caller-owned objects.');
 assert.equal(Object.isFrozen(detachedCommit.packages[0]), true);
 assert.equal(Object.isFrozen(detachedCommit.packages[0].caveats), true);
+assert.equal(Object.isFrozen(detachedCommit.manifest), true);
+assert.equal(Object.isFrozen(detachedCommit.manifest.derived), true);
 assert.throws(
   () => { detachedStore.snapshot().packages[0].caveats[0] = 'SNAPSHOT_MUTATION'; },
   TypeError,
@@ -284,7 +286,8 @@ assert.equal(workspaceSource.includes('uniqueByHash.size > MinimizerCheckpointCo
 assert.equal(workspaceSource.includes('validatedReferences'), true);
 assert.equal(workspaceSource.includes('structuredClone(collectionPackage)'), true);
 assert.equal(workspaceSource.includes('function deepFreeze('), true);
-assert.equal(workspaceSource.includes('deepFreeze(collectionPackage);'), true);
+assert.equal(workspaceSource.includes('deepFreeze(candidate);'), true);
+assert.equal(workspaceSource.includes('return Promise.reject(error);'), true);
 assert.equal(workspaceSource.includes('MAX_IMPORT_FILE_BYTES: 16 * 1024 * 1024'), true);
 assert.equal(workspaceSource.includes('MAX_IMPORT_BATCH_BYTES: 64 * 1024 * 1024'), true);
 
