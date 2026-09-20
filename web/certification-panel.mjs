@@ -210,20 +210,66 @@ function installCertificationPanel() {
   let host = null;
   let stopRequested = false;
   let running = false;
+  let refreshing = false;
+  let externalBusyCount = 0;
+  const busyListeners = new Set();
 
   const setStatus = (text, state = 'IDLE') => {
     status.textContent = text;
     status.dataset.state = state;
   };
 
+  const applyControlState = () => {
+    const baseBusy = running || refreshing;
+    const externallyBusy = externalBusyCount > 0;
+    const busy = baseBusy || externallyBusy;
+    runButton.disabled = busy || !gameSelect.value;
+    refreshButton.disabled = busy;
+    gameSelect.disabled = busy;
+    barrierInput.disabled = busy;
+    stopButton.disabled = !running;
+    const snapshot = Object.freeze({ baseBusy, externalBusy: externallyBusy });
+    for (const listener of busyListeners) {
+      try {
+        listener(snapshot);
+      } catch {
+        // Busy-state observers must never break the base certification controller.
+      }
+    }
+  };
+
   const setRunning = value => {
     running = value;
-    runButton.disabled = value;
-    refreshButton.disabled = value;
-    gameSelect.disabled = value;
-    barrierInput.disabled = value;
-    stopButton.disabled = !value;
+    applyControlState();
   };
+
+  const panelController = Object.freeze({
+    isBaseBusy: () => running || refreshing,
+    isExternallyBusy: () => externalBusyCount > 0,
+    refreshControlState: () => applyControlState(),
+    acquireExternalBusy: () => {
+      if (running || refreshing) return false;
+      externalBusyCount += 1;
+      applyControlState();
+      return true;
+    },
+    releaseExternalBusy: () => {
+      if (externalBusyCount > 0) externalBusyCount -= 1;
+      applyControlState();
+    },
+    subscribeBusy: listener => {
+      if (typeof listener !== 'function') {
+        throw new TypeError('Certification panel busy listener must be a function.');
+      }
+      busyListeners.add(listener);
+      listener(Object.freeze({
+        baseBusy: running || refreshing,
+        externalBusy: externalBusyCount > 0,
+      }));
+      return () => busyListeners.delete(listener);
+    },
+  });
+  globalThis.__kq1agiCertificationPanelController = panelController;
 
   const showButtonWhenGameReady = () => {
     if (document.querySelector('#embed-html canvas, canvas')) {
@@ -240,7 +286,9 @@ function installCertificationPanel() {
   }
 
   async function refreshGames() {
-    refreshButton.disabled = true;
+    if (running || refreshing || externalBusyCount > 0) return;
+    refreshing = true;
+    applyControlState();
     setStatus('SCANNING LOCAL IMPORTS', 'BUSY');
     try {
       const games = await discoverImportedGames();
@@ -256,11 +304,9 @@ function installCertificationPanel() {
         option.value = '';
         option.textContent = 'No imported AGI game found';
         gameSelect.appendChild(option);
-        runButton.disabled = true;
         setStatus('NO LOCAL GAME', 'ERROR');
         detail.textContent = 'Import your own King\'s Quest ZIP through normal PLAY first. CERTIFY reads only that same-origin OPFS copy.';
       } else {
-        runButton.disabled = false;
         setStatus('READY', 'READY');
         detail.textContent = 'Local GAMEFILES.DAT found. Nothing is uploaded; the buffer is copied directly into the two certification workers.';
       }
@@ -268,12 +314,13 @@ function installCertificationPanel() {
       setStatus('OPFS ERROR', 'ERROR');
       detail.textContent = String(error?.stack ?? error);
     } finally {
-      refreshButton.disabled = false;
+      refreshing = false;
+      applyControlState();
     }
   }
 
   async function startRun() {
-    if (running) return;
+    if (running || refreshing || externalBusyCount > 0) return;
     if (!window.crossOriginIsolated) {
       setStatus('NOT ISOLATED', 'ERROR');
       detail.textContent = 'CERTIFY requires the same cross-origin isolation used by the AGILE SharedArrayBuffer runtime.';

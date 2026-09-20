@@ -22,6 +22,7 @@ on:
       - 'web/certification-minimizer-checkpoint-provenance-session-topology.mjs'
       - 'web/certification-minimizer-checkpoint-collection-package.mjs'
       - 'web/certification-minimizer-checkpoint-collection-manifest.mjs'
+      - 'web/certification-minimizer-checkpoint-collection-workspace.mjs'
       - 'web/certification-phase1d.mjs'
       - 'docs/TRUTH_ENGINE_PHASE_1B.md'
       - 'docs/TRUTH_ENGINE_PHASE_1I.md'
@@ -45,6 +46,7 @@ on:
       - 'web/certification-minimizer-checkpoint-provenance-session-topology.mjs'
       - 'web/certification-minimizer-checkpoint-collection-package.mjs'
       - 'web/certification-minimizer-checkpoint-collection-manifest.mjs'
+      - 'web/certification-minimizer-checkpoint-collection-workspace.mjs'
       - 'web/certification-phase1d.mjs'
       - 'docs/TRUTH_ENGINE_PHASE_1B.md'
       - 'docs/TRUTH_ENGINE_PHASE_1I.md'
@@ -88,6 +90,7 @@ jobs:
           node scripts/test_certification_minimizer_checkpoint_provenance_session_topology.mjs
           node scripts/test_certification_minimizer_checkpoint_collection_package.mjs
           node scripts/test_certification_minimizer_checkpoint_collection_manifest.mjs
+          node scripts/test_certification_minimizer_checkpoint_collection_workspace.mjs
 
       - name: Fetch exact AGILE source for both lanes
         run: |

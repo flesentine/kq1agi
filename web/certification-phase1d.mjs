@@ -61,6 +61,13 @@ import {
   serializeMinimizerCheckpointCollectionPackageV1,
 } from './certification-minimizer-checkpoint-collection-package.mjs';
 import {
+  serializeMinimizerCheckpointCollectionManifestV1,
+} from './certification-minimizer-checkpoint-collection-manifest.mjs';
+import {
+  createMinimizerCheckpointCollectionWorkspaceStoreV1,
+  MinimizerCheckpointCollectionWorkspaceLayout,
+} from './certification-minimizer-checkpoint-collection-workspace.mjs';
+import {
   encodeRandomReplay,
   freezePlayRecordingV1,
   getPlayRecordingStats,
@@ -227,6 +234,16 @@ function checkpointProvenanceTopologyText(topology) {
     `Phase -1I.12 session topology ${shortHash(topology.hash)} · DESCRIPTIVE_ONLY`,
     `runs=${topology.uniqueCollectionRuns} · events=${topology.toolObservedCollectionEvents} · multi-identity runs=${topology.multiIdentityCollectionRuns} · max identities/run=${topology.maxIdentitiesPerRun}`,
     'multi-identity sessions are descriptive, not blockers · I.5 counts unchanged · threshold UNSET · accelerationAllowed=false',
+  ].join('\n');
+}
+
+function checkpointCollectionManifestText(manifest) {
+  if (!manifest) return 'collection-set manifest: unavailable';
+  return [
+    `Phase -1I.14 collection manifest ${shortHash(manifest.hash)} · COLLECTION_SET_ARCHIVE_ONLY`,
+    `archived packages=${manifest.packageCount} · collection runs=${manifest.collectionRunCount} · reconciled events=${manifest.derived.toolObservedCollectionEvents} · stages=${manifest.derived.distinctStageHashes}`,
+    `cross-run repeated stages=${manifest.derived.crossRunRepeatedStageHashes} · exact identity cohorts=${manifest.derived.cohortCount}`,
+    'workspace is archive-only · I.5 counts unchanged · threshold UNSET · accelerationAllowed=false · full replay mandatory',
   ].join('\n');
 }
 
@@ -469,6 +486,27 @@ function installPhase1D() {
     exportCollectionProvenanceButton.insertAdjacentElement('afterend', exportCollectionPackageButton);
   }
 
+  let importCollectionPackagesButton = document.getElementById('certify-import-collection-packages-button');
+  if (!importCollectionPackagesButton) {
+    importCollectionPackagesButton = document.createElement('button');
+    importCollectionPackagesButton.id = 'certify-import-collection-packages-button';
+    importCollectionPackagesButton.type = 'button';
+    importCollectionPackagesButton.textContent = 'IMPORT PACKAGES';
+    importCollectionPackagesButton.title = 'Add validated Phase -1I.13 session packages to the Phase -1I.15 collection-set workspace';
+    exportCollectionPackageButton.insertAdjacentElement('afterend', importCollectionPackagesButton);
+  }
+
+  let exportCollectionManifestButton = document.getElementById('certify-export-collection-manifest-button');
+  if (!exportCollectionManifestButton) {
+    exportCollectionManifestButton = document.createElement('button');
+    exportCollectionManifestButton.id = 'certify-export-collection-manifest-button';
+    exportCollectionManifestButton.type = 'button';
+    exportCollectionManifestButton.textContent = 'EXPORT MANIFEST';
+    exportCollectionManifestButton.title = 'Download the deterministic Phase -1I.14 manifest for the current collection-set workspace';
+    exportCollectionManifestButton.disabled = true;
+    importCollectionPackagesButton.insertAdjacentElement('afterend', exportCollectionManifestButton);
+  }
+
   let importProvenanceButton = document.getElementById('certify-import-provenance-button');
   if (!importProvenanceButton) {
     importProvenanceButton = document.createElement('button');
@@ -476,7 +514,7 @@ function installPhase1D() {
     importProvenanceButton.type = 'button';
     importProvenanceButton.textContent = 'IMPORT PROVENANCE';
     importProvenanceButton.title = 'Import Phase -1I.4 reports, Phase -1I.9 provenance sidecars, or self-contained Phase -1I.13 collection packages';
-    exportCollectionPackageButton.insertAdjacentElement('afterend', importProvenanceButton);
+    exportCollectionManifestButton.insertAdjacentElement('afterend', importProvenanceButton);
   }
 
   let exportProvenanceCensusButton = document.getElementById('certify-export-provenance-census-button');
@@ -510,6 +548,17 @@ function installPhase1D() {
     exportProvenanceTopologyButton.title = 'Download the Phase -1I.12 run-centric exact-identity session topology';
     exportProvenanceTopologyButton.disabled = true;
     exportProvenanceCoverageButton.insertAdjacentElement('afterend', exportProvenanceTopologyButton);
+  }
+
+  let importCollectionPackagesInput = document.getElementById('certify-import-collection-packages-input');
+  if (!importCollectionPackagesInput) {
+    importCollectionPackagesInput = document.createElement('input');
+    importCollectionPackagesInput.id = 'certify-import-collection-packages-input';
+    importCollectionPackagesInput.type = 'file';
+    importCollectionPackagesInput.accept = '.json,application/json';
+    importCollectionPackagesInput.multiple = true;
+    importCollectionPackagesInput.hidden = true;
+    exportCollectionManifestButton.insertAdjacentElement('afterend', importCollectionPackagesInput);
   }
 
   let importProvenanceInput = document.getElementById('certify-import-provenance-input');
@@ -552,6 +601,16 @@ function installPhase1D() {
   let collectionRunId = null;
   let latestCollectionProvenance = null;
   let latestCollectionPackage = null;
+  const collectionWorkspaceStore = createMinimizerCheckpointCollectionWorkspaceStoreV1();
+  const certificationPanelController = globalThis.__kq1agiCertificationPanelController ?? null;
+  let basePanelBusy = !!certificationPanelController?.isBaseBusy?.();
+  let externalPanelBusy = !!certificationPanelController?.isExternallyBusy?.();
+  let handlingCertificationPanelBusyNotification = false;
+  let replayPanelBusyHeld = false;
+  let collectionPackageImportRunning = false;
+  let latestCollectionManifest = null;
+  globalThis.__kq1agiCheckpointCollectionManifest = null;
+  globalThis.__kq1agiCheckpointCollectionManifestError = null;
   let latestProvenanceCensus = null;
   let latestProvenanceCoverageMatrix = null;
   let latestProvenanceSessionTopology = null;
@@ -580,27 +639,65 @@ function installPhase1D() {
 
   const setReplayRunning = value => {
     replayRunning = value;
-    replayButton.disabled = value;
-    minimizeButton.disabled = value || !lastDivergenceContext;
-    reduceInputsButton.disabled = value || !lastMinimizedContext;
-    reduceEditsButton.disabled = value || !lastInputReducedContext;
-    exportShadowEvidenceButton.disabled = value || !latestShadowEvidenceReport;
-    importEvidenceButton.disabled = value;
-    exportEvidenceCorpusButton.disabled = value || !latestEvidenceCorpus;
-    exportEvidenceReviewButton.disabled = value || !latestEvidenceReview;
-    exportEvidenceCohortsButton.disabled = value || !latestEvidenceCohortReview;
-    exportEvidenceCoverageButton.disabled = value || !latestEvidenceCoverageProfile;
-    exportCollectionProvenanceButton.disabled = value || !latestCollectionProvenance;
-    exportCollectionPackageButton.disabled = value || !latestCollectionPackage;
-    importProvenanceButton.disabled = value;
-    exportProvenanceCensusButton.disabled = value || !latestProvenanceCensus;
-    exportProvenanceCoverageButton.disabled = value || !latestProvenanceCoverageMatrix;
-    exportProvenanceTopologyButton.disabled = value || !latestProvenanceSessionTopology;
-    runButton.disabled = value;
-    if (refreshButton) refreshButton.disabled = value;
-    gameSelect.disabled = value;
-    if (barrierInput) barrierInput.disabled = value;
-    stopButton.disabled = !value;
+    const panelBusy = value || collectionPackageImportRunning || basePanelBusy || externalPanelBusy;
+    replayButton.disabled = panelBusy;
+    minimizeButton.disabled = panelBusy || !lastDivergenceContext;
+    reduceInputsButton.disabled = panelBusy || !lastMinimizedContext;
+    reduceEditsButton.disabled = panelBusy || !lastInputReducedContext;
+    exportShadowEvidenceButton.disabled = panelBusy || !latestShadowEvidenceReport;
+    importEvidenceButton.disabled = panelBusy;
+    exportEvidenceCorpusButton.disabled = panelBusy || !latestEvidenceCorpus;
+    exportEvidenceReviewButton.disabled = panelBusy || !latestEvidenceReview;
+    exportEvidenceCohortsButton.disabled = panelBusy || !latestEvidenceCohortReview;
+    exportEvidenceCoverageButton.disabled = panelBusy || !latestEvidenceCoverageProfile;
+    exportCollectionProvenanceButton.disabled = panelBusy || !latestCollectionProvenance;
+    exportCollectionPackageButton.disabled = panelBusy || !latestCollectionPackage;
+    importCollectionPackagesButton.disabled = panelBusy;
+    exportCollectionManifestButton.disabled = panelBusy || !latestCollectionManifest;
+    importProvenanceButton.disabled = panelBusy;
+    exportProvenanceCensusButton.disabled = panelBusy || !latestProvenanceCensus;
+    exportProvenanceCoverageButton.disabled = panelBusy || !latestProvenanceCoverageMatrix;
+    exportProvenanceTopologyButton.disabled = panelBusy || !latestProvenanceSessionTopology;
+
+    if (value) {
+      runButton.disabled = true;
+      if (refreshButton) refreshButton.disabled = true;
+      gameSelect.disabled = true;
+      if (barrierInput) barrierInput.disabled = true;
+      stopButton.disabled = false;
+    } else if (!basePanelBusy
+        && !externalPanelBusy
+        && !handlingCertificationPanelBusyNotification) {
+      certificationPanelController?.refreshControlState?.();
+    }
+  };
+
+  const unsubscribeCertificationPanelBusy = certificationPanelController?.subscribeBusy?.(state => {
+    handlingCertificationPanelBusyNotification = true;
+    try {
+      basePanelBusy = !!state?.baseBusy;
+      externalPanelBusy = !!state?.externalBusy;
+      setReplayRunning(replayRunning);
+    } finally {
+      handlingCertificationPanelBusyNotification = false;
+    }
+  }) ?? null;
+
+  const acquireReplayPanelBusy = label => {
+    if (replayPanelBusyHeld || !certificationPanelController) return true;
+    if (!certificationPanelController.acquireExternalBusy()) {
+      setStatus('CERTIFICATION BUSY', 'WAITING');
+      progress.textContent = `${label} waits for the base CERTIFY controller to become idle`;
+      return false;
+    }
+    replayPanelBusyHeld = true;
+    return true;
+  };
+
+  const releaseReplayPanelBusy = () => {
+    if (!replayPanelBusyHeld || !certificationPanelController) return;
+    replayPanelBusyHeld = false;
+    certificationPanelController.releaseExternalBusy();
   };
 
   async function refreshEvidenceReview() {
@@ -705,6 +802,7 @@ function installPhase1D() {
 
     exportCollectionProvenanceButton.disabled = replayRunning || !latestCollectionProvenance;
     exportCollectionPackageButton.disabled = replayRunning || !latestCollectionPackage;
+    await refreshCollectionWorkspaceFromLivePackage();
     await refreshProvenanceCensus();
     return latestCollectionProvenance;
   }
@@ -896,6 +994,95 @@ function installPhase1D() {
     link.download = `kq1agi-checkpoint-collection-package-${latestCollectionPackage.hash.slice(7, 19)}.json`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  function exportCollectionManifest() {
+    if (!latestCollectionManifest) return;
+    const body = serializeMinimizerCheckpointCollectionManifestV1(latestCollectionManifest);
+    const blob = new Blob([body], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kq1agi-checkpoint-collection-manifest-${latestCollectionManifest.hash.slice(7, 19)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  async function commitCollectionWorkspace(incomingPackages) {
+    const committed = await collectionWorkspaceStore.commit(incomingPackages);
+    latestCollectionManifest = committed.manifest;
+    globalThis.__kq1agiCheckpointCollectionManifest = latestCollectionManifest;
+    globalThis.__kq1agiCheckpointCollectionManifestError = null;
+    exportCollectionManifestButton.disabled = replayRunning || !latestCollectionManifest;
+    return latestCollectionManifest;
+  }
+
+  async function refreshCollectionWorkspaceFromLivePackage() {
+    if (!latestCollectionPackage) return latestCollectionManifest;
+    try {
+      return await commitCollectionWorkspace([latestCollectionPackage]);
+    } catch (error) {
+      globalThis.__kq1agiCheckpointCollectionManifestError = String(error?.message ?? error);
+      return latestCollectionManifest;
+    }
+  }
+
+  async function importCollectionPackageFiles() {
+    const files = [...(importCollectionPackagesInput.files ?? [])];
+    importCollectionPackagesInput.value = '';
+    if (!files.length) return;
+    if (collectionPackageImportRunning) {
+      setStatus('COLLECTION IMPORT BUSY', 'WAITING');
+      progress.textContent = 'Phase -1I.15 package import already in progress';
+      return;
+    }
+
+    if (!certificationPanelController?.acquireExternalBusy?.()) {
+      setStatus('COLLECTION IMPORT BUSY', 'WAITING');
+      progress.textContent = 'Phase -1I.15 waits for the base CERTIFY controller to become idle';
+      return;
+    }
+
+    collectionPackageImportRunning = true;
+    setReplayRunning(replayRunning);
+    try {
+      if (files.length > MinimizerCheckpointCollectionWorkspaceLayout.MAX_PACKAGES) {
+        throw new Error('Collection workspace incoming batch exceeds the package safety limit.');
+      }
+      const incomingBatchBytes = files.reduce(
+        (total, file) => total + Number(file.size ?? 0),
+        0,
+      );
+      if (incomingBatchBytes > MinimizerCheckpointCollectionWorkspaceLayout.MAX_IMPORT_BATCH_BYTES) {
+        throw new Error('Collection workspace incoming files exceed the aggregate byte safety limit.');
+      }
+
+      const batch = [];
+      for (const file of files) {
+        if (file.size > MinimizerCheckpointCollectionWorkspaceLayout.MAX_IMPORT_FILE_BYTES) {
+          throw new Error(`Collection package file is larger than 16 MiB: ${file.name}`);
+        }
+        const parsed = JSON.parse(await file.text());
+        if (parsed?.schema !== MinimizerCheckpointCollectionPackageLayout.PACKAGE_SCHEMA) {
+          throw new Error(`Collection workspace accepts Phase -1I.13 packages only: ${file.name}`);
+        }
+        batch.push(parsed);
+      }
+
+      const manifest = await commitCollectionWorkspace(batch);
+      setStatus('COLLECTION MANIFEST READY', 'MATCH');
+      progress.textContent = `Phase -1I.15 imported ${files.length} session package file(s) · ${manifest.packageCount} unique package(s) in workspace`;
+      detail.textContent = checkpointCollectionManifestText(manifest);
+    } catch (error) {
+      globalThis.__kq1agiCheckpointCollectionManifestError = String(error?.message ?? error);
+      setStatus('COLLECTION IMPORT REJECTED', 'ERROR');
+      progress.textContent = 'Phase -1I.15 collection-set import rejected; prior workspace retained';
+      detail.textContent = String(error?.stack ?? error);
+    } finally {
+      collectionPackageImportRunning = false;
+      setReplayRunning(replayRunning);
+      certificationPanelController.releaseExternalBusy();
+    }
   }
 
   function exportProvenanceCensus() {
@@ -1260,6 +1447,7 @@ function installPhase1D() {
     const rawEvents = boundary.rawEvents;
     const overflowed = boundary.overflowed;
 
+    if (!acquireReplayPanelBusy('Phase -1D replay')) return;
     stopRequested = false;
     setReplayRunning(true);
     setStatus('FREEZING PLAY WINDOW', 'BUSY');
@@ -1314,6 +1502,7 @@ function installPhase1D() {
       replayHost?.terminate();
       replayHost = null;
       setReplayRunning(false);
+      releaseReplayPanelBusy();
       refreshJournal();
     }
   }
@@ -1332,6 +1521,7 @@ function installPhase1D() {
       return;
     }
 
+    if (!acquireReplayPanelBusy('Phase -1E checkpoint minimization')) return;
     stopRequested = false;
     setReplayRunning(true);
     setStatus('MINIMIZING', 'BUSY');
@@ -1473,6 +1663,7 @@ function installPhase1D() {
       replayHost?.terminate();
       replayHost = null;
       setReplayRunning(false);
+      releaseReplayPanelBusy();
       refreshJournal();
     }
   }
@@ -1489,6 +1680,7 @@ function installPhase1D() {
       return;
     }
 
+    if (!acquireReplayPanelBusy('Phase -1F input reduction')) return;
     stopRequested = false;
     setReplayRunning(true);
     const groups = groupReplayInputEventsV1(context.recording);
@@ -1672,6 +1864,7 @@ function installPhase1D() {
       replayHost?.terminate();
       replayHost = null;
       setReplayRunning(false);
+      releaseReplayPanelBusy();
       refreshJournal();
     }
   }
@@ -1686,6 +1879,7 @@ function installPhase1D() {
       return;
     }
 
+    if (!acquireReplayPanelBusy('Phase -1F EditConfig reduction')) return;
     stopRequested = false;
     setReplayRunning(true);
     let groups = [];
@@ -1786,6 +1980,7 @@ function installPhase1D() {
       replayHost?.terminate();
       replayHost = null;
       setReplayRunning(false);
+      releaseReplayPanelBusy();
       refreshJournal();
     }
   }
@@ -1805,6 +2000,11 @@ function installPhase1D() {
   exportEvidenceCoverageButton.addEventListener('click', exportEvidenceCoverage);
   exportCollectionProvenanceButton.addEventListener('click', exportCollectionProvenance);
   exportCollectionPackageButton.addEventListener('click', exportCollectionPackage);
+  importCollectionPackagesButton.addEventListener('click', () => {
+    if (!replayRunning) importCollectionPackagesInput.click();
+  });
+  importCollectionPackagesInput.addEventListener('change', importCollectionPackageFiles);
+  exportCollectionManifestButton.addEventListener('click', exportCollectionManifest);
   importProvenanceButton.addEventListener('click', () => {
     if (!replayRunning) importProvenanceInput.click();
   });
@@ -1819,7 +2019,10 @@ function installPhase1D() {
     stopRequested = true;
     setStatus('STOPPING…', 'BUSY');
   });
-  window.addEventListener('beforeunload', () => replayHost?.terminate());
+  window.addEventListener('beforeunload', () => {
+    unsubscribeCertificationPanelBusy?.();
+    replayHost?.terminate();
+  });
   setInterval(() => {
     if (!replayRunning && panel.getAttribute('aria-hidden') === 'false') refreshJournal();
   }, 1000);
